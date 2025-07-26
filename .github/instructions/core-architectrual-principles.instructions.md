@@ -12,6 +12,7 @@ applyTo: '**'
    - NO `Any` types without explicit justification
    - NO missing type hints on public APIs
    - ALL variable declarations MUST have explicit type annotations (e.g., `validate_url: str = "..."`)
+   - Named Parameters in All Function Calls
 
 2. **Async-First Architecture is REQUIRED**:
 
