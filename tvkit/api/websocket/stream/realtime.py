@@ -6,46 +6,44 @@ real-time market data from TradingView, including OHLCV data, trade information,
 and technical indicators with export capabilities.
 """
 
+# Standard library imports
 import asyncio
 import json
 import logging
-import secrets
-import string
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from decimal import Decimal
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
+# Third-party imports
 import httpx
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
-from decimal import Decimal
 
-from .models import (
-    OHLCVData,
-    TradeData,
-    IndicatorData,
-    StreamConfig,
-    SessionInfo,
-    WebSocketMessage,
-    StreamerResponse,
-    RealtimeStreamData,
-    ExportConfig,
-    SymbolInfo,
-)
-from .exceptions import (
-    StreamingError,
+# Local imports
+from tvkit.api.websocket.stream.exceptions import (
+    ConfigurationError,
     ConnectionError,
-    SymbolValidationError,
     DataParsingError,
     SessionError,
-    TimeoutError,
-    AuthenticationError,
-    ConfigurationError,
+    StreamingError,
+    SymbolValidationError,
 )
-from .utils import (
+from tvkit.api.websocket.stream.models import (
+    ExportConfig,
+    IndicatorData,
+    OHLCVData,
+    RealtimeStreamData,
+    SessionInfo,
+    StreamConfig,
+    StreamerResponse,
+    TradeData,
+    WebSocketMessage,
+)
+from tvkit.api.websocket.stream.utils import (
+    OHLCVConverter,
     export_data,
     generate_session_id,
     validate_symbols_async,
-    OHLCVConverter,
 )
 
 # Configure logging
@@ -549,25 +547,60 @@ class RealtimeStreamer:
             if len(params) < 2 or not isinstance(params[1], dict):
                 return None
 
-            series_data: Dict[str, Any] = params[1].get('sds_1', {})
+            # Type-safe extraction with explicit casting
+            param_data: Dict[str, Any] = cast(Dict[str, Any], params[1])
+            series_data_raw: Any = param_data.get('sds_1', {})
+
+            # Validate that series_data is a dictionary
+            if not isinstance(series_data_raw, dict):
+                return None
+
+            # Cast to proper type after validation
+            series_data: Dict[str, Any] = cast(Dict[str, Any], series_data_raw)
             if 's' not in series_data:
                 return None
 
+            # Validate that 's' contains a list
+            series_list_raw: Any = series_data['s']
+            if not isinstance(series_list_raw, list):
+                return None
+
+            # Cast to list after validation
+            series_list: List[Any] = cast(List[Any], series_list_raw)
             ohlcv_list: List[OHLCVData] = []
 
-            for entry in series_data['s']:
-                if 'v' not in entry or len(entry['v']) < 6:
+            for entry_raw in series_list:
+                # Type guard for entry
+                if not isinstance(entry_raw, dict):
                     continue
 
+                # Cast to proper type after validation
+                entry: Dict[str, Any] = cast(Dict[str, Any], entry_raw)
+
+                # Validate entry structure
+                if 'v' not in entry:
+                    continue
+
+                values_raw: Any = entry['v']
+                if not isinstance(values_raw, list) or len(cast(list[Any], values_raw)) < 6:
+                    continue
+
+                # Cast to list after validation
+                values: List[Any] = cast(List[Any], values_raw)
+
                 try:
+                    # Extract index with type safety
+                    index_raw: Any = entry.get('i', 0)
+                    index: int = int(index_raw) if isinstance(index_raw, (int, float, str)) else 0
+
                     ohlcv: OHLCVData = OHLCVData(
-                        index=entry.get('i', 0),
-                        timestamp=int(entry['v'][0]),
-                        open=Decimal(str(entry['v'][1])),
-                        high=Decimal(str(entry['v'][2])),
-                        low=Decimal(str(entry['v'][3])),
-                        close=Decimal(str(entry['v'][4])),
-                        volume=Decimal(str(entry['v'][5]))
+                        index=index,
+                        timestamp=int(values[0]),
+                        open=Decimal(str(values[1])),
+                        high=Decimal(str(values[2])),
+                        low=Decimal(str(values[3])),
+                        close=Decimal(str(values[4])),
+                        volume=Decimal(str(values[5]))
                     )
                     ohlcv_list.append(ohlcv)
 
@@ -608,15 +641,32 @@ class RealtimeStreamer:
             if len(params) < 2 or not isinstance(params[1], dict):
                 return None
 
-            indicator_data: Dict[str, Any] = params[1].get('sds_2', {})
+            # Type-safe extraction with casting
+            param_data: Dict[str, Any] = cast(Dict[str, Any], params[1])
+            indicator_data_raw: Any = param_data.get('sds_2', {})
+
+            # Validate that indicator_data is a dictionary
+            if not isinstance(indicator_data_raw, dict):
+                return None
+
+            indicator_data: Dict[str, Any] = cast(Dict[str, Any], indicator_data_raw)
             if 'st' not in indicator_data:
                 return None
 
+            # Validate that 'st' contains a dictionary
+            st_data_raw: Any = indicator_data['st']
+            if not isinstance(st_data_raw, dict):
+                return None
+
             # Parse indicator values
+            st_data: Dict[str, Any] = cast(Dict[str, Any], st_data_raw)
             values: Dict[str, Decimal] = {}
-            for key, value in indicator_data['st'].items():
+
+            for key, value in st_data.items():
                 try:
-                    values[key] = Decimal(str(value))
+                    # Cast key and value to proper types
+                    str_key: str = str(key)
+                    values[str_key] = Decimal(str(value))
                 except (ValueError, TypeError):
                     continue
 
@@ -660,7 +710,8 @@ class RealtimeStreamer:
             if len(params) < 2 or not isinstance(params[1], dict):
                 return None
 
-            trade_info: Dict[str, Any] = params[1]
+            # Type-safe extraction with casting
+            trade_info: Dict[str, Any] = cast(Dict[str, Any], params[1])
 
             # Extract trade information (format may vary)
             price: Optional[float] = trade_info.get('lp')  # last price
@@ -747,3 +798,399 @@ class RealtimeStreamer:
         if self.stream_data:
             return self.stream_data.get_latest_ohlcv(symbol)
         return None
+
+if __name__ == "__main__":
+    # Configure logging for demonstration
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    async def demo_basic_streaming():
+        """
+        Demonstrate basic real-time streaming with OHLCV data.
+        """
+        print("\n🚀 Demo 1: Basic OHLCV Streaming")
+        print("=" * 50)
+
+        config: StreamConfig = StreamConfig(
+            symbols=["BINANCE:BTCUSDT"],
+            timeframe="1m",
+            num_candles=20,
+            include_indicators=False,
+            indicator_id=None,
+            indicator_version=None,
+            export_config=None
+        )
+
+        try:
+            async with RealtimeStreamer(config) as streamer:
+                print(f"✅ Connected to TradingView WebSocket")
+                print(f"📈 Streaming: {', '.join(config.symbols)}")
+                print(f"⏰ Timeframe: {config.timeframe}")
+                print(f"📊 Historical candles: {config.num_candles}")
+
+                # Stream for a limited time to demonstrate
+                count: int = 0
+                max_responses: int = 5
+
+                async for response in streamer.stream():
+                    count += 1
+                    print(f"\n📦 Response {count}: {response.data_type.upper()}")
+                    print(f"🎯 Symbol: {response.symbol}")
+                    print(f"⏰ Timestamp: {response.timestamp}")
+
+                    if response.ohlcv_data:
+                        for ohlcv in response.ohlcv_data:
+                            print(f"💰 OHLCV: Open={ohlcv.open}, High={ohlcv.high}, "
+                                  f"Low={ohlcv.low}, Close={ohlcv.close}, Volume={ohlcv.volume}")
+
+                    # Get stream statistics
+                    stats: Optional[Dict[str, Any]] = streamer.get_stream_statistics()
+                    if stats:
+                        print(f"📊 Stats: {stats['total_responses']} responses, "
+                              f"{stats['session_duration']:.1f}s session duration")
+
+                    if count >= max_responses:
+                        print(f"\n✅ Demo complete after {count} responses")
+                        break
+
+        except Exception as e:
+            print(f"❌ Error in basic streaming demo: {e}")
+
+    async def demo_multiple_symbols():
+        """
+        Demonstrate streaming multiple symbols simultaneously.
+        """
+        print("\n🌐 Demo 2: Multiple Symbol Streaming")
+        print("=" * 50)
+
+        config: StreamConfig = StreamConfig(
+            symbols=["BINANCE:BTCUSDT", "BINANCE:ETHUSDT", "NASDAQ:AAPL"],
+            timeframe="5m",
+            num_candles=10,
+            include_indicators=False,
+            indicator_id=None,
+            indicator_version=None,
+            export_config=None
+        )
+
+        try:
+            async with RealtimeStreamer(config) as streamer:
+                print(f"✅ Streaming {len(config.symbols)} symbols:")
+                for symbol in config.symbols:
+                    print(f"  📈 {symbol}")
+
+                # Collect data for each symbol
+                symbol_data: Dict[str, int] = {}
+                count: int = 0
+                max_responses: int = 10
+
+                async for response in streamer.stream():
+                    count += 1
+                    symbol_data[response.symbol] = symbol_data.get(response.symbol, 0) + 1
+
+                    print(f"\n📦 Response {count}: {response.symbol} - {response.data_type}")
+
+                    # Get latest OHLCV for specific symbols
+                    latest_btc: Optional[List[OHLCVData]] = streamer.get_latest_ohlcv("BINANCE:BTCUSDT")
+                    latest_eth: Optional[List[OHLCVData]] = streamer.get_latest_ohlcv("BINANCE:ETHUSDT")
+
+                    if latest_btc:
+                        print(f"₿ Latest BTC: {latest_btc[-1].close} USDT")
+                    if latest_eth:
+                        print(f"🔷 Latest ETH: {latest_eth[-1].close} USDT")
+
+                    if count >= max_responses:
+                        print(f"\n📊 Symbol distribution: {symbol_data}")
+                        break
+
+        except Exception as e:
+            print(f"❌ Error in multiple symbols demo: {e}")
+
+    async def demo_with_indicators():
+        """
+        Demonstrate streaming with technical indicators.
+        """
+        print("\n📊 Demo 3: Streaming with Technical Indicators")
+        print("=" * 50)
+
+        config: StreamConfig = StreamConfig(
+            symbols=["BINANCE:BTCUSDT"],
+            timeframe="1m",
+            num_candles=50,
+            include_indicators=True,
+            indicator_id="STD;SMA",  # Simple Moving Average
+            indicator_version="1",
+            export_config=None
+        )
+
+        try:
+            async with RealtimeStreamer(config) as streamer:
+                print(f"✅ Streaming with indicators enabled")
+                print(f"📈 Symbol: {config.symbols[0]}")
+                print(f"📊 Indicator: {config.indicator_id}")
+
+                count: int = 0
+                max_responses: int = 8
+
+                async for response in streamer.stream():
+                    count += 1
+                    print(f"\n📦 Response {count}: {response.data_type.upper()}")
+
+                    if response.indicator_data:
+                        print(f"📊 Indicator: {response.indicator_data.indicator_id}")
+                        print(f"💹 Values: {dict(list(response.indicator_data.values.items())[:3])}")
+
+                    if response.ohlcv_data:
+                        latest_ohlcv: OHLCVData = response.ohlcv_data[-1]
+                        print(f"💰 Latest Price: {latest_ohlcv.close}")
+
+                    if count >= max_responses:
+                        break
+
+        except Exception as e:
+            print(f"❌ Error in indicators demo: {e}")
+
+    async def demo_with_export():
+        """
+        Demonstrate streaming with data export capabilities.
+        """
+        print("\n💾 Demo 4: Streaming with Data Export")
+        print("=" * 50)
+
+        export_config: ExportConfig = ExportConfig(
+            enabled=True,
+            format='json',
+            directory='./export',
+            filename_prefix='demo_stream',
+            include_timestamp=True,
+            auto_export_interval=30  # Export every 30 seconds
+        )
+
+        config: StreamConfig = StreamConfig(
+            symbols=["BINANCE:BTCUSDT"],
+            timeframe="1m",
+            num_candles=15,
+            include_indicators=False,
+            indicator_id=None,
+            indicator_version=None,
+            export_config=export_config
+        )
+
+        try:
+            async with RealtimeStreamer(config) as streamer:
+                print(f"✅ Export enabled: {export_config.format} format")
+                print(f"📁 Directory: {export_config.directory}")
+                print(f"⏰ Auto-export interval: {export_config.auto_export_interval}s")
+
+                count: int = 0
+                max_responses: int = 6
+
+                async for response in streamer.stream():
+                    count += 1
+                    print(f"\n📦 Response {count}: Data exported to {export_config.directory}")
+
+                    if response.ohlcv_data:
+                        print(f"💰 Price data: {len(response.ohlcv_data)} candles")
+
+                    # Show statistics
+                    stats: Optional[Dict[str, Any]] = streamer.get_stream_statistics()
+                    if stats:
+                        print(f"📊 Total responses: {stats['total_responses']}")
+
+                    if count >= max_responses:
+                        print(f"\n✅ Check {export_config.directory} for exported files")
+                        break
+
+        except Exception as e:
+            print(f"❌ Error in export demo: {e}")
+
+    async def demo_error_handling():
+        """
+        Demonstrate error handling and connection recovery.
+        """
+        print("\n⚠️ Demo 5: Error Handling and Recovery")
+        print("=" * 50)
+
+        # Test with invalid symbol format
+        try:
+            config_invalid: StreamConfig = StreamConfig(
+                symbols=["INVALID_SYMBOL"],  # Missing exchange prefix
+                timeframe="1m",
+                num_candles=10,
+                include_indicators=False,
+                indicator_id=None,
+                indicator_version=None,
+                export_config=None
+            )
+            # Use the config to trigger validation
+            print(f"❌ This should fail with invalid symbol format: {config_invalid.symbols}")
+        except Exception as e:
+            print(f"✅ Caught expected validation error: {e}")
+
+        # Test with invalid timeframe
+        try:
+            StreamConfig(
+                symbols=["BINANCE:BTCUSDT"],
+                timeframe="30s",  # Invalid timeframe
+                num_candles=10,
+                include_indicators=False,
+                indicator_id=None,
+                indicator_version=None,
+                export_config=None
+            )
+            print("❌ This should fail with invalid timeframe")
+        except Exception as e:
+            print(f"✅ Caught expected timeframe error: {e}")
+
+        # Test connection with proper configuration but limited time
+        print("\n🔄 Testing connection handling...")
+        try:
+            config_valid: StreamConfig = StreamConfig(
+                symbols=["BINANCE:BTCUSDT"],
+                timeframe="1m",
+                num_candles=5,
+                include_indicators=False,
+                indicator_id=None,
+                indicator_version=None,
+                export_config=None
+            )
+
+            async with RealtimeStreamer(config_valid) as streamer:
+                print("✅ Connection established successfully")
+
+                # Test method calls on connected streamer
+                stats: Optional[Dict[str, Any]] = streamer.get_stream_statistics()
+                if stats:
+                    print(f"📊 Connection status: {stats['connection_status']}")
+
+                # Get latest OHLCV (might be None initially)
+                latest: Optional[List[OHLCVData]] = streamer.get_latest_ohlcv()
+                print(f"📈 Latest OHLCV available: {latest is not None}")
+
+                # Stream for a very short time
+                count: int = 0
+                async for _ in streamer.stream():
+                    count += 1
+                    print(f"📦 Received response {count}")
+                    if count >= 2:
+                        break
+
+            print("✅ Connection closed cleanly")
+
+        except Exception as e:
+            print(f"⚠️ Expected network error (WebSocket connection): {e}")
+
+    async def demo_configuration_options():
+        """
+        Demonstrate various configuration options and their effects.
+        """
+        print("\n⚙️ Demo 6: Configuration Options")
+        print("=" * 50)
+
+        configs: List[tuple[str, StreamConfig]] = [
+            ("Crypto High Frequency", StreamConfig(
+                symbols=["BINANCE:BTCUSDT", "BINANCE:ETHUSDT"],
+                timeframe="1m",
+                num_candles=100,
+                include_indicators=False,
+                indicator_id=None,
+                indicator_version=None,
+                export_config=None
+            )),
+            ("Stock with Indicators", StreamConfig(
+                symbols=["NASDAQ:AAPL"],
+                timeframe="5m",
+                num_candles=50,
+                include_indicators=True,
+                indicator_id="STD;RSI",
+                indicator_version="1",
+                export_config=None
+            )),
+            ("Multi-Asset Portfolio", StreamConfig(
+                symbols=["BINANCE:BTCUSDT", "NASDAQ:AAPL", "BINANCE:ETHUSDT"],
+                timeframe="15m",
+                num_candles=20,
+                include_indicators=False,
+                indicator_id=None,
+                indicator_version=None,
+                export_config=ExportConfig(
+                    enabled=True,
+                    format='csv',
+                    directory='./export',
+                    filename_prefix='portfolio',
+                    include_timestamp=True,
+                    auto_export_interval=None
+                )
+            ))
+        ]
+
+        for desc, config in configs:
+            print(f"\n📋 Configuration: {desc}")
+            print(f"  📈 Symbols: {len(config.symbols)} ({', '.join(config.symbols[:2])}{'...' if len(config.symbols) > 2 else ''})")
+            print(f"  ⏰ Timeframe: {config.timeframe}")
+            print(f"  📊 Candles: {config.num_candles}")
+            print(f"  🧮 Indicators: {'✅' if config.include_indicators else '❌'}")
+            print(f"  💾 Export: {'✅' if config.export_config and config.export_config.enabled else '❌'}")
+
+            try:
+                # Test configuration validation without connecting
+                _ = RealtimeStreamer(config)
+                print(f"  ✅ Configuration valid")
+            except Exception as e:
+                print(f"  ❌ Configuration error: {e}")
+
+    async def main():
+        """
+        Run comprehensive demonstration of all RealtimeStreamer functionality.
+
+        This function demonstrates:
+        1. Basic OHLCV streaming
+        2. Multiple symbol streaming
+        3. Technical indicators integration
+        4. Data export capabilities
+        5. Error handling and recovery
+        6. Configuration options and validation
+        """
+        print("🎯 TradingView Real-time Streamer - Comprehensive Demo")
+        print("=" * 60)
+        print("⚠️  Note: This demo requires internet connection to TradingView")
+        print("⚠️  Some demos may fail due to network restrictions")
+        print("=" * 60)
+
+        # List of all demos to run
+        demos: List[tuple[str, Any]] = [
+            ("Configuration Options (Safe)", demo_configuration_options),
+            ("Error Handling (Safe)", demo_error_handling),
+            ("Basic OHLCV Streaming", demo_basic_streaming),
+            ("Multiple Symbols", demo_multiple_symbols),
+            ("Technical Indicators", demo_with_indicators),
+            ("Data Export", demo_with_export),
+        ]
+
+        for i, (demo_name, demo_func) in enumerate(demos, 1):
+            try:
+                print(f"\n🎬 Running Demo {i}/{len(demos)}: {demo_name}")
+                await demo_func()
+                print(f"✅ Demo {i} completed successfully")
+            except Exception as e:
+                print(f"❌ Demo {i} failed: {e}")
+                print(f"   This is expected for network-dependent demos")
+
+            # Small delay between demos
+            await asyncio.sleep(1)
+
+        print(f"\n🎉 All demonstrations completed!")
+        print("=" * 60)
+        print("📖 Key Methods Demonstrated:")
+        print("   • RealtimeStreamer.__init__(config)")
+        print("   • async with RealtimeStreamer(config) as streamer:")
+        print("   • async for response in streamer.stream():")
+        print("   • streamer.get_stream_statistics()")
+        print("   • streamer.get_latest_ohlcv(symbol)")
+        print("   • StreamConfig validation and configuration")
+        print("   • Error handling and connection management")
+        print("=" * 60)
+
+    asyncio.run(main())
