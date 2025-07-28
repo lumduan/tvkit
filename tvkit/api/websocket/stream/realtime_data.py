@@ -7,14 +7,12 @@ import re
 import secrets
 import signal
 import string
-import time
 from typing import AsyncGenerator, List, Optional, Union
 
 import httpx  # Modern async HTTP client
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from tvkit.api import websocket
 from tvkit.api.websocket.stream.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
@@ -61,12 +59,12 @@ class RealTimeData:
                 cache_control="no-cache",
                 origin="https://www.tradingview.com",
                 pragma="no-cache",
-                user_agent="Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/
+                user_agent="Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
             )
 
             ws_config: WebSocketConnection = WebSocketConnection(
                 uri=self.ws_url,
-                extra_headers=request_header,
+                additional_headers=request_header,
                 compression="deflate",
                 ping_interval=20,
                 ping_timeout=10,
@@ -384,7 +382,7 @@ async def main():
     """
     async with RealTimeData() as real_time_data:
         # exchange_symbol = ["SET:AOT", "BINANCE:ETHUSDT", "FXOPEN:XAUUSD"]
-        exchange_symbol = ["TFEX:S50U2025"]
+        exchange_symbol = ["BINANCE:BTCUSDT"]
 
         # Get latest trade info
         # async for packet in real_time_data.get_latest_trade_info(exchange_symbol=exchange_symbol):
