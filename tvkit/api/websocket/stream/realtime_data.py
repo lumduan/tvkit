@@ -7,12 +7,16 @@ import re
 import secrets
 import signal
 import string
-from typing import AsyncGenerator, List, Optional, Union
+import types
+from typing import Any, AsyncGenerator, List, Optional
 
-import httpx  # Modern async HTTP client
+from websockets import ClientConnection
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from tvkit.api.utils import validate_symbols
+
+# Models for WebSocket connection and request headers
 from tvkit.api.websocket.stream.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
@@ -22,7 +26,6 @@ from tvkit.api.websocket.stream.models.realtime import (
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-
 class RealTimeData:
     def __init__(self):
         """
@@ -31,14 +34,13 @@ class RealTimeData:
         """
 
         self.ws_url: str = "wss://data.tradingview.com/socket.io/websocket?from=screener%2F"
-        self.validate_url: str = "https://scanner.tradingview.com/symbol?symbol={exchange}%3A{symbol}&fields=market&no_404=false" # URL to validate symbols
-        self.ws: Optional[object] = None
+        self.ws: ClientConnection
 
     async def __aenter__(self):
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[types.TracebackType]) -> None:
         """Async context manager exit."""
         if self.ws:
             await self.ws.close()
@@ -71,70 +73,12 @@ class RealTimeData:
                 close_timeout=10
             )
 
-            self.ws = await connect(**ws_config.model_dump())
+            self.ws: ClientConnection = await connect(**ws_config.model_dump())
 
             logging.info("WebSocket connection established successfully")
         except Exception as e:
             logging.error("Failed to establish WebSocket connection: %s", e)
             raise
-
-    async def validate_symbols(self, exchange_symbol: Union[str, List[str]]) -> bool:
-        """
-        Validates the provided exchange symbols using async HTTP requests.
-
-        Args:
-            exchange_symbol (str or list): A single symbol or a list of symbols
-                                            in the format 'EXCHANGE:SYMBOL'.
-
-        Raises:
-            ValueError: If the symbol format is invalid or if the symbol is not valid.
-
-        Returns:
-            bool: True if all symbols are valid.
-        """
-        if not exchange_symbol:
-            raise ValueError("exchange_symbol could not be empty")
-
-        if isinstance(exchange_symbol, str):
-            exchange_symbol = [exchange_symbol]
-
-        async with httpx.AsyncClient() as client:
-            for item in exchange_symbol:
-                if len(item.split(':')) != 2:
-                    raise ValueError(f"Invalid symbol format '{item}'. Must be like 'BINANCE:BTCUSDT'")
-
-                exchange, symbol = item.split(':')
-                retries = 3
-                for attempt in range(retries):
-                    try:
-                        response = await client.get(
-                            self.validate_url.format(exchange=exchange, symbol=symbol),
-                            timeout=5.0
-                        )
-                        response.raise_for_status()
-                        break  # Exit the retry loop on success
-
-                    except httpx.RequestError as e:
-                        logging.warning("Attempt %d failed to validate exchange:symbol '%s': %s",
-                                      attempt + 1, item, e)
-
-                        if attempt < retries - 1:
-                            await asyncio.sleep(1)  # Wait before retrying
-                        else:
-                            raise ValueError(f"Invalid exchange:symbol '{item}' after {retries} attempts") from e
-
-                    except httpx.HTTPStatusError as e:
-                        if e.response.status_code == 404:
-                            raise ValueError(f"Invalid exchange:symbol '{item}' - symbol not found") from e
-
-                        logging.warning("HTTP error %d for exchange:symbol '%s': %s",
-                                      e.response.status_code, item, e)
-
-                        if attempt < retries - 1:
-                            await asyncio.sleep(1)
-                        else:
-                            raise ValueError(f"Invalid exchange:symbol '{item}' after {retries} attempts") from e
-        return True
 
 
     def generate_session(self, prefix: str) -> str:
@@ -165,7 +109,7 @@ class RealTimeData:
         return f"~m~{message_length}~m~{message}"
 
 
-    def construct_message(self, func: str, param_list: list) -> str:
+    def construct_message(self, func: str, param_list: list[Any]) -> str:
         """
         Constructs a message in JSON format.
 
@@ -178,7 +122,7 @@ class RealTimeData:
         """
         return json.dumps({"m": func, "p": param_list}, separators=(',', ':'))
 
-    def create_message(self, func: str, param_list: list) -> str:
+    def create_message(self, func: str, param_list: list[Any]) -> str:
         """
         Creates a complete message with a header and a JSON body.
 
@@ -191,7 +135,7 @@ class RealTimeData:
         """
         return self.prepend_header(self.construct_message(func, param_list))
 
-    async def send_message(self, func: str, args: list) -> None:
+    async def send_message(self, func: str, args: list[Any]) -> None:
         """
         Sends a message to the WebSocket server.
 
@@ -218,8 +162,7 @@ class RealTimeData:
             logging.error("Failed to send message: %s", e)
             raise
 
-
-    async def get_ohlcv(self, exchange_symbol: str) -> AsyncGenerator[dict, None]:
+    async def get_ohlcv(self, exchange_symbol: str) -> AsyncGenerator[dict[str, Any], None]:
         """
         Returns an async generator that yields OHLC data for a specified symbol in real-time.
 
@@ -229,7 +172,7 @@ class RealTimeData:
         Returns:
             AsyncGenerator[dict, None]: An async generator yielding OHLC data as JSON objects.
         """
-        await self.validate_symbols(exchange_symbol)
+        await validate_symbols(exchange_symbol)
         await self._connect()
 
         quote_session = self.generate_session(prefix="qs_")
@@ -280,7 +223,7 @@ class RealTimeData:
         await self.send_message("quote_hibernate_all", [quote_session])
 
 
-    async def get_latest_trade_info(self, exchange_symbol: List[str]) -> AsyncGenerator[dict, None]:
+    async def get_latest_trade_info(self, exchange_symbol: List[str]) -> AsyncGenerator[dict[str, Any], None]:
         """
         Returns summary information about multiple symbols including last changes,
         change percentage, and last trade time.
@@ -291,7 +234,7 @@ class RealTimeData:
         Returns:
             AsyncGenerator[dict, None]: An async generator yielding summary information as JSON objects.
         """
-        await self.validate_symbols(exchange_symbol)
+        await validate_symbols(exchange_symbol)
         await self._connect()
 
         quote_session = self.generate_session(prefix="qs_")
@@ -316,7 +259,7 @@ class RealTimeData:
         await self.send_message("quote_fast_symbols", [quote_session]+exchange_symbols)
 
 
-    async def _get_data(self) -> AsyncGenerator[dict, None]:
+    async def _get_data(self) -> AsyncGenerator[dict[str, Any], None]:
         """
         Continuously receives data from the TradingView server via the WebSocket connection.
 
@@ -329,13 +272,21 @@ class RealTimeData:
         try:
             async for message in self.ws:
                 try:
-                    result = message
+                    # Convert message to string - WebSocket messages can be str, bytes, or memoryview
+                    if isinstance(message, str):
+                        result: str = message
+                    elif isinstance(message, bytes):
+                        result = message.decode('utf-8')
+                    else:
+                        # Handle memoryview and other buffer types
+                        result = bytes(message).decode('utf-8')
+
                     # Check if the result is a heartbeat or actual data
                     if re.match(r"~m~\d+~m~~h~\d+$", result):
                         logging.debug(f"Received heartbeat: {result}")
                         await self.ws.send(result)  # Echo back the heartbeat
                     else:
-                        split_result = [x for x in re.split(r'~m~\d+~m~', result) if x]
+                        split_result: list[str] = [x for x in re.split(r'~m~\d+~m~', result) if x]
                         for item in split_result:
                             if item:
                                 try:
@@ -359,7 +310,7 @@ class RealTimeData:
 
 
 # Signal handler for keyboard interrupt
-def signal_handler(sig: int, frame) -> None:
+def signal_handler(sig: int, frame: Optional[types.FrameType]) -> None:
     """
     Handles keyboard interrupt signals to gracefully close the WebSocket connection.
 
