@@ -42,3 +42,8 @@ exclude = ["debug*", "tests*", "scripts*", "docs*"]
 
 [tool.setuptools.package-data]
 tvkit = ["py.typed"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17.0",
+]
