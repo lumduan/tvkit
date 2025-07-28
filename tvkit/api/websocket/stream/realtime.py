@@ -9,6 +9,7 @@ and technical indicators with export capabilities.
 # Standard library imports
 import json
 import logging
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
@@ -71,7 +72,7 @@ class RealtimeStreamer:
     def __init__(
         self,
         config: StreamConfig,
-        websocket_url: str = "wss://data.tradingview.com/socket.io/websocket?from=chart%2FVEPYsueI%2F&type=chart",
+        websocket_url: str = "wss://data.tradingview.com/socket.io/websocket?from=screener%2F",
         jwt_token: str = "unauthorized_user_token",
     ):
         """
@@ -285,10 +286,22 @@ class RealtimeStreamer:
             raise SessionError("Session not initialized or WebSocket not connected")
 
         try:
-            # Initialize sessions
+            # Initialize sessions with the correct sequence from working version
             await self._send_message("set_auth_token", [self.jwt_token])
+            await self._send_message("set_locale", ["en", "US"])
             await self._send_message("chart_create_session", [self.session_info.chart_session, ""])
             await self._send_message("quote_create_session", [self.session_info.quote_session])
+
+            # Set quote fields like the working version
+            quote_fields = [
+                "ch", "chp", "current_session", "description", "local_description",
+                "language", "exchange", "fractional", "is_tradable", "lp",
+                "lp_time", "minmov", "minmove2", "original_name", "pricescale",
+                "pro_name", "short_name", "type", "update_mode", "volume",
+                "currency_code", "rchp", "rtc"
+            ]
+            await self._send_message("quote_set_fields", [self.session_info.quote_session] + quote_fields)
+            await self._send_message("quote_hibernate_all", [self.session_info.quote_session])
 
             # Add symbols to sessions
             for symbol in self.config.symbols:
@@ -343,33 +356,31 @@ class RealtimeStreamer:
             raise SessionError("Session not initialized")
 
         try:
-            resolve_symbol: str = json.dumps({"adjustment": "splits", "symbol": symbol})
+            # Use correct symbol format for TradingView
+            resolve_symbol: str = f'={{"symbol":"{symbol}","adjustment":"splits"}}'
 
             # Add symbol to quote session
             await self._send_message("quote_add_symbols", [
                 self.session_info.quote_session,
-                f"={resolve_symbol}"
+                resolve_symbol
             ])
 
             # Add symbol to chart session
             await self._send_message("resolve_symbol", [
                 self.session_info.chart_session,
                 "sds_sym_1",
-                f"={resolve_symbol}"
+                resolve_symbol
             ])
 
-            # Create series for OHLCV data
+            # Create series for OHLCV data - fix the parameters format
             await self._send_message("create_series", [
                 self.session_info.chart_session,
                 "sds_1",
                 "s1",
                 "sds_sym_1",
                 self.config.timeframe,
-                self.config.num_candles,
-                ""
-            ])
-
-            # Enable fast symbols for real-time updates
+                self.config.num_candles
+            ])            # Enable fast symbols for real-time updates
             await self._send_message("quote_fast_symbols", [
                 self.session_info.quote_session,
                 symbol
@@ -475,6 +486,13 @@ class RealtimeStreamer:
             if not message.startswith('~m~'):
                 return None
 
+            # Check if this is a heartbeat message (format: ~m~4~m~~h~1)
+            if re.match(r"~m~\d+~m~~h~\d+$", message):
+                # Echo back the heartbeat
+                if self.ws:
+                    await self.ws.send(message)
+                return None
+
             # Extract JSON part from TradingView message format
             parts: List[str] = message.split('~m~')
             if len(parts) < 3:
@@ -511,11 +529,15 @@ class RealtimeStreamer:
             DataParsingError: If data parsing fails.
         """
         try:
+            # Check for timescale_update messages (main OHLCV data source)
+            if data.get('m') == 'timescale_update':
+                return await self._parse_timescale_update(data)
+
             message_params: List[Any] = data.get('p', [])
             if len(message_params) < 2:
                 return None
 
-            # Check for OHLCV data
+            # Check for OHLCV data in parameters
             if 'sds_1' in str(message_params):
                 return await self._parse_ohlcv_data(message_params)
 
@@ -531,6 +553,80 @@ class RealtimeStreamer:
 
         except Exception as e:
             raise DataParsingError(f"Data message parsing error: {e}", data)
+
+    async def _parse_timescale_update(self, data: Dict[str, Any]) -> Optional[StreamerResponse]:
+        """
+        Parse timescale_update message containing OHLCV data.
+
+        Args:
+            data: Message data containing timescale_update.
+
+        Returns:
+            StreamerResponse with OHLCV data or None.
+        """
+        try:
+            params = data.get('p', [])
+            if len(params) < 2:
+                return None
+
+            # Extract the series data from timescale_update
+            series_data = params[1]  # type: ignore
+            if not isinstance(series_data, dict) or 'sds_1' not in series_data:
+                return None
+
+            sds_data = series_data['sds_1']  # type: ignore
+            if not isinstance(sds_data, dict) or 's' not in sds_data:
+                return None
+
+            # Parse OHLCV candles
+            candles = sds_data['s']  # type: ignore
+            if not isinstance(candles, list):
+                return None
+
+            ohlcv_list: List[OHLCVData] = []
+
+            for candle in candles:
+                if not isinstance(candle, dict) or 'v' not in candle:
+                    continue
+
+                values = candle['v']  # type: ignore
+                if not isinstance(values, list) or len(values) < 6:
+                    continue
+
+                try:
+                    index = int(candle.get('i', 0))  # type: ignore
+                    ohlcv = OHLCVData(
+                        index=index,
+                        timestamp=int(float(values[0])),  # type: ignore
+                        open=Decimal(str(values[1])),  # type: ignore
+                        high=Decimal(str(values[2])),  # type: ignore
+                        low=Decimal(str(values[3])),  # type: ignore
+                        close=Decimal(str(values[4])),  # type: ignore
+                        volume=Decimal(str(values[5]))  # type: ignore
+                    )
+                    ohlcv_list.append(ohlcv)
+                except (ValueError, TypeError, IndexError) as e:
+                    logger.warning(f"Error parsing OHLCV entry: {e}")
+                    continue
+
+            if not ohlcv_list:
+                return None
+
+            # Get symbol from config
+            symbol = self.config.symbols[0] if self.config.symbols else "UNKNOWN"
+
+            return StreamerResponse(
+                symbol=symbol,
+                data_type='ohlcv',
+                ohlcv_data=ohlcv_list,
+                trade_data=None,
+                indicator_data=None,
+                metadata={'raw_data': data}
+            )
+
+        except Exception as e:
+            logger.warning(f"Timescale update parsing error: {e}")
+            return None
 
     async def _parse_ohlcv_data(self, params: List[Any]) -> Optional[StreamerResponse]:
         """
@@ -797,3 +893,62 @@ class RealtimeStreamer:
         if self.stream_data:
             return self.stream_data.get_latest_ohlcv(symbol)
         return None
+
+if __name__ == "__main__":
+    # Example usage
+    import asyncio
+
+    async def main():
+        config: StreamConfig = StreamConfig(
+            symbols=["BINANCE:BTCUSDT"],  # Use a more common symbol
+            timeframe="1m",  # Use minute instead of daily
+            num_candles=10,  # Smaller number for testing
+            include_indicators=False,
+            indicator_id=None,
+            indicator_version=None,
+            export_config=None
+        )
+
+        print("🚀 Starting TradingView WebSocket connection...")
+        try:
+            async with RealtimeStreamer(config) as streamer:
+                print("✅ Connected! Waiting for data...")
+                message_count: int = 0
+
+                async for data in streamer.stream():
+                    message_count += 1
+                    print(f"\n📊 [{message_count}] Received data for {data.symbol} ({data.data_type})")
+
+                    # Print OHLCV data if available
+                    if data.data_type == 'ohlcv' and data.ohlcv_data:
+                        print(f"🎯 OHLCV Data ({len(data.ohlcv_data)} candles):")
+                        for i, ohlcv in enumerate(data.ohlcv_data):
+                            print(f"  [{i+1}] {ohlcv.datetime.strftime('%Y-%m-%d %H:%M:%S')} | "
+                                  f"O: {ohlcv.open} | H: {ohlcv.high} | L: {ohlcv.low} | "
+                                  f"C: {ohlcv.close} | V: {ohlcv.volume}")
+
+                    # Print trade data if available
+                    elif data.data_type == 'trade' and data.trade_data:
+                        trade = data.trade_data
+                        print(f"💰 Trade: {trade.symbol} - Price: {trade.price} | Volume: {trade.volume}")
+
+                    # Print indicator data if available
+                    elif data.data_type == 'indicator' and data.indicator_data:
+                        indicator = data.indicator_data
+                        print(f"📊 Indicator ({indicator.indicator_id}): {indicator.values}")
+
+                    print("-" * 80)
+
+                    # Stop after receiving some data for demo
+                    if message_count >= 10:
+                        print("🏁 Demo complete - received 10 messages")
+                        break
+
+        except KeyboardInterrupt:
+            print("\n⏹️ Stopped by user")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    asyncio.run(main())

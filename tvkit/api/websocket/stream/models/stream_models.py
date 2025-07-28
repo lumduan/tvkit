@@ -5,10 +5,12 @@ This module provides type-safe data models for all real-time streaming
 operations including OHLCV data, trade information, and WebSocket messages.
 """
 
-from typing import Any, Dict, List, Optional, Literal
+import json
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict, field_validator
 from decimal import Decimal
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OHLCVData(BaseModel):
@@ -154,8 +156,14 @@ class WebSocketMessage(BaseModel):
 
     def format_message(self) -> str:
         """Format message for WebSocket transmission."""
-        formatted_params: str = '["' + '","'.join(map(str, self.params)) + '"]'
-        return f'~m~{len(self.method) + len(formatted_params) + 4}~m~{{"m":"{self.method}","p":{formatted_params}}}'
+        # Properly serialize the entire message as JSON
+        message_data = {
+            "m": self.method,
+            "p": self.params
+        }
+        message_json = json.dumps(message_data, separators=(',', ':'))
+        message_length = len(message_json)
+        return f"~m~{message_length}~m~{message_json}"
 
 
 class ExportConfig(BaseModel):
