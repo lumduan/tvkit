@@ -15,6 +15,7 @@ from tvkit.api.chart.models.ohlcv import (
     WebSocketMessage,
 )
 from tvkit.api.chart.services import ConnectionService, MessageService
+from tvkit.api.chart.utils import validate_timeframe
 from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
 
 # Configure logging
@@ -89,6 +90,7 @@ class OHLCV:
             ...         print(f"Close: ${bar.close}, Volume: {bar.volume}")
         """
         await validate_symbols(exchange_symbol)
+        validate_timeframe(timeframe)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -213,6 +215,7 @@ class OHLCV:
             WebSocketException: If connection or streaming fails
         """
         await validate_symbols(exchange_symbol)
+        validate_timeframe(timeframe)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -357,6 +360,7 @@ class OHLCV:
             ...         print(f"Price: ${quote.current_price}")
         """
         await validate_symbols(exchange_symbol)
+        validate_timeframe(timeframe)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -452,6 +456,7 @@ class OHLCV:
             ...         print(f"Raw message: {raw_data}")
         """
         await validate_symbols(exchange_symbol)
+        validate_timeframe(timeframe)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
