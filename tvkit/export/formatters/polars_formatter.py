@@ -7,12 +7,15 @@ offering high-performance data processing and analysis capabilities.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
-try:
+if TYPE_CHECKING:
     import polars as pl
-except ImportError:
-    pl = None  # type: ignore
+else:
+    try:
+        import polars as pl
+    except ImportError:
+        pl = None  # type: ignore[assignment]
 
 from ..models import (
     ExportConfig,
@@ -40,7 +43,7 @@ class PolarsFormatter(BaseFormatter):
         Raises:
             ImportError: If Polars is not installed
         """
-        if pl is None:
+        if not TYPE_CHECKING and pl is None:
             raise ImportError(
                 "Polars is required for PolarsFormatter. Install with: uv add polars"
             )
@@ -88,6 +91,7 @@ class PolarsFormatter(BaseFormatter):
                 records.append(record)
 
             # Create Polars DataFrame
+            assert pl is not None  # Already checked in __init__
             df: pl.DataFrame = pl.DataFrame(records)
 
             # Apply timestamp conversion if needed
@@ -161,6 +165,7 @@ class PolarsFormatter(BaseFormatter):
                 records.append(record)
 
             # Create Polars DataFrame
+            assert pl is not None  # Already checked in __init__
             df: pl.DataFrame = pl.DataFrame(records)
 
             # Create metadata
@@ -192,6 +197,7 @@ class PolarsFormatter(BaseFormatter):
             DataFrame with additional analysis columns
         """
         try:
+            assert pl is not None  # Already checked in __init__
             analysis_df: pl.DataFrame = (
                 df.with_columns(
                     [

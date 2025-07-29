@@ -10,7 +10,6 @@ __author__ = "lumduan"
 __license__ = "MIT"
 
 # Core functionality
-from .core import get_version, hello_tvkit
 
 # Main API exports - add these as you develop the library
 # from .api.scanner import ScannerRequest, ScannerResponse
@@ -20,6 +19,4 @@ __all__ = [
     "__version__",
     "__author__",
     "__license__",
-    "get_version",
-    "hello_tvkit",
 ]

@@ -7,7 +7,7 @@ from tvkit APIs to various formats including Polars DataFrames, JSON, and CSV.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union, overload
+from typing import Any, Dict, List, Optional, Type, Union, overload, cast
 
 from .models import (
     ExportConfig,
@@ -166,7 +166,7 @@ class DataExporter:
         self, data: List[OHLCVBar], add_analysis: bool = False
     ) -> Any: ...
 
-    @overload  
+    @overload
     async def to_polars(
         self, data: List[StockData], add_analysis: bool = False
     ) -> Any: ...
@@ -195,11 +195,15 @@ class DataExporter:
 
         if data and isinstance(data[0], OHLCVBar):
             result: ExportResult = await self.export_ohlcv_data(
-                data, ExportFormat.POLARS, config=config  # type: ignore
+                cast(List[OHLCVBar], data),
+                ExportFormat.POLARS,
+                config=config,
             )
         else:
             result = await self.export_scanner_data(
-                data, ExportFormat.POLARS, config=config  # type: ignore
+                cast(List[StockData], data),
+                ExportFormat.POLARS,
+                config=config,
             )
 
         if not result.success:
@@ -242,11 +246,17 @@ class DataExporter:
 
         if data and isinstance(data[0], OHLCVBar):
             result: ExportResult = await self.export_ohlcv_data(
-                data, ExportFormat.JSON, file_path, config  # type: ignore
+                cast(List[OHLCVBar], data),
+                ExportFormat.JSON,
+                file_path,
+                config,
             )
         else:
             result = await self.export_scanner_data(
-                data, ExportFormat.JSON, file_path, config  # type: ignore
+                cast(List[StockData], data),
+                ExportFormat.JSON,
+                file_path,
+                config,
             )
 
         if not result.success:
@@ -293,11 +303,17 @@ class DataExporter:
 
         if data and isinstance(data[0], OHLCVBar):
             result: ExportResult = await self.export_ohlcv_data(
-                data, ExportFormat.CSV, file_path, config  # type: ignore
+                cast(List[OHLCVBar], data),
+                ExportFormat.CSV,
+                file_path,
+                config,
             )
         else:
             result = await self.export_scanner_data(
-                data, ExportFormat.CSV, file_path, config  # type: ignore
+                cast(List[StockData], data),
+                ExportFormat.CSV,
+                file_path,
+                config,
             )
 
         if not result.success:
