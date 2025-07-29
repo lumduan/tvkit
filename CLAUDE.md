@@ -6,7 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Testing
 - Run all tests: `uv run python -m pytest tests/ -v`
-- Run specific test file: `uv run python -m pytest tests/test_ohlcv_models.py -v`
+- Run specific test file: 
+  - `uv run python -m pytest tests/test_ohlcv_models.py -v`
+  - `uv run python -m pytest tests/test_realtime_models.py -v`
+  - `uv run python -m pytest tests/test_interval_validation.py -v`
+  - `uv run python -m pytest tests/test_utils.py -v`
 - Run with coverage: `uv run python -m pytest tests/ --cov=tvkit`
 
 ### Code Quality
@@ -18,7 +22,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Development
 - Install dependencies: `uv sync`
 - **Execute Python**: Use `uv run python <script.py>` or `uv run python -m <module>` (NEVER use pip, poetry, or conda)
-- Run example scripts: `uv run python examples/realtime_streaming_example.py`
+- Run example scripts: 
+  - `uv run python examples/realtime_streaming_example.py`
+  - `uv run python examples/polars_financial_analysis.py`
 - Publish: `./scripts/publish.sh`
 
 ### Git Workflow
@@ -33,14 +39,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 1. Scanner API (`tvkit.api.scanner`)
 - Provides typed models for TradingView's scanner API
-- Key classes: `ScannerRequest`, `ScannerResponse`, `StockData`
-- Factory functions: `create_scanner_request()` with presets and column sets
+- Key classes: Located in `model.py`
 - Used for stock screening, filtering, and fundamental analysis
 
 ### 2. Real-Time Chart API (`tvkit.api.chart`)
 - Async WebSocket streaming for real-time market data
-- Key classes: `OHLCV`, `RealtimeStreamer`
-- Supports OHLCV data streaming and quote data
+- Key classes: `OHLCV` models, real-time streaming models
+- Main client: `ohlcv.py` with streaming functionality
+- Services: `connection_service.py`, `message_service.py`
+- Models: `ohlcv.py`, `realtime.py`, `stream_models.py`
+- Utilities: `utils.py` for helper functions
 - Built with modern async patterns using `websockets` and `httpx`
 
 ## Key Patterns
@@ -68,16 +76,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 tvkit/
 ├── tvkit/
 │   ├── api/
-│   │   ├── chart/          # Real-time WebSocket streaming
-│   │   │   ├── models/     # Pydantic data models
-│   │   │   ├── services/   # WebSocket services
-│   │   │   └── ohlcv.py  # Main client
-│   │   └── scanner/        # Scanner API models
-│   └── core.py
-├── tests/                  # Pytest test suite
-├── examples/               # Working usage examples
-├── docs/                   # Documentation
-└── debug/                  # Debug scripts (gitignored)
+│   │   ├── chart/              # Real-time WebSocket streaming
+│   │   │   ├── models/         # Pydantic data models
+│   │   │   │   ├── ohlcv.py    # OHLCV data models
+│   │   │   │   ├── realtime.py # Real-time streaming models
+│   │   │   │   └── stream_models.py # Stream-specific models
+│   │   │   ├── services/       # WebSocket services
+│   │   │   │   ├── connection_service.py # Connection management
+│   │   │   │   └── message_service.py    # Message handling
+│   │   │   ├── ohlcv.py        # Main OHLCV client
+│   │   │   └── utils.py        # Chart utilities
+│   │   ├── scanner/            # Scanner API models
+│   │   │   └── model.py        # Scanner data models
+│   │   └── utils.py            # General API utilities
+│   ├── core.py                 # Core functionality
+│   └── py.typed                # Type declarations marker
+├── tests/                      # Pytest test suite
+├── examples/                   # Working usage examples
+├── docs/                       # Documentation
+├── debug/                      # Debug scripts (gitignored)
+├── export/                     # Export output directory
+└── scripts/                    # Utility scripts
 ```
 
 ## Development Guidelines
@@ -152,22 +171,28 @@ tvkit/
 - `httpx>=0.28.0` - Async HTTP client
 - `polars>=1.0.0` - Data processing and analysis
 - `pytest>=8.0.0` + `pytest-asyncio>=0.23.0` - Testing framework
+- `ruff>=0.12.4` - Code linting and formatting
+- `mypy>=1.17.0` - Static type checking (dev dependency)
 
 ## Important Notes
 - Uses `uv` for dependency management (not pip/poetry)
-- Python 3.13+ required
+- Python 3.13+ required (specified in pyproject.toml)
 - All WebSocket operations are async with proper connection management
 - Symbol validation done via async HTTP requests
 - Export functionality supports CSV, JSON, and Parquet formats
+- Includes `py.typed` marker file for type information distribution
+- Build system uses setuptools with wheel support
 
 ## File Organization Standards
 
 ### Directory Structure Requirements
 - `/tests/`: ALL pytest tests, comprehensive coverage required
 - `/examples/`: ONLY real-world usage examples, fully functional
-- `/docs/`: ALL documentation files
+- `/docs/`: ALL documentation files (includes POLARS_INTEGRATION.md, realtime_streaming.md)
 - `/debug/`: Temporary debug scripts ONLY (gitignored)
 - `/scripts/`: Utility scripts for development and CI/CD
+- `/export/`: Output directory for exported data (CSV, JSON, Parquet)
+- `/dist/`: Build artifacts and distribution files
 
 ### File Naming Conventions
 - Snake_case for all Python files
@@ -183,7 +208,11 @@ from typing import Any, Optional
 
 # 2. Third-party imports
 import httpx
+import polars as pl
 from pydantic import BaseModel
+
+# 3. Local imports
+from tvkit.api.chart.models import OHLCV
 ```
 
 ## Documentation Standards
