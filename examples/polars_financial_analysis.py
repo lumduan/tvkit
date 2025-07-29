@@ -10,7 +10,6 @@ import asyncio
 import logging
 from pathlib import Path
 import polars as pl
-from datetime import datetime
 
 # Configure logging
 logging.basicConfig(

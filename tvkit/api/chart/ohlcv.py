@@ -15,7 +15,7 @@ from tvkit.api.chart.models.ohlcv import (
     WebSocketMessage,
 )
 from tvkit.api.chart.services import ConnectionService, MessageService
-from tvkit.api.chart.utils import validate_timeframe
+from tvkit.api.chart.utils import validate_interval
 from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
 
 # Configure logging
@@ -64,7 +64,7 @@ class OHLCV:
         self.message_service = MessageService(self.connection_service.ws)
 
     async def get_ohlcv(
-        self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10
+        self, exchange_symbol: str, interval: str = "1", bars_count: int = 10
     ) -> AsyncGenerator[OHLCVBar, None]:
         """
         Returns an async generator that yields OHLC data for a specified symbol in real-time.
@@ -74,7 +74,7 @@ class OHLCV:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'BINANCE:BTCUSDT').
-            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
         Returns:
@@ -86,11 +86,11 @@ class OHLCV:
 
         Example:
             >>> async with OHLCV() as client:
-            ...     async for bar in client.get_ohlcv("BINANCE:BTCUSDT", timeframe="5"):
+            ...     async for bar in client.get_ohlcv("BINANCE:BTCUSDT", interval="5"):
             ...         print(f"Close: ${bar.close}, Volume: {bar.volume}")
         """
         await validate_symbols(exchange_symbol)
-        validate_timeframe(timeframe)
+        validate_interval(interval)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -110,7 +110,7 @@ class OHLCV:
             quote_session,
             chart_session,
             exchange_symbol,
-            timeframe,
+            interval,
             bars_count,
             send_message_func,
         )
@@ -195,7 +195,7 @@ class OHLCV:
                 continue
 
     async def get_historical_ohlcv(
-        self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10
+        self, exchange_symbol: str, interval: str = "1", bars_count: int = 10
     ) -> list[OHLCVBar]:
         """
         Returns a list of historical OHLCV data for a specified symbol.
@@ -204,7 +204,7 @@ class OHLCV:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'BINANCE:BTCUSDT').
-            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
         Returns:
@@ -215,7 +215,7 @@ class OHLCV:
             WebSocketException: If connection or streaming fails
         """
         await validate_symbols(exchange_symbol)
-        validate_timeframe(timeframe)
+        validate_interval(interval)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -235,7 +235,7 @@ class OHLCV:
             quote_session,
             chart_session,
             exchange_symbol,
-            timeframe,
+            interval,
             bars_count,
             send_message_func,
         )
@@ -334,7 +334,7 @@ class OHLCV:
         return historical_bars
 
     async def get_quote_data(
-        self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10
+        self, exchange_symbol: str, interval: str = "1", bars_count: int = 10
     ) -> AsyncGenerator[QuoteSymbolData, None]:
         """
         Returns an async generator that yields quote data for a specified symbol in real-time.
@@ -344,7 +344,7 @@ class OHLCV:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'NASDAQ:AAPL').
-            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
         Returns:
@@ -356,11 +356,11 @@ class OHLCV:
 
         Example:
             >>> async with OHLCV() as client:
-            ...     async for quote in client.get_quote_data("NASDAQ:AAPL", timeframe="5"):
+            ...     async for quote in client.get_quote_data("NASDAQ:AAPL", interval="5"):
             ...         print(f"Price: ${quote.current_price}")
         """
         await validate_symbols(exchange_symbol)
-        validate_timeframe(timeframe)
+        validate_interval(interval)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -380,7 +380,7 @@ class OHLCV:
             quote_session,
             chart_session,
             exchange_symbol,
-            timeframe,
+            interval,
             bars_count,
             send_message_func,
         )
@@ -430,7 +430,7 @@ class OHLCV:
                 continue
 
     async def get_ohlcv_raw(
-        self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10
+        self, exchange_symbol: str, interval: str = "1", bars_count: int = 10
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Returns an async generator that yields raw OHLC data for a specified symbol in real-time.
@@ -440,7 +440,7 @@ class OHLCV:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL'.
-            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
         Returns:
@@ -452,11 +452,11 @@ class OHLCV:
 
         Example:
             >>> async with OHLCV() as client:
-            ...     async for raw_data in client.get_ohlcv_raw("BINANCE:BTCUSDT", timeframe="5"):
+            ...     async for raw_data in client.get_ohlcv_raw("BINANCE:BTCUSDT", interval="5"):
             ...         print(f"Raw message: {raw_data}")
         """
         await validate_symbols(exchange_symbol)
-        validate_timeframe(timeframe)
+        validate_interval(interval)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -476,7 +476,7 @@ class OHLCV:
             quote_session,
             chart_session,
             exchange_symbol,
-            timeframe,
+            interval,
             bars_count,
             send_message_func,
         )
@@ -562,7 +562,7 @@ async def main():
         bars: int = 1000
 
         historical_bars: list[OHLCVBar] = await real_time_data.get_historical_ohlcv(
-            exchange_symbol=exchange_symbol[0], timeframe="1D", bars_count=bars
+            exchange_symbol=exchange_symbol[0], interval="1D", bars_count=bars
         )
 
         for bar in historical_bars:

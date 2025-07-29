@@ -3,9 +3,9 @@
 import re
 
 
-def validate_timeframe(timeframe: str) -> None:
+def validate_interval(interval: str) -> None:
     """
-    Validates TradingView timeframe format.
+    Validates TradingView interval format.
 
     Supports TradingView interval formats:
     - Minutes: "1", "5", "15", "30", "45" (number only)
@@ -16,25 +16,25 @@ def validate_timeframe(timeframe: str) -> None:
     - Months: "M", "1M", "2M", "3M", "6M" (M or number + M)
 
     Args:
-        timeframe: The timeframe string to validate
+        interval: The interval string to validate
 
     Raises:
-        ValueError: If timeframe format is invalid
+        ValueError: If interval format is invalid
 
     Example:
-        >>> validate_timeframe("5")     # 5 minutes - valid
-        >>> validate_timeframe("1H")    # 1 hour - valid
-        >>> validate_timeframe("D")     # Daily - valid
-        >>> validate_timeframe("15S")   # 15 seconds - valid
-        >>> validate_timeframe("2W")    # 2 weeks - valid
-        >>> validate_timeframe("invalid")  # Raises ValueError
+        >>> validate_interval("5")     # 5 minutes - valid
+        >>> validate_interval("1H")    # 1 hour - valid
+        >>> validate_interval("D")     # Daily - valid
+        >>> validate_interval("15S")   # 15 seconds - valid
+        >>> validate_interval("2W")    # 2 weeks - valid
+        >>> validate_interval("invalid")  # Raises ValueError
     """
-    if not timeframe.strip():
-        raise ValueError("Timeframe must be a non-empty string")
+    if not interval.strip():
+        raise ValueError("Interval must be a non-empty string")
 
-    timeframe = timeframe.strip()
+    interval = interval.strip()
 
-    # Pattern for TradingView timeframe formats
+    # Pattern for TradingView interval formats
     # Minutes: just numbers (1, 5, 15, 30, 45, 60, 120, 180, 240, 360, 480, 720, 1440)
     # Seconds: number + S (1S, 5S, 15S, 30S)
     # Hours: number + H (1H, 2H, 3H, 4H, 6H, 8H, 12H)
@@ -52,62 +52,62 @@ def validate_timeframe(timeframe: str) -> None:
     ]
 
     for pattern in patterns:
-        if re.match(pattern, timeframe):
+        if re.match(pattern, interval):
             # Additional validation for reasonable ranges
-            if timeframe.isdigit():
+            if interval.isdigit():
                 # Minutes validation
-                minutes: int = int(timeframe)
+                minutes: int = int(interval)
                 if (
                     minutes <= 0 or minutes > 1440
                 ):  # Max 1 day in minutes (common limit)
                     raise ValueError(
-                        f"Invalid minute timeframe: {timeframe}. Must be between 1 and 1440 minutes"
+                        f"Invalid minute interval: {interval}. Must be between 1 and 1440 minutes"
                     )
-            elif timeframe.endswith("S"):
+            elif interval.endswith("S"):
                 # Seconds validation
-                seconds: int = int(timeframe[:-1])
+                seconds: int = int(interval[:-1])
                 if seconds <= 0 or seconds > 60:  # Max 60 seconds
                     raise ValueError(
-                        f"Invalid second timeframe: {timeframe}. Must be between 1S and 60S"
+                        f"Invalid second interval: {interval}. Must be between 1S and 60S"
                     )
-            elif timeframe.endswith("H"):
+            elif interval.endswith("H"):
                 # Hours validation
-                hours: int = int(timeframe[:-1])
+                hours: int = int(interval[:-1])
                 if hours <= 0 or hours > 168:  # Max 1 week in hours
                     raise ValueError(
-                        f"Invalid hour timeframe: {timeframe}. Must be between 1H and 168H"
+                        f"Invalid hour interval: {interval}. Must be between 1H and 168H"
                     )
-            elif timeframe.endswith("D"):
+            elif interval.endswith("D"):
                 # Days validation
-                if timeframe == "D":
+                if interval == "D":
                     return  # Valid
-                days: int = int(timeframe[:-1])
+                days: int = int(interval[:-1])
                 if days <= 0 or days > 365:  # Max 1 year in days
                     raise ValueError(
-                        f"Invalid day timeframe: {timeframe}. Must be between 1D and 365D"
+                        f"Invalid day interval: {interval}. Must be between 1D and 365D"
                     )
-            elif timeframe.endswith("W"):
+            elif interval.endswith("W"):
                 # Weeks validation
-                if timeframe == "W":
+                if interval == "W":
                     return  # Valid
-                weeks: int = int(timeframe[:-1])
+                weeks: int = int(interval[:-1])
                 if weeks <= 0 or weeks > 52:  # Max 1 year in weeks
                     raise ValueError(
-                        f"Invalid week timeframe: {timeframe}. Must be between 1W and 52W"
+                        f"Invalid week interval: {interval}. Must be between 1W and 52W"
                     )
-            elif timeframe.endswith("M"):
+            elif interval.endswith("M"):
                 # Months validation
-                if timeframe == "M":
+                if interval == "M":
                     return  # Valid
-                months: int = int(timeframe[:-1])
+                months: int = int(interval[:-1])
                 if months <= 0 or months > 12:  # Max 1 year in months
                     raise ValueError(
-                        f"Invalid month timeframe: {timeframe}. Must be between 1M and 12M"
+                        f"Invalid month interval: {interval}. Must be between 1M and 12M"
                     )
-            return  # Valid timeframe
+            return  # Valid interval
 
     raise ValueError(
-        f"Invalid timeframe format: '{timeframe}'. "
+        f"Invalid interval format: '{interval}'. "
         f"Expected formats: minutes (1, 5, 15), seconds (15S), hours (1H), "
         f"days (D, 1D), weeks (W, 1W), months (M, 1M)"
     )
