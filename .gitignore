@@ -9,3 +9,4 @@ debug/
 .env
 # Virtual environments
 .venv
+.claude/
