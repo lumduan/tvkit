@@ -14,15 +14,15 @@ try:
 except ImportError:
     pl = None  # type: ignore
 
-from .base_formatter import BaseFormatter
 from ..models import (
     ExportConfig,
-    ExportResult,
-    ExportMetadata,
     ExportFormat,
+    ExportMetadata,
+    ExportResult,
     OHLCVExportData,
     ScannerExportData,
 )
+from .base_formatter import BaseFormatter
 
 logger = logging.getLogger(__name__)
 
