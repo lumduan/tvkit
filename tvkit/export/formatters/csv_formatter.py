@@ -8,7 +8,7 @@ formatting options and metadata handling.
 import csv
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union, Sequence, Literal
+from typing import Any, Dict, List, Union, Sequence, Set, Literal, cast
 
 from .base_formatter import BaseFormatter
 from ..models import (
@@ -136,7 +136,7 @@ class CSVFormatter(BaseFormatter):
                 file_path = Path(file_path)
 
             # Collect all unique columns from scanner data
-            all_columns: set[str] = {"name"}
+            all_columns: Set[str] = {"name"}
             for item in data:
                 all_columns.update(item.data.keys())
 
@@ -211,7 +211,10 @@ class CSVFormatter(BaseFormatter):
 
         # Get CSV options
         delimiter: str = self.config.options.get("delimiter", ",")
-        quoting: Literal[0, 1, 2, 3, 4, 5] = self.config.options.get("quoting", csv.QUOTE_MINIMAL)
+        quoting: Literal[0, 1, 2, 3, 4, 5] = cast(
+            Literal[0, 1, 2, 3, 4, 5],
+            self.config.options.get("quoting", csv.QUOTE_MINIMAL),
+        )
         line_terminator: str = self.config.options.get("line_terminator", "\n")
 
         # Write CSV file
