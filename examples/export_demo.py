@@ -269,7 +269,7 @@ async def main():
 
         await demo_advanced_polars_analysis()
 
-        # await demo_custom_configuration()
+        await demo_custom_configuration()
 
         # await demo_error_handling()
 
