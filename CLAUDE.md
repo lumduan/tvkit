@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `uv run python -m pytest tests/test_realtime_models.py -v`
   - `uv run python -m pytest tests/test_interval_validation.py -v`
   - `uv run python -m pytest tests/test_utils.py -v`
+  - `uv run python -m pytest tests/test_export_module.py -v`
 - Run with coverage: `uv run python -m pytest tests/ --cov=tvkit`
 
 ### Code Quality
@@ -25,6 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run example scripts: 
   - `uv run python examples/realtime_streaming_example.py`
   - `uv run python examples/polars_financial_analysis.py`
+  - `uv run python examples/export_demo.py`
 - Publish: `./scripts/publish.sh`
 
 ### Git Workflow
@@ -35,7 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-**tvkit** is a Python library for TradingView's financial data APIs with two main components:
+**tvkit** is a Python library for TradingView's financial data APIs with three main components:
 
 ### 1. Scanner API (`tvkit.api.scanner`)
 - Provides typed models for TradingView's scanner API
@@ -50,6 +52,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Models: `ohlcv.py`, `realtime.py`, `stream_models.py`
 - Utilities: `utils.py` for helper functions
 - Built with modern async patterns using `websockets` and `httpx`
+
+### 3. Data Export System (`tvkit.export`)
+- Multi-format data export for financial analysis
+- Main class: `DataExporter` with unified export interface
+- Formatters: `PolarsFormatter`, `JSONFormatter`, `CSVFormatter`
+- Models: Export configuration and result models with Pydantic validation
+- Supports Polars DataFrames, JSON files, CSV files with metadata
+- Built-in financial analysis integration (SMA, VWAP, technical indicators)
 
 ## Key Patterns
 
@@ -89,6 +99,14 @@ tvkit/
 │   │   ├── scanner/            # Scanner API models
 │   │   │   └── model.py        # Scanner data models
 │   │   └── utils.py            # General API utilities
+│   ├── export/                 # Data export system
+│   │   ├── formatters/         # Export format handlers
+│   │   │   ├── base_formatter.py    # Abstract base class
+│   │   │   ├── polars_formatter.py  # Polars DataFrame export
+│   │   │   ├── json_formatter.py    # JSON file export
+│   │   │   └── csv_formatter.py     # CSV file export
+│   │   ├── data_exporter.py    # Main DataExporter class
+│   │   └── models.py           # Export configuration models
 │   ├── core.py                 # Core functionality
 │   └── py.typed                # Type declarations marker
 ├── tests/                      # Pytest test suite
@@ -179,7 +197,8 @@ tvkit/
 - Python 3.13+ required (specified in pyproject.toml)
 - All WebSocket operations are async with proper connection management
 - Symbol validation done via async HTTP requests
-- Export functionality supports CSV, JSON, and Parquet formats
+- Export functionality supports Polars DataFrames, CSV, JSON, and Parquet formats
+- DataExporter class provides unified interface for all export operations
 - Includes `py.typed` marker file for type information distribution
 - Build system uses setuptools with wheel support
 
@@ -213,6 +232,7 @@ from pydantic import BaseModel
 
 # 3. Local imports
 from tvkit.api.chart.models import OHLCV
+from tvkit.export import DataExporter, ExportFormat
 ```
 
 ## Documentation Standards
