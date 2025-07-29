@@ -5,7 +5,7 @@ This module provides comprehensive functionality for streaming real-time market 
 from TradingView, including OHLCV data, trade information, and technical indicators.
 """
 
-
+from .realtime_data import RealTimeData
 from .models import (
     ExportConfig,
     IndicatorData,
@@ -21,6 +21,7 @@ from .models import (
 
 __all__ = [
     # Main streamer class
+    "RealTimeData",
 
     # Data models
     "OHLCVData",
@@ -33,5 +34,4 @@ __all__ = [
     "RealtimeStreamData",
     "ExportConfig",
     "SymbolInfo",
-
 ]
