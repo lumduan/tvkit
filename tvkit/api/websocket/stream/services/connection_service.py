@@ -113,7 +113,9 @@ class ConnectionService:
         quote_session: str,
         chart_session: str,
         exchange_symbol: str,
-        send_message_func: Callable[[str, list[Any]], Awaitable[None]]
+        timeframe: str,
+        bars_count: int,
+        send_message_func: Callable[[str, list[Any]], Awaitable[None]],
     ) -> None:
         """
         Adds the specified symbol to the quote and chart sessions.
@@ -122,12 +124,14 @@ class ConnectionService:
             quote_session: The quote session identifier
             chart_session: The chart session identifier
             exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' format
+            timeframe: The timeframe for the chart (default is "1")
+            bars_count: Number of bars to fetch for the chart
             send_message_func: Function to send messages through the WebSocket
         """
         resolve_symbol: str = json.dumps({"adjustment": "splits", "symbol": exchange_symbol})
         await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
         await send_message_func("resolve_symbol", [chart_session, "sds_sym_1", f"={resolve_symbol}"])
-        await send_message_func("create_series", [chart_session, "sds_1", "s1", "sds_sym_1", "1", 10, ""])
+        await send_message_func("create_series", [chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars_count, ""])
         await send_message_func("quote_fast_symbols", [quote_session, exchange_symbol])
         await send_message_func("create_study", [chart_session, "st1", "st1", "sds_1",
                             "Volume@tv-basicstudies-246", {"length": 20, "col_prev_close": "false"}])

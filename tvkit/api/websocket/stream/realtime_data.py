@@ -4,7 +4,6 @@ import asyncio
 import logging
 import signal
 import types
-from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, List, Optional
 
 from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
@@ -59,7 +58,7 @@ class RealTimeData:
         await self.connection_service.connect()
         self.message_service = MessageService(self.connection_service.ws)
 
-    async def get_ohlcv(self, exchange_symbol: str) -> AsyncGenerator[OHLCVBar, None]:
+    async def get_ohlcv(self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10) -> AsyncGenerator[OHLCVBar, None]:
         """
         Returns an async generator that yields OHLC data for a specified symbol in real-time.
 
@@ -68,6 +67,8 @@ class RealTimeData:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'BINANCE:BTCUSDT').
+            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            bars_count: The number of bars to fetch (default is 10).
 
         Returns:
             An async generator yielding structured OHLCV data as OHLCVBar objects.
@@ -78,7 +79,7 @@ class RealTimeData:
 
         Example:
             >>> async with RealTimeData() as client:
-            ...     async for bar in client.get_ohlcv("BINANCE:BTCUSDT"):
+            ...     async for bar in client.get_ohlcv("BINANCE:BTCUSDT", timeframe="5"):
             ...         print(f"Close: ${bar.close}, Volume: {bar.volume}")
         """
         await validate_symbols(exchange_symbol)
@@ -93,7 +94,7 @@ class RealTimeData:
 
         send_message_func = self.message_service.get_send_message_callable()
         await self.connection_service.initialize_sessions(quote_session, chart_session, send_message_func)
-        await self.connection_service.add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, send_message_func)
+        await self.connection_service.add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, timeframe, bars_count, send_message_func)
 
         async for data in self.connection_service.get_data_stream():
             # Try to parse different message types
@@ -158,7 +159,7 @@ class RealTimeData:
                 logging.debug(f"Skipping unparseable message: {data} - Error: {e}")
                 continue
 
-    async def get_quote_data(self, exchange_symbol: str) -> AsyncGenerator[QuoteSymbolData, None]:
+    async def get_quote_data(self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10) -> AsyncGenerator[QuoteSymbolData, None]:
         """
         Returns an async generator that yields quote data for a specified symbol in real-time.
 
@@ -167,6 +168,8 @@ class RealTimeData:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'NASDAQ:AAPL').
+            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            bars_count: The number of bars to fetch (default is 10).
 
         Returns:
             An async generator yielding quote data as QuoteSymbolData objects.
@@ -177,7 +180,7 @@ class RealTimeData:
 
         Example:
             >>> async with RealTimeData() as client:
-            ...     async for quote in client.get_quote_data("NASDAQ:AAPL"):
+            ...     async for quote in client.get_quote_data("NASDAQ:AAPL", timeframe="5"):
             ...         print(f"Price: ${quote.current_price}")
         """
         await validate_symbols(exchange_symbol)
@@ -192,7 +195,7 @@ class RealTimeData:
 
         send_message_func = self.message_service.get_send_message_callable()
         await self.connection_service.initialize_sessions(quote_session, chart_session, send_message_func)
-        await self.connection_service.add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, send_message_func)
+        await self.connection_service.add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, timeframe, bars_count, send_message_func)
 
         async for data in self.connection_service.get_data_stream():
             try:
@@ -228,7 +231,7 @@ class RealTimeData:
                 logging.debug(f"Skipping unparseable message in quote stream: {data} - Error: {e}")
                 continue
 
-    async def get_ohlcv_raw(self, exchange_symbol: str) -> AsyncGenerator[dict[str, Any], None]:
+    async def get_ohlcv_raw(self, exchange_symbol: str, timeframe: str = "1", bars_count: int = 10) -> AsyncGenerator[dict[str, Any], None]:
         """
         Returns an async generator that yields raw OHLC data for a specified symbol in real-time.
 
@@ -237,6 +240,8 @@ class RealTimeData:
 
         Args:
             exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL'.
+            timeframe: The timeframe for the chart (default is "1" for 1 minute).
+            bars_count: The number of bars to fetch (default is 10).
 
         Returns:
             An async generator yielding raw OHLC data as JSON dictionary objects.
@@ -247,7 +252,7 @@ class RealTimeData:
 
         Example:
             >>> async with RealTimeData() as client:
-            ...     async for raw_data in client.get_ohlcv_raw("BINANCE:BTCUSDT"):
+            ...     async for raw_data in client.get_ohlcv_raw("BINANCE:BTCUSDT", timeframe="5"):
             ...         print(f"Raw message: {raw_data}")
         """
         await validate_symbols(exchange_symbol)
@@ -262,7 +267,7 @@ class RealTimeData:
 
         send_message_func = self.message_service.get_send_message_callable()
         await self.connection_service.initialize_sessions(quote_session, chart_session, send_message_func)
-        await self.connection_service.add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, send_message_func)
+        await self.connection_service.add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, timeframe, bars_count, send_message_func)
 
         async for data in self.connection_service.get_data_stream():
             yield data
@@ -333,7 +338,7 @@ async def main():
     """
     async with RealTimeData() as real_time_data:
         # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD"]
-        exchange_symbol = ["TFEX:S50U2025"]
+        exchange_symbol = ["BINANCE:BTCUSDT"]
 
         # Get latest trade info
         # async for packet in real_time_data.get_latest_trade_info(exchange_symbol=exchange_symbol):
@@ -343,11 +348,11 @@ async def main():
 
         # Try to get structured OHLCV data first
         print("Attempting to get structured OHLCV data...")
-        async for ohlcv_bar in real_time_data.get_ohlcv(exchange_symbol=exchange_symbol[0]):
+        async for ohlcv_bar in real_time_data.get_ohlcv(exchange_symbol=exchange_symbol[0], timeframe="1D", bars_count=40):
             ohlcv_count += 1
             print('-' * 50)
-            print(f"OHLCV Bar #{ohlcv_count}:")
-            # print(f"Timestamp: {ohlcv_bar.timestamp}")
+            print(f"OHLCV Count #{ohlcv_count}:")
+            print(f"Timestamp: {ohlcv_bar.timestamp}")
             print(f"ISO Time: {convert_timestamp_to_iso(ohlcv_bar.timestamp)}")
             print(f"Open: {ohlcv_bar.open}")
             print(f"High: {ohlcv_bar.high}")
@@ -356,7 +361,7 @@ async def main():
             print(f"Volume: {ohlcv_bar.volume}")
 
             # Stop after getting a few bars for demo
-            if ohlcv_count >= 3:
+            if ohlcv_count >= 10:
                 break
 
         # # If no OHLCV data, try getting quote data instead
@@ -375,6 +380,11 @@ async def main():
         #         if quote_count >= 3:
         #             break
 
+        # Example get last trade info
+        print("\nGetting latest trade info...")
+        async for trade_info in real_time_data.get_latest_trade_info(exchange_symbol=exchange_symbol):
+            print('-' * 50)
+            print(f"Trade Info: {trade_info}")
 
 if __name__ == "__main__":
     asyncio.run(main())
