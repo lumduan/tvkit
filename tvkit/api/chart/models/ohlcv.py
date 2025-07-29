@@ -17,6 +17,7 @@ class OHLCVBar(BaseModel):
 
     This model contains all price and volume data for a specific time period.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     timestamp: float = Field(description="Unix timestamp for the bar start time")
@@ -49,7 +50,7 @@ class OHLCVBar(BaseModel):
             high=data[2],
             low=data[3],
             close=data[4],
-            volume=data[5]
+            volume=data[5],
         )
 
 
@@ -57,10 +58,14 @@ class SeriesData(BaseModel):
     """
     Represents series data containing OHLCV bars and metadata.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     index: int = Field(alias="i", description="Bar index in the series")
-    values: List[float] = Field(alias="v", description="OHLCV values array [timestamp, open, high, low, close, volume]")
+    values: List[float] = Field(
+        alias="v",
+        description="OHLCV values array [timestamp, open, high, low, close, volume]",
+    )
 
     @computed_field
     @property
@@ -78,6 +83,7 @@ class NamespaceData(BaseModel):
     """
     Represents namespace data containing metadata about the data stream.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     description: str = Field(alias="d", default="", description="Data description")
@@ -88,6 +94,7 @@ class LastBarStatus(BaseModel):
     """
     Represents the last bar status information.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     bar_close_time: float = Field(description="Unix timestamp when the bar closes")
@@ -97,12 +104,17 @@ class SeriesUpdate(BaseModel):
     """
     Represents a complete series update containing OHLCV data and metadata.
     """
+
     model_config = ConfigDict(extra="forbid")
 
-    series_data: List[SeriesData] = Field(alias="s", description="List of series data points")
+    series_data: List[SeriesData] = Field(
+        alias="s", description="List of series data points"
+    )
     namespace: NamespaceData = Field(alias="ns", description="Namespace metadata")
     type: str = Field(alias="t", description="Series type identifier")
-    last_bar_status: LastBarStatus = Field(alias="lbs", description="Last bar status information")
+    last_bar_status: LastBarStatus = Field(
+        alias="lbs", description="Last bar status information"
+    )
 
 
 class OHLCVResponse(BaseModel):
@@ -112,17 +124,24 @@ class OHLCVResponse(BaseModel):
     This model parses the complete response structure from TradingView's WebSocket API.
     Accepts both 'du' (data update) and 'timescale_update' message types.
     """
+
     model_config = ConfigDict(extra="allow")
 
-    message_type: str = Field(alias="m", description="Message type ('du' or 'timescale_update')")
-    parameters: List[Any] = Field(alias="p", description="Message parameters containing session ID and data")
+    message_type: str = Field(
+        alias="m", description="Message type ('du' or 'timescale_update')"
+    )
+    parameters: List[Any] = Field(
+        alias="p", description="Message parameters containing session ID and data"
+    )
 
     @field_validator("message_type")
     @classmethod
     def validate_message_type(cls, v: str) -> str:
         """Validate that message type is a data update or timescale update."""
         if v not in ["du", "timescale_update"]:
-            raise ValueError(f"Expected message type 'du' or 'timescale_update', got '{v}'")
+            raise ValueError(
+                f"Expected message type 'du' or 'timescale_update', got '{v}'"
+            )
         return v
 
     @field_validator("parameters")
@@ -193,10 +212,16 @@ class TimescaleUpdateResponse(BaseModel):
     This handles the 'timescale_update' message format which has a different structure
     from regular 'du' messages.
     """
+
     model_config = ConfigDict(extra="allow")
 
-    message_type: str = Field(alias="m", description="Message type ('timescale_update')")
-    parameters: List[Any] = Field(alias="p", description="Message parameters containing session ID and timescale data")
+    message_type: str = Field(
+        alias="m", description="Message type ('timescale_update')"
+    )
+    parameters: List[Any] = Field(
+        alias="p",
+        description="Message parameters containing session ID and timescale data",
+    )
 
     @field_validator("message_type")
     @classmethod
@@ -239,7 +264,9 @@ class TimescaleUpdateResponse(BaseModel):
                 for item in series_array:
                     if isinstance(item, dict) and "v" in item:
                         values = item["v"]
-                        if len(values) >= 6:  # [timestamp, open, high, low, close, volume]
+                        if (
+                            len(values) >= 6
+                        ):  # [timestamp, open, high, low, close, volume]
                             try:
                                 bars.append(OHLCVBar.from_array(values))
                             except Exception:
@@ -254,10 +281,15 @@ class QuoteSymbolData(BaseModel):
 
     This contains current price and symbol information for a specific instrument.
     """
+
     model_config = ConfigDict(extra="forbid")
 
-    message_type: str = Field(alias="m", description="Message type ('qsd' for quote symbol data)")
-    parameters: List[Any] = Field(alias="p", description="Parameters containing session ID and quote data")
+    message_type: str = Field(
+        alias="m", description="Message type ('qsd' for quote symbol data)"
+    )
+    parameters: List[Any] = Field(
+        alias="p", description="Parameters containing session ID and quote data"
+    )
 
     @field_validator("message_type")
     @classmethod
@@ -286,8 +318,8 @@ class QuoteSymbolData(BaseModel):
     def current_price(self) -> Optional[float]:
         """Extract current price from quote data."""
         quote_data = self.quote_data
-        if 'v' in quote_data and isinstance(quote_data['v'], dict):
-            return quote_data['v'].get('lp')  # 'lp' = last price
+        if "v" in quote_data and isinstance(quote_data["v"], dict):
+            return quote_data["v"].get("lp")  # 'lp' = last price
         return None
 
     @computed_field
@@ -295,8 +327,8 @@ class QuoteSymbolData(BaseModel):
     def symbol_info(self) -> dict[str, Any]:
         """Extract symbol information from quote data."""
         quote_data = self.quote_data
-        if 'v' in quote_data and isinstance(quote_data['v'], dict):
-            return quote_data['v']
+        if "v" in quote_data and isinstance(quote_data["v"], dict):
+            return quote_data["v"]
         return {}
 
 
@@ -306,10 +338,13 @@ class QuoteCompletedMessage(BaseModel):
 
     These messages indicate that quote setup has been completed for a symbol.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     message_type: str = Field(alias="m", description="Message type ('quote_completed')")
-    parameters: List[Any] = Field(alias="p", description="Parameters containing session ID and symbol")
+    parameters: List[Any] = Field(
+        alias="p", description="Parameters containing session ID and symbol"
+    )
 
     @field_validator("message_type")
     @classmethod
@@ -338,6 +373,7 @@ class WebSocketMessage(BaseModel):
 
     This is useful for debugging and handling unknown message types.
     """
+
     model_config = ConfigDict(extra="allow")
 
     message_type: str = Field(alias="m", description="Message type")

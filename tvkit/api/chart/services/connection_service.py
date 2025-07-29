@@ -48,7 +48,7 @@ class ConnectionService:
                 cache_control="no-cache",
                 origin="https://www.tradingview.com",
                 pragma="no-cache",
-                user_agent="Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
             )
 
             ws_config: WebSocketConnection = WebSocketConnection(
@@ -57,7 +57,7 @@ class ConnectionService:
                 compression="deflate",
                 ping_interval=20,
                 ping_timeout=10,
-                close_timeout=10
+                close_timeout=10,
             )
 
             self.ws = await connect(**ws_config.model_dump())
@@ -69,14 +69,14 @@ class ConnectionService:
 
     async def close(self) -> None:
         """Close the WebSocket connection."""
-        if hasattr(self, 'ws') and self.ws:
+        if hasattr(self, "ws") and self.ws:
             await self.ws.close()
 
     async def initialize_sessions(
         self,
         quote_session: str,
         chart_session: str,
-        send_message_func: Callable[[str, list[Any]], Awaitable[None]]
+        send_message_func: Callable[[str, list[Any]], Awaitable[None]],
     ) -> None:
         """
         Initializes the WebSocket sessions for quotes and charts.
@@ -90,7 +90,9 @@ class ConnectionService:
         await send_message_func("set_locale", ["en", "US"])
         await send_message_func("chart_create_session", [chart_session, ""])
         await send_message_func("quote_create_session", [quote_session])
-        await send_message_func("quote_set_fields", [quote_session, *self._get_quote_fields()])
+        await send_message_func(
+            "quote_set_fields", [quote_session, *self._get_quote_fields()]
+        )
         await send_message_func("quote_hibernate_all", [quote_session])
 
     def _get_quote_fields(self) -> list[str]:
@@ -101,11 +103,29 @@ class ConnectionService:
             A list of fields for the quote session.
         """
         return [
-            "ch", "chp", "current_session", "description", "local_description",
-            "language", "exchange", "fractional", "is_tradable", "lp",
-            "lp_time", "minmov", "minmove2", "original_name", "pricescale",
-            "pro_name", "short_name", "type", "update_mode", "volume",
-            "currency_code", "rchp", "rtc"
+            "ch",
+            "chp",
+            "current_session",
+            "description",
+            "local_description",
+            "language",
+            "exchange",
+            "fractional",
+            "is_tradable",
+            "lp",
+            "lp_time",
+            "minmov",
+            "minmove2",
+            "original_name",
+            "pricescale",
+            "pro_name",
+            "short_name",
+            "type",
+            "update_mode",
+            "volume",
+            "currency_code",
+            "rchp",
+            "rtc",
         ]
 
     async def add_symbol_to_sessions(
@@ -128,20 +148,38 @@ class ConnectionService:
             bars_count: Number of bars to fetch for the chart
             send_message_func: Function to send messages through the WebSocket
         """
-        resolve_symbol: str = json.dumps({"adjustment": "splits", "symbol": exchange_symbol})
-        await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
-        await send_message_func("resolve_symbol", [chart_session, "sds_sym_1", f"={resolve_symbol}"])
-        await send_message_func("create_series", [chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars_count, ""])
+        resolve_symbol: str = json.dumps(
+            {"adjustment": "splits", "symbol": exchange_symbol}
+        )
+        await send_message_func(
+            "quote_add_symbols", [quote_session, f"={resolve_symbol}"]
+        )
+        await send_message_func(
+            "resolve_symbol", [chart_session, "sds_sym_1", f"={resolve_symbol}"]
+        )
+        await send_message_func(
+            "create_series",
+            [chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars_count, ""],
+        )
         await send_message_func("quote_fast_symbols", [quote_session, exchange_symbol])
-        await send_message_func("create_study", [chart_session, "st1", "st1", "sds_1",
-                            "Volume@tv-basicstudies-246", {"length": 20, "col_prev_close": "false"}])
+        await send_message_func(
+            "create_study",
+            [
+                chart_session,
+                "st1",
+                "st1",
+                "sds_1",
+                "Volume@tv-basicstudies-246",
+                {"length": 20, "col_prev_close": "false"},
+            ],
+        )
         await send_message_func("quote_hibernate_all", [quote_session])
 
     async def add_multiple_symbols_to_sessions(
         self,
         quote_session: str,
         exchange_symbols: List[str],
-        send_message_func: Callable[[str, list[Any]], Awaitable[None]]
+        send_message_func: Callable[[str, list[Any]], Awaitable[None]],
     ) -> None:
         """
         Adds multiple symbols to the quote session.
@@ -151,17 +189,25 @@ class ConnectionService:
             exchange_symbols: List of symbols in 'EXCHANGE:SYMBOL' format
             send_message_func: Function to send messages through the WebSocket
         """
-        resolve_symbol: str = json.dumps({
-            "adjustment": "splits",
-            "currency-id": "USD",
-            "session": "regular",
-            "symbol": exchange_symbols[0]
-        })
-        await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
-        await send_message_func("quote_fast_symbols", [quote_session, f"={resolve_symbol}"])
+        resolve_symbol: str = json.dumps(
+            {
+                "adjustment": "splits",
+                "currency-id": "USD",
+                "session": "regular",
+                "symbol": exchange_symbols[0],
+            }
+        )
+        await send_message_func(
+            "quote_add_symbols", [quote_session, f"={resolve_symbol}"]
+        )
+        await send_message_func(
+            "quote_fast_symbols", [quote_session, f"={resolve_symbol}"]
+        )
 
         await send_message_func("quote_add_symbols", [quote_session] + exchange_symbols)
-        await send_message_func("quote_fast_symbols", [quote_session] + exchange_symbols)
+        await send_message_func(
+            "quote_fast_symbols", [quote_session] + exchange_symbols
+        )
 
     async def get_data_stream(self) -> AsyncGenerator[dict[str, Any], None]:
         """
@@ -183,18 +229,21 @@ class ConnectionService:
                     if isinstance(message, str):
                         result: str = message
                     elif isinstance(message, bytes):
-                        result = message.decode('utf-8')
+                        result = message.decode("utf-8")
                     else:
                         # Handle memoryview and other buffer types
-                        result = bytes(message).decode('utf-8')
+                        result = bytes(message).decode("utf-8")
 
                     # Check if the result is a heartbeat or actual data
                     import re
+
                     if re.match(r"~m~\d+~m~~h~\d+$", result):
                         logging.debug(f"Received heartbeat: {result}")
                         await self.ws.send(result)  # Echo back the heartbeat
                     else:
-                        split_result: list[str] = [x for x in re.split(r'~m~\d+~m~', result) if x]
+                        split_result: list[str] = [
+                            x for x in re.split(r"~m~\d+~m~", result) if x
+                        ]
                         for item in split_result:
                             if item:
                                 try:

@@ -2,6 +2,7 @@
 """
 Quick test of network-dependent streaming functionality.
 """
+
 import asyncio
 import sys
 import os
@@ -11,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tvkit.api.chart.realtime import RealtimeStreamer
 from tvkit.api.chart.models import StreamConfig
+
 
 async def test_network_demo():
     """Test actual network streaming with timeout."""
@@ -24,7 +26,7 @@ async def test_network_demo():
         include_indicators=False,
         indicator_id=None,
         indicator_version=None,
-        export_config=None
+        export_config=None,
     )
 
     try:
@@ -35,8 +37,12 @@ async def test_network_demo():
                 # Test statistics after connection
                 stats = streamer.get_stream_statistics()
                 if stats:
-                    print(f"📊 Connection status: {stats.get('connection_status', 'unknown')}")
-                    print(f"📊 Session duration: {stats.get('session_duration', 0):.2f}s")
+                    print(
+                        f"📊 Connection status: {stats.get('connection_status', 'unknown')}"
+                    )
+                    print(
+                        f"📊 Session duration: {stats.get('session_duration', 0):.2f}s"
+                    )
 
                 # Try to get one response
                 count = 0
@@ -64,6 +70,7 @@ async def test_network_demo():
 
     print("\n🎉 Network streaming test completed!")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     asyncio.run(test_network_demo())

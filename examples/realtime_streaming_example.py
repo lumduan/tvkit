@@ -17,8 +17,7 @@ from tvkit.api.chart.exceptions import StreamingError
 
 # Configure logging for the example
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -29,9 +28,7 @@ async def example_basic_streaming():
 
     # Create basic configuration
     config = StreamConfig(
-        symbols=["BINANCE:BTCUSDT", "NASDAQ:AAPL"],
-        timeframe="1m",
-        num_candles=50
+        symbols=["BINANCE:BTCUSDT", "NASDAQ:AAPL"], timeframe="1m", num_candles=50
     )
 
     try:
@@ -46,7 +43,7 @@ async def example_basic_streaming():
             async for response in streamer.stream():
                 count += 1
 
-                if response.data_type == 'ohlcv' and response.ohlcv_data:
+                if response.data_type == "ohlcv" and response.ohlcv_data:
                     latest_candle = response.ohlcv_data[-1]
                     logger.info(
                         f"OHLCV {response.symbol}: "
@@ -55,7 +52,7 @@ async def example_basic_streaming():
                         f"V:{latest_candle.volume}"
                     )
 
-                elif response.data_type == 'trade' and response.trade_data:
+                elif response.data_type == "trade" and response.trade_data:
                     trade = response.trade_data
                     logger.info(
                         f"Trade {trade.symbol}: "
@@ -80,10 +77,10 @@ async def example_streaming_with_export():
     # Create export configuration
     export_config = ExportConfig(
         enabled=True,
-        format='json',
-        directory='/export',
+        format="json",
+        directory="/export",
         include_timestamp=True,
-        auto_export_interval=30  # Export every 30 seconds
+        auto_export_interval=30,  # Export every 30 seconds
     )
 
     # Create configuration with export
@@ -92,7 +89,7 @@ async def example_streaming_with_export():
         timeframe="5m",
         num_candles=100,
         include_indicators=False,
-        export_config=export_config
+        export_config=export_config,
     )
 
     try:
@@ -111,12 +108,16 @@ async def example_streaming_with_export():
                     break
 
                 # Process different data types
-                if response.data_type == 'ohlcv' and response.ohlcv_data:
-                    logger.info(f"Received {len(response.ohlcv_data)} OHLCV candles for {response.symbol}")
+                if response.data_type == "ohlcv" and response.ohlcv_data:
+                    logger.info(
+                        f"Received {len(response.ohlcv_data)} OHLCV candles for {response.symbol}"
+                    )
 
                     # Get latest candle
                     latest = response.ohlcv_data[-1]
-                    logger.info(f"Latest {response.symbol}: Close={latest.close} Volume={latest.volume}")
+                    logger.info(
+                        f"Latest {response.symbol}: Close={latest.close} Volume={latest.volume}"
+                    )
 
                 # Print statistics periodically
                 if int(elapsed) % 15 == 0:
@@ -134,11 +135,7 @@ async def example_error_handling():
     """Example demonstrating proper error handling and recovery."""
     logger.info("Starting error handling example...")
 
-    config = StreamConfig(
-        symbols=["BINANCE:BTCUSDT"],
-        timeframe="1m",
-        num_candles=10
-    )
+    config = StreamConfig(symbols=["BINANCE:BTCUSDT"], timeframe="1m", num_candles=10)
 
     max_retries = 3
     retry_count = 0
@@ -151,7 +148,9 @@ async def example_error_handling():
                 message_count = 0
                 async for response in streamer.stream():
                     message_count += 1
-                    logger.info(f"Received message {message_count}: {response.data_type}")
+                    logger.info(
+                        f"Received message {message_count}: {response.data_type}"
+                    )
 
                     if message_count >= 5:
                         break
@@ -165,7 +164,7 @@ async def example_error_handling():
             logger.warning(f"Streaming error (attempt {retry_count}): {e}")
 
             if retry_count < max_retries:
-                wait_time = 2 ** retry_count  # Exponential backoff
+                wait_time = 2**retry_count  # Exponential backoff
                 logger.info(f"Retrying in {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             else:
@@ -179,6 +178,8 @@ async def example_error_handling():
 if __name__ == "__main__":
     # Run the examples
     asyncio.run(main())
+
+
 async def main():
     """Main function to run streaming examples."""
     logger.info("TradingView Real-time Streaming Examples")
@@ -211,21 +212,17 @@ if __name__ == "__main__":
 
     # Configure for real-time streaming (no export)
     export_config = ExportConfig(export_result=False)
-    stream_config = StreamConfig(
-        timeframe='1m',
-        numb_price_candles=10
-    )
+    stream_config = StreamConfig(timeframe="1m", numb_price_candles=10)
 
     async with RealtimeStreamer(
-        export_config=export_config,
-        stream_config=stream_config
+        export_config=export_config, stream_config=stream_config
     ) as streamer:
         try:
             # Stream Bitcoin data from Binance
             result = await streamer.stream(exchange="BINANCE", symbol="BTCUSDT")
 
             # Since export_result=False, result is an async generator
-            if hasattr(result, '__aiter__'):
+            if hasattr(result, "__aiter__"):
                 packet_count = 0
                 async for packet in result:  # type: ignore
                     packet_count += 1
@@ -246,16 +243,12 @@ async def example_export_streaming():
     # Configure for export
     export_config = ExportConfig(
         export_result=True,
-        export_type='json'  # or 'csv'
+        export_type="json",  # or 'csv'
     )
-    stream_config = StreamConfig(
-        timeframe='5m',
-        numb_price_candles=20
-    )
+    stream_config = StreamConfig(timeframe="5m", numb_price_candles=20)
 
     async with RealtimeStreamer(
-        export_config=export_config,
-        stream_config=stream_config
+        export_config=export_config, stream_config=stream_config
     ) as streamer:
         try:
             # Stream Ethereum data from Binance
@@ -280,21 +273,17 @@ async def example_with_indicators():
     """Example of streaming with technical indicators."""
     logger.info("Starting indicator streaming example...")
 
-    export_config = ExportConfig(export_result=True, export_type='json')
-    stream_config = StreamConfig(
-        timeframe='1m',
-        numb_price_candles=30
-    )
+    export_config = ExportConfig(export_result=True, export_type="json")
+    stream_config = StreamConfig(timeframe="1m", numb_price_candles=30)
     # Configure indicators (example - replace with actual indicator IDs)
     indicator_config = IndicatorConfig(
-        indicator_id="RSI@tv-basicstudies",
-        indicator_version="1"
+        indicator_id="RSI@tv-basicstudies", indicator_version="1"
     )
 
     async with RealtimeStreamer(
         export_config=export_config,
         stream_config=stream_config,
-        indicator_config=indicator_config
+        indicator_config=indicator_config,
     ) as streamer:
         try:
             # Stream Apple stock data from NASDAQ

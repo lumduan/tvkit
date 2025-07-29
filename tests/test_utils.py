@@ -79,7 +79,9 @@ class TestTimestampConversion:
         for timestamp in timestamps:
             result: str = convert_timestamp_to_iso(timestamp)
             # All results should end with UTC timezone offset
-            assert result.endswith("+00:00"), f"Timestamp {timestamp} should have UTC timezone"
+            assert result.endswith("+00:00"), (
+                f"Timestamp {timestamp} should have UTC timezone"
+            )
 
     def test_convert_timestamp_type_validation(self) -> None:
         """Test that the function handles different numeric types."""

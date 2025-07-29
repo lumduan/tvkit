@@ -33,7 +33,7 @@ class TestDirectoryOperations:
     def test_ensure_export_directory_creation(self):
         """Test creating export directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            test_path = os.path.join(temp_dir, 'new_export_dir')
+            test_path = os.path.join(temp_dir, "new_export_dir")
 
             # Directory should not exist initially
             assert not os.path.exists(test_path)
@@ -61,7 +61,9 @@ class TestDirectoryOperations:
         timeframe = "1m"
         file_extension = ".json"
 
-        filepath = generate_export_filepath(symbol, data_category, timeframe, file_extension)
+        filepath = generate_export_filepath(
+            symbol, data_category, timeframe, file_extension
+        )
 
         # Check format
         assert filepath.startswith("/export/")
@@ -69,7 +71,9 @@ class TestDirectoryOperations:
         assert "binancebtcusdt" in filepath  # Symbol should be cleaned
         assert "1m" in filepath
         assert filepath.endswith(".json")
-        assert len(filepath.split("_")) >= 4  # Should have multiple underscore-separated parts
+        assert (
+            len(filepath.split("_")) >= 4
+        )  # Should have multiple underscore-separated parts
 
 
 class TestFileOperations:
@@ -80,7 +84,7 @@ class TestFileOperations:
         """Test saving JSON file."""
         test_data: List[Dict[str, Any]] = [
             {"timestamp": 1642694400, "price": "50000.50"},
-            {"timestamp": 1642694460, "price": "50100.25"}
+            {"timestamp": 1642694460, "price": "50100.25"},
         ]
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -92,7 +96,7 @@ class TestFileOperations:
             assert os.path.exists(filepath)
 
             # Verify content
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 loaded_data = json.load(f)
 
             assert loaded_data == test_data
@@ -102,7 +106,7 @@ class TestFileOperations:
         """Test saving CSV file."""
         test_data: List[Dict[str, Any]] = [
             {"timestamp": 1642694400, "price": "50000.50", "volume": "1.25"},
-            {"timestamp": 1642694460, "price": "50100.25", "volume": "2.15"}
+            {"timestamp": 1642694460, "price": "50100.25", "volume": "2.15"},
         ]
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -121,7 +125,7 @@ class TestFileOperations:
         """Test saving Parquet file."""
         test_data: List[Dict[str, Any]] = [
             {"timestamp": 1642694400, "price": 50000.50, "volume": 1.25},
-            {"timestamp": 1642694460, "price": 50100.25, "volume": 2.15}
+            {"timestamp": 1642694460, "price": 50100.25, "volume": 2.15},
         ]
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -140,22 +144,22 @@ class TestFileOperations:
         """Test export when disabled."""
         config = ExportConfig(
             enabled=False,
-            format='json',
-            directory='/tmp',
+            format="json",
+            directory="/tmp",
             filename_prefix=None,
             include_timestamp=True,
-            auto_export_interval=None
+            auto_export_interval=None,
         )
 
         ohlcv_data = [
             OHLCVData(
                 index=1,
                 timestamp=1642694400,
-                open=Decimal('50000'),
-                high=Decimal('51000'),
-                low=Decimal('49500'),
-                close=Decimal('50500'),
-                volume=Decimal('1250')
+                open=Decimal("50000"),
+                high=Decimal("51000"),
+                low=Decimal("49500"),
+                close=Decimal("50500"),
+                volume=Decimal("1250"),
             )
         ]
 
@@ -169,22 +173,22 @@ class TestFileOperations:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = ExportConfig(
                 enabled=True,
-                format='json',
+                format="json",
                 directory=temp_dir,
-                filename_prefix='test',
+                filename_prefix="test",
                 include_timestamp=True,
-                auto_export_interval=None
+                auto_export_interval=None,
             )
 
             ohlcv_data = [
                 OHLCVData(
                     index=1,
                     timestamp=1642694400,
-                    open=Decimal('50000'),
-                    high=Decimal('51000'),
-                    low=Decimal('49500'),
-                    close=Decimal('50500'),
-                    volume=Decimal('1250')
+                    open=Decimal("50000"),
+                    high=Decimal("51000"),
+                    low=Decimal("49500"),
+                    close=Decimal("50500"),
+                    volume=Decimal("1250"),
                 )
             ]
 
@@ -195,7 +199,7 @@ class TestFileOperations:
             # Check that a file was created
             files = os.listdir(temp_dir)
             assert len(files) == 1
-            assert files[0].endswith('.json')
+            assert files[0].endswith(".json")
 
 
 class TestOHLCVConverter:
@@ -225,7 +229,7 @@ class TestOHLCVConverter:
             ("4h", 240),
             ("1d", 1440),
             ("1w", 10080),
-            ("1M", 302400)
+            ("1M", 302400),
         ]
 
         for timeframe, expected_minutes in test_cases:
@@ -248,11 +252,11 @@ class TestOHLCVConverter:
             OHLCVData(
                 index=i,
                 timestamp=1642694400 + i * 60,  # 1 minute intervals
-                open=Decimal(f'{50000 + i * 10}'),
-                high=Decimal(f'{50100 + i * 10}'),
-                low=Decimal(f'{49900 + i * 10}'),
-                close=Decimal(f'{50050 + i * 10}'),
-                volume=Decimal(f'{1000 + i * 50}')
+                open=Decimal(f"{50000 + i * 10}"),
+                high=Decimal(f"{50100 + i * 10}"),
+                low=Decimal(f"{49900 + i * 10}"),
+                close=Decimal(f"{50050 + i * 10}"),
+                volume=Decimal(f"{1000 + i * 50}"),
             )
             for i in range(5)
         ]
@@ -276,11 +280,11 @@ class TestOHLCVConverter:
             OHLCVData(
                 index=i,
                 timestamp=base_timestamp + i * 60,  # 1 minute intervals
-                open=Decimal(f'{50000 + i * 10}'),
-                high=Decimal(f'{50100 + i * 10}'),
-                low=Decimal(f'{49900 + i * 10}'),
-                close=Decimal(f'{50050 + i * 10}'),
-                volume=Decimal(f'{1000}')  # Same volume for easy calculation
+                open=Decimal(f"{50000 + i * 10}"),
+                high=Decimal(f"{50100 + i * 10}"),
+                low=Decimal(f"{49900 + i * 10}"),
+                close=Decimal(f"{50050 + i * 10}"),
+                volume=Decimal(f"{1000}"),  # Same volume for easy calculation
             )
             for i in range(5)
         ]
@@ -295,7 +299,7 @@ class TestOHLCVConverter:
             aggregated = converted[0]
             assert aggregated.open == data[0].open  # First open
             assert aggregated.close == data[-1].close  # Last close
-            assert aggregated.volume == Decimal('5000')  # Sum of volumes
+            assert aggregated.volume == Decimal("5000")  # Sum of volumes
 
 
 class TestUtilityFunctions:
@@ -329,12 +333,14 @@ class TestUtilityFunctions:
         validation_url = "https://example.com/validate?symbol={exchange}%3A{symbol}"
 
         # Mock httpx.AsyncClient
-        with patch('tvkit.api.chart.utils.httpx.AsyncClient') as mock_client:
+        with patch("tvkit.api.chart.utils.httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.raise_for_status.return_value = None
 
             mock_context = AsyncMock()
-            mock_context.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+            mock_context.__aenter__.return_value.get = AsyncMock(
+                return_value=mock_response
+            )
             mock_client.return_value = mock_context
 
             result = await validate_symbols_async(symbols, validation_url)
@@ -359,7 +365,7 @@ class TestUtilityFunctions:
         validation_url = "https://example.com/validate?symbol={exchange}%3A{symbol}"
 
         # Mock httpx.AsyncClient to raise HTTP error
-        with patch('tvkit.api.chart.utils.httpx.AsyncClient') as mock_client:
+        with patch("tvkit.api.chart.utils.httpx.AsyncClient") as mock_client:
             mock_context = AsyncMock()
             mock_context.__aenter__.return_value.get = AsyncMock(
                 side_effect=Exception("HTTP Error")
@@ -379,11 +385,11 @@ def sample_ohlcv_data() -> List[OHLCVData]:
         OHLCVData(
             index=i,
             timestamp=1642694400 + i * 60,  # 1 minute intervals
-            open=Decimal(f'{50000 + i * 10}'),
-            high=Decimal(f'{50100 + i * 10}'),
-            low=Decimal(f'{49900 + i * 10}'),
-            close=Decimal(f'{50050 + i * 10}'),
-            volume=Decimal(f'{1000 + i * 50}')
+            open=Decimal(f"{50000 + i * 10}"),
+            high=Decimal(f"{50100 + i * 10}"),
+            low=Decimal(f"{49900 + i * 10}"),
+            close=Decimal(f"{50050 + i * 10}"),
+            volume=Decimal(f"{1000 + i * 50}"),
         )
         for i in range(10)
     ]
@@ -397,30 +403,34 @@ class TestIntegration:
         """Test complete export workflow."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Test all export formats
-            export_formats = ['json', 'csv', 'parquet']
+            export_formats = ["json", "csv", "parquet"]
             for export_format in export_formats:
                 config = ExportConfig(
                     enabled=True,
                     format=export_format,  # type: ignore
                     directory=temp_dir,
-                    filename_prefix=f'test_{export_format}',
+                    filename_prefix=f"test_{export_format}",
                     include_timestamp=True,
-                    auto_export_interval=None
+                    auto_export_interval=None,
                 )
 
                 result = await export_data(
                     sample_ohlcv_data[:3],  # Use subset for faster testing
                     config,
                     "BINANCE:BTCUSDT",
-                    "1m"
+                    "1m",
                 )
 
                 assert result is True
 
                 # Check that file was created
-                files = [f for f in os.listdir(temp_dir) if f.startswith(f'test_{export_format}')]
+                files = [
+                    f
+                    for f in os.listdir(temp_dir)
+                    if f.startswith(f"test_{export_format}")
+                ]
                 assert len(files) >= 1
-                assert files[0].endswith(f'.{export_format}')
+                assert files[0].endswith(f".{export_format}")
 
     def test_ohlcv_converter_integration(self, sample_ohlcv_data: List[OHLCVData]):
         """Test OHLCV converter with realistic data."""

@@ -22,7 +22,6 @@ from .ohlcv import OHLCV
 __all__ = [
     # Main streamer class
     "OHLCV",
-
     # Data models
     "OHLCVData",
     "TradeData",

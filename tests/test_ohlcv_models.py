@@ -30,7 +30,7 @@ class TestOHLCVBar:
             high=118881.76,
             low=118881.75,
             close=118881.75,
-            volume=0.95897
+            volume=0.95897,
         )
 
         assert bar.timestamp == 1753692060.0
@@ -66,7 +66,7 @@ class TestOHLCVBar:
             high=110.0,
             low=90.0,
             close=105.0,
-            volume=-1000.0  # Negative volume
+            volume=-1000.0,  # Negative volume
         )
         # This should work - the model doesn't enforce business rules
         assert bar.volume == -1000.0
@@ -78,8 +78,7 @@ class TestSeriesData:
     def test_series_data_creation(self):
         """Test creating SeriesData with valid data."""
         data = SeriesData(
-            i=9,
-            v=[1753692060.0, 118881.76, 118881.76, 118881.75, 118881.75, 0.95897]
+            i=9, v=[1753692060.0, 118881.76, 118881.76, 118881.75, 118881.75, 0.95897]
         )
 
         assert data.index == 9
@@ -91,7 +90,7 @@ class TestSeriesData:
         """Test SeriesData parsing with field aliases."""
         raw_data: dict[str, Any] = {
             "i": 9,
-            "v": [1753692060.0, 118881.76, 118881.76, 118881.75, 118881.75, 0.95897]
+            "v": [1753692060.0, 118881.76, 118881.76, 118881.75, 118881.75, 0.95897],
         }
 
         data = SeriesData.model_validate(raw_data)
@@ -106,35 +105,42 @@ class TestOHLCVResponse:
     def sample_response_data(self) -> dict[str, Any]:
         """Sample response data from TradingView."""
         return {
-            'm': 'du',
-            'p': [
-                'cs_wrouuzfexqom',
+            "m": "du",
+            "p": [
+                "cs_wrouuzfexqom",
                 {
-                    'sds_1': {
-                        's': [
+                    "sds_1": {
+                        "s": [
                             {
-                                'i': 9,
-                                'v': [1753692060.0, 118881.76, 118881.76, 118881.75, 118881.75, 0.95897]
+                                "i": 9,
+                                "v": [
+                                    1753692060.0,
+                                    118881.76,
+                                    118881.76,
+                                    118881.75,
+                                    118881.75,
+                                    0.95897,
+                                ],
                             }
                         ],
-                        'ns': {'d': '', 'indexes': 'nochange'},
-                        't': 's1',
-                        'lbs': {'bar_close_time': 1753692120}
+                        "ns": {"d": "", "indexes": "nochange"},
+                        "t": "s1",
+                        "lbs": {"bar_close_time": 1753692120},
                     }
-                }
-            ]
+                },
+            ],
         }
 
     def test_ohlcv_response_parsing(self, sample_response_data: dict[str, Any]) -> None:
         """Test parsing complete OHLCV response."""
         response = OHLCVResponse.model_validate(sample_response_data)
 
-        assert response.message_type == 'du'
-        assert response.session_id == 'cs_wrouuzfexqom'
+        assert response.message_type == "du"
+        assert response.session_id == "cs_wrouuzfexqom"
         assert len(response.series_updates) == 1
-        assert 'sds_1' in response.series_updates
+        assert "sds_1" in response.series_updates
 
-        series_update = response.series_updates['sds_1']
+        series_update = response.series_updates["sds_1"]
         assert len(series_update.series_data) == 1
         assert series_update.series_data[0].index == 9
         assert series_update.last_bar_status.bar_close_time == 1753692120
@@ -156,45 +162,39 @@ class TestOHLCVResponse:
     def test_invalid_message_type(self):
         """Test validation of message type."""
         with pytest.raises(ValidationError, match="Expected message type 'du'"):
-            OHLCVResponse.model_validate({
-                'm': 'invalid',
-                'p': ['session', {}]
-            })
+            OHLCVResponse.model_validate({"m": "invalid", "p": ["session", {}]})
 
     def test_insufficient_parameters(self):
         """Test validation of parameters length."""
         with pytest.raises(ValidationError, match="Parameters must contain at least"):
-            OHLCVResponse.model_validate({
-                'm': 'du',
-                'p': ['session_only']
-            })
+            OHLCVResponse.model_validate({"m": "du", "p": ["session_only"]})
 
     def test_partial_parsing_resilience(self):
         """Test that partial parsing works when some series data is invalid."""
         data: dict[str, Any] = {
-            'm': 'du',
-            'p': [
-                'session_id',
+            "m": "du",
+            "p": [
+                "session_id",
                 {
-                    'valid_series': {
-                        's': [{'i': 1, 'v': [1, 2, 3, 4, 5, 6]}],
-                        'ns': {'d': ''},
-                        't': 's1',
-                        'lbs': {'bar_close_time': 123}
+                    "valid_series": {
+                        "s": [{"i": 1, "v": [1, 2, 3, 4, 5, 6]}],
+                        "ns": {"d": ""},
+                        "t": "s1",
+                        "lbs": {"bar_close_time": 123},
                     },
-                    'invalid_series': {
+                    "invalid_series": {
                         # Missing required fields
-                        's': []
-                    }
-                }
-            ]
+                        "s": []
+                    },
+                },
+            ],
         }
 
         response = OHLCVResponse.model_validate(data)
         # Should parse the valid series and skip the invalid one
         assert len(response.series_updates) == 1
-        assert 'valid_series' in response.series_updates
-        assert 'invalid_series' not in response.series_updates
+        assert "valid_series" in response.series_updates
+        assert "invalid_series" not in response.series_updates
 
 
 class TestNamespaceData:
