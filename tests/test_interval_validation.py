@@ -47,9 +47,7 @@ class TestIntervalValidation:
         """Test invalid empty or whitespace intervals."""
         invalid_intervals = ["", "   ", "\t", "\n"]
         for interval in invalid_intervals:
-            with pytest.raises(
-                ValueError, match="Interval must be a non-empty string"
-            ):
+            with pytest.raises(ValueError, match="Interval must be a non-empty string"):
                 validate_interval(interval)
 
     def test_invalid_format_intervals(self) -> None:
