@@ -60,18 +60,33 @@ tvkit/
 │   ├── __init__.py              # Main library exports
 │   ├── api/
 │   │   ├── __init__.py          # API module exports
-│   │   ├── stock.py             # Individual stock data API
-│   │   ├── stocks.py            # Multiple stocks API
-│   │   └── scanner/
-│   │       ├── __init__.py      # Scanner module exports
-│   │       └── model.py         # TradingView scanner API models
-│   └── stock/
-│       └── stream/
-│           ├── stream_handler.py # Base WebSocket stream handler
-│           └── price.py         # Real-time price streaming API
-├── tests/
-│   ├── __init__.py
-│   └── test_scanner_model.py    # Tests for scanner models
+│   │   ├── chart/               # Real-time chart data streaming API
+│   │   │   ├── __init__.py      # Chart module exports
+│   │   │   ├── models/          # Pydantic data models
+│   │   │   │   ├── __init__.py  # Model exports
+│   │   │   │   ├── ohlcv.py     # OHLCV WebSocket models
+│   │   │   │   ├── realtime.py  # WebSocket connection models
+│   │   │   │   └── stream_models.py # Stream configuration models
+│   │   │   ├── services/        # WebSocket services
+│   │   │   │   ├── __init__.py  # Service exports
+│   │   │   │   ├── connection_service.py # WebSocket connection
+│   │   │   │   └── message_service.py    # Message handling
+│   │   │   ├── exceptions.py    # Chart-specific exceptions
+│   │   │   ├── realtime_data.py # Main RealTimeData client
+│   │   │   └── utils.py         # Chart utility functions
+│   │   ├── scanner/             # Scanner API for stock screening
+│   │   │   ├── __init__.py      # Scanner module exports
+│   │   │   └── model.py         # TradingView scanner API models
+│   │   └── utils.py             # General API utilities
+│   ├── core.py                  # Core library functionality
+│   └── py.typed                 # Type hint marker
+├── tests/                       # Test suite
+│   ├── test_scanner_model.py    # Scanner model tests
+│   ├── test_ohlcv_models.py     # OHLCV model tests
+│   └── test_realtime_models.py  # Real-time model tests
+├── examples/                    # Usage examples
+│   ├── realtime_streaming_example.py # Chart streaming examples
+│   └── polars_financial_analysis.py  # Data analysis examples
 ├── docs/                        # Documentation
 ├── debug/                       # Debug scripts (gitignored)
 ├── scripts/                     # Utility scripts
@@ -143,7 +158,7 @@ print(f"Requesting {len(request.columns)} columns")
 print(f"Range: {request.range[0]}-{request.range[1]}")
 ```
 
-### TradingView Real-Time Streaming API (`tvkit.stock.stream`)
+### TradingView Real-Time Chart API (`tvkit.api.chart`)
 
 Modern async-first WebSocket streaming implementation for real-time market data:
 
@@ -156,7 +171,7 @@ Modern async-first WebSocket streaming implementation for real-time market data:
   - Built-in compression and keepalive functionality
   - Type-safe async generators for data streaming
 
-- **`StreamHandler`**: Base WebSocket connection handler
+- **`RealtimeStreamer`**: High-level streaming interface
 
   - Session management for quote and chart data streams
   - Message construction and protocol handling
@@ -173,7 +188,7 @@ Modern async-first WebSocket streaming implementation for real-time market data:
 #### **Example Usage:**
 
 ```python
-from tvkit.stock.stream.price import RealTimeData
+from tvkit.api.chart import RealTimeData
 import asyncio
 
 # Single symbol OHLCV streaming
@@ -182,12 +197,11 @@ async def stream_ohlcv():
         async for data in client.get_ohlcv("BINANCE:BTCUSDT"):
             print(f"OHLCV: {data}")
 
-# Multiple symbols trade info
-async def stream_multiple():
-    symbols = ["BINANCE:ETHUSDT", "NASDAQ:AAPL", "FXOPEN:XAUUSD"]
+# Multiple symbols quote data
+async def stream_quotes():
     async with RealTimeData() as client:
-        async for data in client.get_latest_trade_info(symbols):
-            print(f"Trade data: {data}")
+        async for quote in client.get_quote_data("NASDAQ:AAPL"):
+            print(f"Quote data: {quote}")
 
 # Run the async functions
 asyncio.run(stream_ohlcv())
@@ -211,6 +225,18 @@ asyncio.run(stream_ohlcv())
   - Factory function testing with various parameter combinations
   - Response parsing validation with realistic TradingView API data
   - Edge case testing for malformed data and boundary conditions
+
+- **`test_ohlcv_models.py`**: Comprehensive test suite for OHLCV WebSocket models
+  - Tests for OHLCV bar creation and validation
+  - WebSocket message parsing and response handling
+  - Series data extraction and conversion
+  - Error handling for malformed WebSocket data
+
+- **`test_realtime_models.py`**: Test suite for real-time streaming models
+  - Stream configuration validation
+  - Session management testing
+  - Export configuration testing
+  - Integration workflow testing
 
 ## ⚠️ AI Agent File Deletion Limitation
 
@@ -501,7 +527,7 @@ Failure to follow these guidelines will result in:
 #### Error Handling Patterns
 
 ```python
-from tvkit.stock.stream.price import RealTimeData
+from tvkit.api.chart import RealTimeData
 from websockets.exceptions import ConnectionClosed, WebSocketException
 import asyncio
 import logging
@@ -515,7 +541,7 @@ async def stream_with_retry(symbols: list[str]) -> None:
     for attempt in range(max_retries + 1):
         try:
             async with RealTimeData() as client:
-                async for data in client.get_latest_trade_info(symbols):
+                async for data in client.get_ohlcv(symbols[0]):
                     print(f"Received: {data}")
         except ConnectionClosed as e:
             logging.warning(f"WebSocket connection closed: {e}")
