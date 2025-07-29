@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Dict, Any
 
-from tvkit.api.websocket.stream.models import (
+from tvkit.api.chart.models import (
     OHLCVData,
     TradeData,
     IndicatorData,

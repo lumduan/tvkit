@@ -6,8 +6,7 @@ import signal
 import types
 from typing import Any, AsyncGenerator, List, Optional
 
-from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
-from tvkit.api.websocket.stream.models.ohlcv import (
+from tvkit.api.chart.models.ohlcv import (
     OHLCVBar,
     OHLCVResponse,
     QuoteCompletedMessage,
@@ -15,7 +14,8 @@ from tvkit.api.websocket.stream.models.ohlcv import (
     TimescaleUpdateResponse,
     WebSocketMessage,
 )
-from tvkit.api.websocket.stream.services import ConnectionService, MessageService
+from tvkit.api.chart.services import ConnectionService, MessageService
+from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG,
@@ -381,10 +381,10 @@ async def main():
         #             break
 
         # Example get last trade info
-        print("\nGetting latest trade info...")
-        async for trade_info in real_time_data.get_latest_trade_info(exchange_symbol=exchange_symbol):
-            print('-' * 50)
-            print(f"Trade Info: {trade_info}")
+        # print("\nGetting latest trade info...")
+        # async for trade_info in real_time_data.get_latest_trade_info(exchange_symbol=exchange_symbol):
+        #     print('-' * 50)
+        #     print(f"Trade Info: {trade_info}")
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -11,9 +11,9 @@ import logging
 from datetime import datetime
 from typing import List
 
-from tvkit.api.websocket.stream.realtime import RealtimeStreamer
-from tvkit.api.websocket.stream.models import StreamConfig, ExportConfig, StreamerResponse
-from tvkit.api.websocket.stream.exceptions import StreamingError
+from tvkit.api.chart.realtime import RealtimeStreamer
+from tvkit.api.chart.models import StreamConfig, ExportConfig, StreamerResponse
+from tvkit.api.chart.exceptions import StreamingError
 
 # Configure logging for the example
 logging.basicConfig(

@@ -9,8 +9,8 @@ import os
 # Add the parent directory to the path so we can import tvkit
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from tvkit.api.websocket.stream.realtime import RealtimeStreamer
-from tvkit.api.websocket.stream.models import StreamConfig
+from tvkit.api.chart.realtime import RealtimeStreamer
+from tvkit.api.chart.models import StreamConfig
 
 async def test_network_demo():
     """Test actual network streaming with timeout."""

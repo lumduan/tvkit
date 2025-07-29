@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from tvkit.api.websocket.stream.models.ohlcv import (
+from tvkit.api.chart.models.ohlcv import (
     LastBarStatus,
     NamespaceData,
     OHLCVBar,

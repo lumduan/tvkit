@@ -19,8 +19,8 @@ A comprehensive async-first implementation for streaming real-time market data f
 
 ```python
 import asyncio
-from tvkit.api.websocket.stream.realtime import RealtimeStreamer
-from tvkit.api.websocket.stream.models import StreamConfig
+from tvkit.api.chart.realtime import RealtimeStreamer
+from tvkit.api.chart.models import StreamConfig
 
 async def basic_streaming():
     config = StreamConfig(
@@ -128,7 +128,7 @@ Async class to handle streaming of real-time market data from TradingView.
 
 ```python
 import asyncio
-from tvkit.api.websocket.stream.realtime import RealtimeStreamer, ExportConfig, StreamConfig
+from tvkit.api.chart.realtime import RealtimeStreamer, ExportConfig, StreamConfig
 
 async def basic_streaming():
     export_config = ExportConfig(export_result=False)
@@ -153,7 +153,7 @@ asyncio.run(basic_streaming())
 
 ```python
 import asyncio
-from tvkit.api.websocket.stream.realtime import RealtimeStreamer, ExportConfig, StreamConfig, StreamData
+from tvkit.api.chart.realtime import RealtimeStreamer, ExportConfig, StreamConfig, StreamData
 
 async def export_streaming():
     export_config = ExportConfig(export_result=True, export_type='json')
@@ -177,7 +177,7 @@ asyncio.run(export_streaming())
 
 ```python
 import asyncio
-from tvkit.api.websocket.stream.realtime import (
+from tvkit.api.chart.realtime import (
     RealtimeStreamer, ExportConfig, StreamConfig, IndicatorConfig
 )
 
@@ -207,7 +207,7 @@ asyncio.run(indicator_streaming())
 
 ```python
 import asyncio
-from tvkit.api.websocket.stream.realtime import RealtimeStreamer
+from tvkit.api.chart.realtime import RealtimeStreamer
 
 async def validate_symbols():
     streamer = RealtimeStreamer()

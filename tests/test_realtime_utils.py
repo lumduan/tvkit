@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import List, Dict, Any
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from tvkit.api.websocket.stream.utils import (
+from tvkit.api.chart.utils import (
     ensure_export_directory,
     generate_export_filepath,
     save_json_file,
@@ -24,7 +24,7 @@ from tvkit.api.websocket.stream.utils import (
     generate_session_id,
     validate_symbols_async,
 )
-from tvkit.api.websocket.stream.models import OHLCVData, ExportConfig
+from tvkit.api.chart.models import OHLCVData, ExportConfig
 
 
 class TestDirectoryOperations:
@@ -329,7 +329,7 @@ class TestUtilityFunctions:
         validation_url = "https://example.com/validate?symbol={exchange}%3A{symbol}"
 
         # Mock httpx.AsyncClient
-        with patch('tvkit.api.websocket.stream.utils.httpx.AsyncClient') as mock_client:
+        with patch('tvkit.api.chart.utils.httpx.AsyncClient') as mock_client:
             mock_response = MagicMock()
             mock_response.raise_for_status.return_value = None
 
@@ -359,7 +359,7 @@ class TestUtilityFunctions:
         validation_url = "https://example.com/validate?symbol={exchange}%3A{symbol}"
 
         # Mock httpx.AsyncClient to raise HTTP error
-        with patch('tvkit.api.websocket.stream.utils.httpx.AsyncClient') as mock_client:
+        with patch('tvkit.api.chart.utils.httpx.AsyncClient') as mock_client:
             mock_context = AsyncMock()
             mock_context.__aenter__.return_value.get = AsyncMock(
                 side_effect=Exception("HTTP Error")

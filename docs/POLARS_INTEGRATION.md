@@ -151,7 +151,7 @@ df_enhanced.write_parquet("data.parquet")
 ### Real-time Streaming with Export
 
 ```python
-from tvkit.api.websocket.stream.realtime import (
+from tvkit.api.chart.realtime import (
     RealtimeStreamer, ExportConfig, StreamConfig
 )
 

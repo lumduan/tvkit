@@ -8,7 +8,7 @@ from websockets import ClientConnection
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from tvkit.api.websocket.stream.models.realtime import (
+from tvkit.api.chart.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
 )
