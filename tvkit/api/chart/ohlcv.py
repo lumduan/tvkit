@@ -21,7 +21,7 @@ from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-class RealTimeData:
+class OHLCV:
     """
     A real-time data streaming client for TradingView WebSocket API.
 
@@ -31,14 +31,14 @@ class RealTimeData:
 
     def __init__(self) -> None:
         """
-        Initializes the RealTimeData class, setting up WebSocket connection parameters
+        Initializes the OHLCV class, setting up WebSocket connection parameters
         and request headers for TradingView data streaming.
         """
         self.ws_url: str = "wss://data.tradingview.com/socket.io/websocket?from=screener%2F"
         self.connection_service: Optional[ConnectionService] = None
         self.message_service: Optional[MessageService] = None
 
-    async def __aenter__(self) -> "RealTimeData":
+    async def __aenter__(self) -> "OHLCV":
         """Async context manager entry."""
         return self
 
@@ -78,7 +78,7 @@ class RealTimeData:
             WebSocketException: If connection or streaming fails
 
         Example:
-            >>> async with RealTimeData() as client:
+            >>> async with OHLCV() as client:
             ...     async for bar in client.get_ohlcv("BINANCE:BTCUSDT", timeframe="5"):
             ...         print(f"Close: ${bar.close}, Volume: {bar.volume}")
         """
@@ -179,7 +179,7 @@ class RealTimeData:
             WebSocketException: If connection or streaming fails
 
         Example:
-            >>> async with RealTimeData() as client:
+            >>> async with OHLCV() as client:
             ...     async for quote in client.get_quote_data("NASDAQ:AAPL", timeframe="5"):
             ...         print(f"Price: ${quote.current_price}")
         """
@@ -251,7 +251,7 @@ class RealTimeData:
             WebSocketException: If connection or streaming fails
 
         Example:
-            >>> async with RealTimeData() as client:
+            >>> async with OHLCV() as client:
             ...     async for raw_data in client.get_ohlcv_raw("BINANCE:BTCUSDT", timeframe="5"):
             ...         print(f"Raw message: {raw_data}")
         """
@@ -292,7 +292,7 @@ class RealTimeData:
 
         Example:
             >>> symbols = ["BINANCE:BTCUSDT", "NASDAQ:AAPL", "FOREX:EURUSD"]
-            >>> async with RealTimeData() as client:
+            >>> async with OHLCV() as client:
             ...     async for trade_info in client.get_latest_trade_info(symbols):
             ...         print(f"Trade info: {trade_info}")
         """
@@ -334,9 +334,9 @@ signal.signal(signal.SIGINT, signal_handler)
 # Example Usage
 async def main():
     """
-    Example usage of the RealTimeData class with async patterns.
+    Example usage of the OHLCV class with async patterns.
     """
-    async with RealTimeData() as real_time_data:
+    async with OHLCV() as real_time_data:
         # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD"]
         exchange_symbol = ["BINANCE:BTCUSDT"]
 
