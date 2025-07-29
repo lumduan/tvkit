@@ -9,10 +9,8 @@ market data from TradingView with different configurations.
 import asyncio
 import logging
 from datetime import datetime
-from typing import List
-
 from tvkit.api.chart.realtime import RealtimeStreamer
-from tvkit.api.chart.models import StreamConfig, ExportConfig, StreamerResponse
+from tvkit.api.chart.models import StreamConfig, ExportConfig
 from tvkit.api.chart.exceptions import StreamingError
 
 # Configure logging for the example
@@ -175,11 +173,6 @@ async def example_error_handling():
             break
 
 
-if __name__ == "__main__":
-    # Run the examples
-    asyncio.run(main())
-
-
 async def main():
     """Main function to run streaming examples."""
     logger.info("TradingView Real-time Streaming Examples")
@@ -209,136 +202,3 @@ async def main():
 if __name__ == "__main__":
     # Run the examples
     asyncio.run(main())
-
-    # Configure for real-time streaming (no export)
-    export_config = ExportConfig(export_result=False)
-    stream_config = StreamConfig(timeframe="1m", numb_price_candles=10)
-
-    async with RealtimeStreamer(
-        export_config=export_config, stream_config=stream_config
-    ) as streamer:
-        try:
-            # Stream Bitcoin data from Binance
-            result = await streamer.stream(exchange="BINANCE", symbol="BTCUSDT")
-
-            # Since export_result=False, result is an async generator
-            if hasattr(result, "__aiter__"):
-                packet_count = 0
-                async for packet in result:  # type: ignore
-                    packet_count += 1
-                    logger.info(f"Received packet {packet_count}: {packet}")
-
-                    # Stop after 5 packets for demo
-                    if packet_count >= 5:
-                        break
-
-        except Exception as e:
-            logger.error(f"Error in basic streaming: {e}")
-
-
-async def example_export_streaming():
-    """Example of streaming with data export to files."""
-    logger.info("Starting export streaming example...")
-
-    # Configure for export
-    export_config = ExportConfig(
-        export_result=True,
-        export_type="json",  # or 'csv'
-    )
-    stream_config = StreamConfig(timeframe="5m", numb_price_candles=20)
-
-    async with RealtimeStreamer(
-        export_config=export_config, stream_config=stream_config
-    ) as streamer:
-        try:
-            # Stream Ethereum data from Binance
-            result = await streamer.stream(exchange="BINANCE", symbol="ETHUSDT")
-
-            # Since export_result=True, result is a StreamData object
-            if isinstance(result, StreamData):
-                logger.info(f"Successfully exported data:")
-                logger.info(f"  - OHLC data points: {len(result.ohlc)}")
-                logger.info(f"  - Indicator data points: {len(result.indicator)}")
-
-                # Show first OHLC data point if available
-                if result.ohlc:
-                    first_ohlc = result.ohlc[0]
-                    logger.info(f"  - First OHLC: {first_ohlc}")
-
-        except Exception as e:
-            logger.error(f"Error in export streaming: {e}")
-
-
-async def example_with_indicators():
-    """Example of streaming with technical indicators."""
-    logger.info("Starting indicator streaming example...")
-
-    export_config = ExportConfig(export_result=True, export_type="json")
-    stream_config = StreamConfig(timeframe="1m", numb_price_candles=30)
-    # Configure indicators (example - replace with actual indicator IDs)
-    indicator_config = IndicatorConfig(
-        indicator_id="RSI@tv-basicstudies", indicator_version="1"
-    )
-
-    async with RealtimeStreamer(
-        export_config=export_config,
-        stream_config=stream_config,
-        indicator_config=indicator_config,
-    ) as streamer:
-        try:
-            # Stream Apple stock data from NASDAQ
-            result = await streamer.stream(exchange="NASDAQ", symbol="AAPL")
-
-            if isinstance(result, StreamData):
-                logger.info(f"Successfully exported data with indicators:")
-                logger.info(f"  - OHLC data points: {len(result.ohlc)}")
-                logger.info(f"  - Indicator data points: {len(result.indicator)}")
-
-        except Exception as e:
-            logger.error(f"Error in indicator streaming: {e}")
-
-
-async def example_multiple_symbols():
-    """Example of validating multiple symbols."""
-    logger.info("Starting multiple symbol validation example...")
-
-    streamer = RealtimeStreamer()
-
-    try:
-        # Validate multiple symbols at once
-        symbols = ["BINANCE:BTCUSDT", "NASDAQ:AAPL", "NYSE:TSLA"]
-        is_valid = await streamer.validate_symbols(symbols)
-        logger.info(f"Symbols validation result: {is_valid}")
-
-    except ValueError as e:
-        logger.error(f"Symbol validation error: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-
-
-async def main():
-    """Run all examples."""
-    logger.info("=== RealtimeStreamer Examples ===")
-
-    # Run examples one by one
-    await example_basic_streaming()
-    await asyncio.sleep(2)  # Brief pause between examples
-
-    await example_export_streaming()
-    await asyncio.sleep(2)
-
-    await example_with_indicators()
-    await asyncio.sleep(2)
-
-    await example_multiple_symbols()
-
-    logger.info("=== All examples completed ===")
-
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Examples interrupted by user")
-    except Exception as e:
-        logger.error(f"Failed to run examples: {e}")
