@@ -1,0 +1,17 @@
+CSV Export Metadata
+==================
+Export Time: 2025-07-30T12:32:36.381718
+Source: ohlcv
+Symbol: unknown
+Interval: None
+Record Count: 100
+CSV File: apple_ohlcv_data.csv
+Format: CSV
+
+Column Descriptions:
+- timestamp: Price timestamp (iso format)
+- open: Opening price
+- high: Highest price in period
+- low: Lowest price in period  
+- close: Closing price
+- volume: Trading volume

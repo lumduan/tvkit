@@ -20,7 +20,7 @@ from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
