@@ -31,6 +31,9 @@ uv add tvkit
 
 # Using pip
 pip install tvkit
+
+# For development with pip (alternative to uv)
+pip install -r requirements.txt
 ```
 
 ### Real-time Data Streaming
@@ -254,15 +257,22 @@ cd tvkit
 # Install with uv (recommended)
 uv sync
 
+# Alternative: Install with pip
+pip install -r requirements.txt
+pip install mypy>=1.17.0  # For type checking
+
 # Run tests
 uv run python -m pytest tests/ -v
+# Or with pip: python -m pytest tests/ -v
 
 # Type checking
 uv run mypy tvkit/
+# Or with pip: mypy tvkit/
 
 # Code formatting
 uv run ruff format .
 uv run ruff check .
+# Or with pip: ruff format . && ruff check .
 ```
 
 ### Running Examples
@@ -270,12 +280,15 @@ uv run ruff check .
 ```bash
 # Real-time streaming example
 uv run python examples/realtime_streaming_example.py
+# Or with pip: python examples/realtime_streaming_example.py
 
 # Export functionality demo
 uv run python examples/export_demo.py
+# Or with pip: python examples/export_demo.py
 
 # Polars financial analysis
 uv run python examples/polars_financial_analysis.py
+# Or with pip: python examples/polars_financial_analysis.py
 ```
 
 ## 📖 Documentation
@@ -294,8 +307,13 @@ We welcome contributions! Please see our contributing guidelines:
 4. **Ensure** all quality checks pass:
 
    ```bash
+   # With uv
    uv run ruff check . && uv run ruff format . && uv run mypy tvkit/
    uv run python -m pytest tests/ -v
+   
+   # Or with pip
+   ruff check . && ruff format . && mypy tvkit/
+   python -m pytest tests/ -v
    ```
 
 5. **Submit** a pull request
