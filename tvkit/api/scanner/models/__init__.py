@@ -1,10 +1,10 @@
 """
-TradingView Scanner API Module
+TradingView Scanner Models.
 
-Provides models and utilities for interacting with TradingView's scanner API.
+This package contains all Pydantic models for the TradingView scanner API.
 """
 
-from .models import (
+from .scanner import (
     Columns,
     ColumnSets,
     ScannerOptions,

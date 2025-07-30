@@ -62,18 +62,18 @@ async def export_analysis():
     # Fetch historical data
     async with OHLCV() as client:
         bars = await client.get_historical_ohlcv(
-            "BINANCE:BTCUSDT", 
-            interval="60", 
+            "BINANCE:BTCUSDT",
+            interval="60",
             bars_count=100
         )
-    
+
     # Export to multiple formats
     exporter = DataExporter()
-    
+
     # Export to Polars DataFrame with technical analysis
     df = await exporter.to_polars(bars, add_analysis=True)
     print(f"DataFrame: {len(df)} rows × {len(df.columns)} columns")
-    
+
     # Export to files
     await exporter.to_json(bars, "btc_data.json")
     await exporter.to_csv(bars, "btc_data.csv")
@@ -110,7 +110,7 @@ async with OHLCV() as client:
 - **Global Markets**: Stocks from multiple countries and exchanges
 
 ```python
-from tvkit.api.scanner.model import create_scanner_request, ColumnSets
+from tvkit.api.scanner import create_scanner_request, ColumnSets
 
 # Create advanced screening request
 request = create_scanner_request(
@@ -181,10 +181,10 @@ analysis_df = df.with_columns([
     # Bollinger Bands
     (pl.col("sma_20") + 2 * pl.col("close").rolling_std(20)).alias("bb_upper"),
     (pl.col("sma_20") - 2 * pl.col("close").rolling_std(20)).alias("bb_lower"),
-    
+
     # Volume analysis
     (pl.col("volume") / pl.col("volume").rolling_mean(10)).alias("volume_ratio"),
-    
+
     # Price momentum
     (pl.col("close") - pl.col("close").shift(5)).alias("momentum_5"),
 ])
@@ -202,13 +202,13 @@ from tvkit.api.chart.ohlcv import OHLCV
 async def robust_streaming():
     max_retries = 3
     retry_count = 0
-    
+
     while retry_count < max_retries:
         try:
             async with OHLCV() as client:
                 async for bar in client.get_ohlcv("BINANCE:BTCUSDT"):
                     print(f"Price: ${bar.close}")
-                    
+
         except Exception as e:
             retry_count += 1
             wait_time = 2 ** retry_count  # Exponential backoff
@@ -228,7 +228,7 @@ async def monitor_portfolio():
         "FOREX:EURUSD",       # Forex
         "OANDA:XAUUSD"        # Commodities (Gold)
     ]
-    
+
     async with OHLCV() as client:
         async for trade_info in client.get_latest_trade_info(symbols):
             # Process multi-asset trade information
@@ -310,7 +310,7 @@ We welcome contributions! Please see our contributing guidelines:
    # With uv
    uv run ruff check . && uv run ruff format . && uv run mypy tvkit/
    uv run python -m pytest tests/ -v
-   
+
    # Or with pip
    ruff check . && ruff format . && mypy tvkit/
    python -m pytest tests/ -v
