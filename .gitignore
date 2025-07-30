@@ -15,6 +15,7 @@ debug/
 .claude/
 CLAUDE.md
 .github/
+.vscode/
 scripts/
 main.py
 tvkit.code-workspace
