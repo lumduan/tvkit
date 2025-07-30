@@ -18,7 +18,7 @@ from .models import (
 )
 from .formatters import BaseFormatter, PolarsFormatter, JSONFormatter, CSVFormatter
 from ..api.chart.models.ohlcv import OHLCVBar
-from ..api.scanner.model import StockData
+from ..api.scanner.models import StockData
 
 logger = logging.getLogger(__name__)
 
