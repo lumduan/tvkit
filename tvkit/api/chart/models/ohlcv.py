@@ -67,7 +67,7 @@ class SeriesData(BaseModel):
         description="OHLCV values array [timestamp, open, high, low, close, volume]",
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ohlcv_bar(self) -> OHLCVBar:
         """
@@ -152,7 +152,7 @@ class OHLCVResponse(BaseModel):
             raise ValueError("Parameters must contain at least session ID and data")
         return v
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def session_id(self) -> str:
         """
@@ -163,7 +163,7 @@ class OHLCVResponse(BaseModel):
         """
         return str(self.parameters[0])
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def series_updates(self) -> dict[str, SeriesUpdate]:
         """
@@ -187,7 +187,7 @@ class OHLCVResponse(BaseModel):
 
         return series_updates
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ohlcv_bars(self) -> List[OHLCVBar]:
         """
@@ -231,13 +231,13 @@ class TimescaleUpdateResponse(BaseModel):
             raise ValueError(f"Expected message type 'timescale_update', got '{v}'")
         return v
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def session_id(self) -> str:
         """Extract the session ID from parameters."""
         return str(self.parameters[0])
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def ohlcv_bars(self) -> List[OHLCVBar]:
         """
@@ -299,13 +299,13 @@ class QuoteSymbolData(BaseModel):
             raise ValueError(f"Expected message type 'qsd', got '{v}'")
         return v
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def session_id(self) -> str:
         """Extract the session ID from parameters."""
         return str(self.parameters[0]) if self.parameters else ""
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def quote_data(self) -> dict[str, Any]:
         """Extract quote data from parameters."""
@@ -313,7 +313,7 @@ class QuoteSymbolData(BaseModel):
             return self.parameters[1]
         return {}
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def current_price(self) -> Optional[float]:
         """Extract current price from quote data."""
@@ -322,7 +322,7 @@ class QuoteSymbolData(BaseModel):
             return quote_data["v"].get("lp")  # 'lp' = last price
         return None
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def symbol_info(self) -> dict[str, Any]:
         """Extract symbol information from quote data."""
@@ -354,13 +354,13 @@ class QuoteCompletedMessage(BaseModel):
             raise ValueError(f"Expected message type 'quote_completed', got '{v}'")
         return v
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def session_id(self) -> str:
         """Extract the session ID from parameters."""
         return str(self.parameters[0]) if self.parameters else ""
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def symbol(self) -> str:
         """Extract the symbol from parameters."""
@@ -379,7 +379,7 @@ class WebSocketMessage(BaseModel):
     message_type: str = Field(alias="m", description="Message type")
     parameters: List[Any] = Field(alias="p", description="Message parameters")
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def session_id(self) -> str:
         """Extract the session ID from parameters if available."""

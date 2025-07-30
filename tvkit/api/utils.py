@@ -173,8 +173,10 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
                         ) from exc
 
                     logging.warning(
-                        msg="Attempt %d failed to validate exchange:symbol '%s': %s",
-                        *[attempt + 1, item, exc],
+                        "Attempt %d failed to validate exchange:symbol '%s': %s",
+                        attempt + 1,
+                        item,
+                        exc,
                     )
 
                     if attempt < retries - 1:
@@ -185,8 +187,10 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
                         ) from exc
                 except httpx.RequestError as exc:
                     logging.warning(
-                        msg="Attempt %d failed to validate exchange:symbol '%s': %s",
-                        *[attempt + 1, item, exc],
+                        "Attempt %d failed to validate exchange:symbol '%s': %s",
+                        attempt + 1,
+                        item,
+                        exc,
                     )
 
                     if attempt < retries - 1:
@@ -254,7 +258,7 @@ async def fetch_tradingview_indicators(query: str) -> List[IndicatorData]:
             return filtered_results
 
     except httpx.RequestError as exc:
-        logging.error(msg="Error fetching TradingView indicators: %s", *[exc])
+        logging.error("Error fetching TradingView indicators: %s", exc)
         return []
 
 
@@ -356,7 +360,7 @@ async def fetch_indicator_metadata(
             return {}
 
     except httpx.RequestError as exc:
-        logging.error(msg="Error fetching indicator metadata: %s", *[exc])
+        logging.error("Error fetching indicator metadata: %s", exc)
         return {}
 
 

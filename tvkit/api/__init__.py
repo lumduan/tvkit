@@ -8,4 +8,4 @@ Contains the main API interfaces for TradingView data access.
 # from .scanner import *
 # from .stock import *
 
-__all__ = []
+__all__: list[str] = []
