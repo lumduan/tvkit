@@ -14,7 +14,7 @@ Modern Python library for TradingView financial data APIs with comprehensive rea
 
 - 🚀 **Real-time Data Streaming**: WebSocket-based streaming for live market data
 - 📊 **Multi-format Export**: Support for Polars DataFrames, JSON, CSV, and Parquet
-- 🔍 **Scanner API**: Advanced stock screening with 100+ financial metrics
+- 🔍 **Multi-Market Scanner**: Screen 69 global markets with 101+ financial metrics
 - ⚡ **High Performance**: Built with Polars for fast data processing
 - 🛡️ **Type Safety**: Full Pydantic validation and type hints
 - 🔄 **Async-First**: Modern async/await patterns throughout
@@ -104,17 +104,43 @@ async with OHLCV() as client:
 
 ### 2. 🔍 Scanner API (`tvkit.api.scanner`)
 
-- **Advanced Screening**: Filter stocks by 100+ financial metrics
-- **Fundamental Data**: P/E ratios, market cap, ROE, dividends, margins
-- **Technical Indicators**: RSI, MACD, moving averages, momentum
-- **Global Markets**: Stocks from multiple countries and exchanges
+- **Multi-Market Scanning**: Access 69 global markets across 6 regions with unified API
+- **Comprehensive Data**: 101+ financial columns including fundamentals, technicals, and valuation metrics
+- **Advanced Screening**: Filter stocks by market cap, P/E ratios, ROE, dividends, volatility, and technical indicators
+- **Regional Analysis**: Scan markets by region (Asia Pacific, Europe, North America, etc.)
+- **Flexible Access**: Use Market enums or string IDs for dynamic market selection
 
 ```python
-from tvkit.api.scanner import create_scanner_request, ColumnSets
+from tvkit.api.scanner import ScannerService, Market, MarketRegion
+from tvkit.api.scanner import create_comprehensive_request, ColumnSets, get_markets_by_region
 
-# Create advanced screening request
-request = create_scanner_request(
-    columns=ColumnSets.FUNDAMENTALS,
+# Multi-market scanning example
+async def scan_markets():
+    service = ScannerService()
+    
+    # Comprehensive scan with all available data
+    request = create_comprehensive_request(
+        sort_by="market_cap_basic",
+        sort_order="desc",
+        range_end=50
+    )
+    
+    # Scan specific markets
+    thailand_data = await service.scan_market(Market.THAILAND, request)
+    japan_data = await service.scan_market(Market.JAPAN, request)
+    
+    # Scan by market ID string
+    brazil_data = await service.scan_market_by_id("brazil", request)
+    
+    # Regional scanning - get all Asia Pacific markets
+    asia_markets = get_markets_by_region(MarketRegion.ASIA_PACIFIC)
+    for market in asia_markets[:5]:  # Top 5 Asian markets
+        response = await service.scan_market(market, request)
+        print(f"{market.value}: {len(response.data)} stocks")
+
+# Basic scanning with focused data
+basic_request = create_scanner_request(
+    columns=ColumnSets.FUNDAMENTALS,  # P/E, market cap, sector, etc.
     sort_by="market_cap_basic",
     sort_order="desc",
     range_end=100
@@ -145,17 +171,29 @@ result = await exporter.export_ohlcv_data(bars, ExportFormat.CSV, config=config)
 
 ## 📊 Supported Data Types
 
-### Financial Metrics (Scanner API)
+### Financial Metrics (Scanner API) - 101+ Columns Available
 
-| Category | Examples |
-|----------|----------|
-| **Price Data** | Current price, change, volume, market cap |
-| **Valuation** | P/E ratio, P/B ratio, EV/Revenue, PEG ratio |
-| **Profitability** | ROE, ROA, profit margins, EBITDA |
-| **Financial Health** | Debt/equity, current ratio, free cash flow |
-| **Dividends** | Yield, payout ratio, growth rate |
-| **Performance** | YTD, 1Y, 5Y returns, volatility metrics |
-| **Technical** | RSI, MACD, moving averages, momentum |
+| Category | Column Sets | Examples |
+|----------|-------------|----------|
+| **Price Data** | `BASIC`, `TECHNICAL` | Current price, change, volume, market cap, high/low/open |
+| **Valuation Ratios** | `VALUATION`, `FUNDAMENTALS` | P/E ratio, P/B ratio, EV/Revenue, PEG ratio, Price/Sales |
+| **Profitability** | `PROFITABILITY`, `COMPREHENSIVE` | ROE, ROA, gross/operating/net margins, EBITDA |
+| **Financial Health** | `FINANCIAL_STRENGTH` | Debt/equity, current ratio, quick ratio, free cash flow |
+| **Dividends** | `DIVIDENDS`, `FUNDAMENTALS` | Current yield, payout ratio, growth rate, continuous growth |
+| **Performance** | `PERFORMANCE`, `DETAILED` | YTD, 1M, 3M, 6M, 1Y, 5Y, 10Y returns, volatility metrics |
+| **Technical Indicators** | `TECHNICAL_INDICATORS` | RSI, MACD, Stochastic, CCI, momentum, recommendations |
+| **Cash Flow** | `CASH_FLOW`, `COMPREHENSIVE_FULL` | Operating/investing/financing activities, free cash flow margin |
+| **Balance Sheet** | `FINANCIAL_STRENGTH`, `COMPREHENSIVE_FULL` | Total assets/liabilities, debt ratios, cash positions |
+
+### Global Market Coverage (Scanner API)
+
+| Region | Markets | Examples |
+|--------|---------|----------|
+| **North America** | 2 markets | USA (NASDAQ, NYSE), Canada (TSX, TSXV) |
+| **Europe** | 30 markets | Germany, France, UK, Netherlands, Switzerland, Italy |
+| **Asia Pacific** | 17 markets | Japan, Thailand, Singapore, Korea, Australia, India, China |
+| **Middle East & Africa** | 12 markets | UAE, Saudi Arabia, Israel, South Africa |
+| **Latin America** | 7 markets | Brazil, Mexico, Argentina, Chile, Colombia |
 
 ### Market Data (Chart API)
 
@@ -165,6 +203,51 @@ result = await exporter.export_ohlcv_data(bars, ExportFormat.CSV, config=config)
 - **Multiple Timeframes**: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1d, 1w, 1M
 
 ## 🔧 Advanced Usage
+
+### Multi-Market Scanner Analysis
+
+```python
+import asyncio
+from tvkit.api.scanner import ScannerService, Market, MarketRegion
+from tvkit.api.scanner import create_comprehensive_request, get_markets_by_region
+
+async def comprehensive_market_analysis():
+    service = ScannerService()
+    
+    # Create comprehensive request with all financial metrics
+    request = create_comprehensive_request(
+        sort_by="market_cap_basic",
+        sort_order="desc",
+        range_end=10  # Top 10 stocks per market
+    )
+    
+    # Regional analysis - scan all Asia Pacific markets
+    asia_pacific_markets = get_markets_by_region(MarketRegion.ASIA_PACIFIC)
+    market_leaders = {}
+    
+    for market in asia_pacific_markets[:6]:  # Top 6 Asian markets
+        try:
+            response = await service.scan_market(market, request)
+            if response.data:
+                top_stock = response.data[0]  # Market leader by market cap
+                market_leaders[market.value] = {
+                    'symbol': top_stock.name,
+                    'price': f"{top_stock.close} {top_stock.currency}",
+                    'market_cap': f"${top_stock.market_cap_basic:,.0f}" if top_stock.market_cap_basic else "N/A",
+                    'pe_ratio': f"{top_stock.price_earnings_ttm:.2f}" if top_stock.price_earnings_ttm else "N/A",
+                    'sector': top_stock.sector or "N/A"
+                }
+        except Exception as e:
+            print(f"Error scanning {market.value}: {e}")
+    
+    # Display market leaders
+    for market, data in market_leaders.items():
+        print(f"{market.title()}: {data['symbol']} - {data['price']} "
+              f"(Market Cap: {data['market_cap']}, P/E: {data['pe_ratio']})")
+
+# Run analysis
+asyncio.run(comprehensive_market_analysis())
+```
 
 ### Custom Financial Analysis
 
