@@ -2,7 +2,7 @@
 """
 Multi-Market Scanner Example Script
 
-This comprehensive script demonstrates how to use the tvkit scanner service to 
+This comprehensive script demonstrates how to use the tvkit scanner service to
 retrieve market data from various global markets using TradingView's scanner API.
 
 What you'll learn:
@@ -30,11 +30,11 @@ from typing import Dict, List
 from tvkit.api.scanner.services import ScannerService, create_comprehensive_request
 from tvkit.api.scanner.models import ColumnSets, create_scanner_request, StockData
 from tvkit.api.scanner.markets import (
-    Market, 
-    MarketRegion, 
-    get_markets_by_region, 
-    get_all_markets, 
-    MARKET_INFO
+    Market,
+    MarketRegion,
+    get_markets_by_region,
+    get_all_markets,
+    MARKET_INFO,
 )
 
 
@@ -45,7 +45,7 @@ def display_available_regions() -> None:
 
     regions = {
         MarketRegion.NORTH_AMERICA: "🇺🇸 North America",
-        MarketRegion.EUROPE: "🇪🇺 Europe", 
+        MarketRegion.EUROPE: "🇪🇺 Europe",
         MarketRegion.ASIA_PACIFIC: "🌏 Asia Pacific",
         MarketRegion.MIDDLE_EAST_AFRICA: "🕌 Middle East & Africa",
         MarketRegion.MEXICO_SOUTH_AMERICA: "🌎 Mexico & South America",
@@ -66,7 +66,9 @@ def display_available_regions() -> None:
         print()
 
 
-async def basic_market_scan_demo() -> tuple[List[StockData] | None, List[StockData] | None]:
+async def basic_market_scan_demo() -> tuple[
+    List[StockData] | None, List[StockData] | None
+]:
     """Perform a basic scan of multiple markets."""
     print("🌍 Multi-Market Scanner - Basic Example")
     print("=" * 50)
@@ -106,15 +108,19 @@ async def basic_market_scan_demo() -> tuple[List[StockData] | None, List[StockDa
         def stocks_to_df(stocks: List[StockData], market_name: str) -> pd.DataFrame:
             data = []
             for stock in stocks:
-                data.append({
-                    'Market': market_name,
-                    'Symbol': stock.name,
-                    'Price': stock.close if stock.close else 0,
-                    'Currency': stock.currency or 'N/A',
-                    'Change': stock.change if stock.change else 0,
-                    'Volume': stock.volume if stock.volume else 0,
-                    'Change %': round(stock.change / stock.close * 100, 2) if stock.change and stock.close else 0
-                })
+                data.append(
+                    {
+                        "Market": market_name,
+                        "Symbol": stock.name,
+                        "Price": stock.close if stock.close else 0,
+                        "Currency": stock.currency or "N/A",
+                        "Change": stock.change if stock.change else 0,
+                        "Volume": stock.volume if stock.volume else 0,
+                        "Change %": round(stock.change / stock.close * 100, 2)
+                        if stock.change and stock.close
+                        else 0,
+                    }
+                )
             return pd.DataFrame(data)
 
         # Create comparison DataFrame
@@ -145,13 +151,18 @@ async def comprehensive_market_scan_demo() -> Dict[str, List[StockData]]:
         request = create_comprehensive_request(
             sort_by="market_cap_basic",
             sort_order="desc",
-            range_end=5  # Top 5 by market cap
+            range_end=5,  # Top 5 by market cap
         )
 
         print(f"Using {len(request.columns)} columns for comprehensive analysis...")
         print(f"Sample columns: {', '.join(request.columns[:10])}...")
 
-        markets_to_scan = [Market.THAILAND, Market.JAPAN, Market.SINGAPORE, Market.KOREA]
+        markets_to_scan = [
+            Market.THAILAND,
+            Market.JAPAN,
+            Market.SINGAPORE,
+            Market.KOREA,
+        ]
         comprehensive_results = {}
 
         for market in markets_to_scan:
@@ -192,15 +203,25 @@ async def comprehensive_market_scan_demo() -> Dict[str, List[StockData]]:
         for market_name, stocks in comprehensive_results.items():
             if stocks:
                 stock = stocks[0]  # Top stock
-                comparison_data.append({
-                    'Market': market_name,
-                    'Symbol': stock.name,
-                    'Price': f"{stock.close:.2f} {stock.currency}" if stock.close else "N/A",
-                    'Market Cap (USD)': f"${stock.market_cap_basic:,.0f}" if stock.market_cap_basic else "N/A",
-                    'P/E Ratio': f"{stock.price_earnings_ttm:.2f}" if stock.price_earnings_ttm else "N/A",
-                    'Sector': stock.sector or "N/A",
-                    'Dividend Yield': f"{stock.dividends_yield_current:.2f}%" if stock.dividends_yield_current else "N/A"
-                })
+                comparison_data.append(
+                    {
+                        "Market": market_name,
+                        "Symbol": stock.name,
+                        "Price": f"{stock.close:.2f} {stock.currency}"
+                        if stock.close
+                        else "N/A",
+                        "Market Cap (USD)": f"${stock.market_cap_basic:,.0f}"
+                        if stock.market_cap_basic
+                        else "N/A",
+                        "P/E Ratio": f"{stock.price_earnings_ttm:.2f}"
+                        if stock.price_earnings_ttm
+                        else "N/A",
+                        "Sector": stock.sector or "N/A",
+                        "Dividend Yield": f"{stock.dividends_yield_current:.2f}%"
+                        if stock.dividends_yield_current
+                        else "N/A",
+                    }
+                )
 
         comparison_df = pd.DataFrame(comparison_data)
         print("\n🏆 Market Leaders Comparison:")
@@ -230,12 +251,13 @@ async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
             Market.JAPAN,
             Market.KOREA,
             Market.AUSTRALIA,
-            Market.INDIA
+            Market.INDIA,
         ]
 
         # Create request focused on key metrics
         request = create_scanner_request(
-            columns=ColumnSets.BASIC + ["market_cap_basic", "sector", "price_earnings_ttm"],
+            columns=ColumnSets.BASIC
+            + ["market_cap_basic", "sector", "price_earnings_ttm"],
             sort_by="market_cap_basic",
             sort_order="desc",
             range_end=3,  # Top 3 from each market
@@ -260,16 +282,22 @@ async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
         for market_id, stocks in all_results.items():
             market_name = market_id.title()
             for i, stock in enumerate(stocks, 1):
-                regional_data.append({
-                    'Market': market_name,
-                    'Rank': i,
-                    'Symbol': stock.name,
-                    'Price': f"{stock.close:.2f}" if stock.close else "N/A",
-                    'Currency': stock.currency or "N/A",
-                    'Market Cap': f"{stock.market_cap_basic:,.0f}" if stock.market_cap_basic else "N/A",
-                    'P/E': f"{stock.price_earnings_ttm:.2f}" if stock.price_earnings_ttm else "N/A",
-                    'Sector': stock.sector or "N/A"
-                })
+                regional_data.append(
+                    {
+                        "Market": market_name,
+                        "Rank": i,
+                        "Symbol": stock.name,
+                        "Price": f"{stock.close:.2f}" if stock.close else "N/A",
+                        "Currency": stock.currency or "N/A",
+                        "Market Cap": f"{stock.market_cap_basic:,.0f}"
+                        if stock.market_cap_basic
+                        else "N/A",
+                        "P/E": f"{stock.price_earnings_ttm:.2f}"
+                        if stock.price_earnings_ttm
+                        else "N/A",
+                        "Sector": stock.sector or "N/A",
+                    }
+                )
 
         regional_df = pd.DataFrame(regional_data)
 
@@ -277,10 +305,14 @@ async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
         print("=" * 120)
 
         # Display by market
-        for market_name in regional_df['Market'].unique():
-            market_stocks = regional_df[regional_df['Market'] == market_name]
+        for market_name in regional_df["Market"].unique():
+            market_stocks = regional_df[regional_df["Market"] == market_name]
             print(f"\n{market_name}:")
-            print(market_stocks[['Rank', 'Symbol', 'Price', 'Currency', 'Market Cap', 'Sector']].to_string(index=False))
+            print(
+                market_stocks[
+                    ["Rank", "Symbol", "Price", "Currency", "Market Cap", "Sector"]
+                ].to_string(index=False)
+            )
 
         return all_results
 
@@ -301,7 +333,7 @@ async def market_by_id_demo() -> List[Dict[str, str]]:
             columns=ColumnSets.BASIC + ["market_cap_basic", "sector"],
             sort_by="market_cap_basic",
             sort_order="desc",
-            range_end=5
+            range_end=5,
         )
 
         # Using market ID strings - useful for dynamic market selection
@@ -319,17 +351,25 @@ async def market_by_id_demo() -> List[Dict[str, str]]:
 
                 if response.data:
                     for i, stock in enumerate(response.data[:3], 1):  # Top 3
-                        market_id_results.append({
-                            'Market': market_id.title(),
-                            'Rank': str(i),
-                            'Symbol': stock.name,
-                            'Price': f"{stock.close:.2f} {stock.currency}" if stock.close else "N/A",
-                            'Market Cap': f"{stock.market_cap_basic:,.0f}" if stock.market_cap_basic else "N/A",
-                            'Sector': stock.sector or "N/A"
-                        })
+                        market_id_results.append(
+                            {
+                                "Market": market_id.title(),
+                                "Rank": str(i),
+                                "Symbol": stock.name,
+                                "Price": f"{stock.close:.2f} {stock.currency}"
+                                if stock.close
+                                else "N/A",
+                                "Market Cap": f"{stock.market_cap_basic:,.0f}"
+                                if stock.market_cap_basic
+                                else "N/A",
+                                "Sector": stock.sector or "N/A",
+                            }
+                        )
 
                     top_stock = response.data[0]
-                    print(f"   Top stock: {top_stock.name} - {top_stock.close} {top_stock.currency}")
+                    print(
+                        f"   Top stock: {top_stock.name} - {top_stock.close} {top_stock.currency}"
+                    )
                     if top_stock.market_cap_basic:
                         print(f"   Market Cap: ${top_stock.market_cap_basic:,.0f}")
 
@@ -384,13 +424,15 @@ def display_available_markets_info() -> pd.DataFrame:
                     if len(info.exchanges) > 2:
                         exchanges += f" (+{len(info.exchanges) - 2} more)"
 
-                    region_markets.append({
-                        'Region': region_name,
-                        'Market': info.name,  
-                        'ID': market.value,
-                        'Exchanges': exchanges,
-                        'Total Exchanges': len(info.exchanges)
-                    })
+                    region_markets.append(
+                        {
+                            "Region": region_name,
+                            "Market": info.name,
+                            "ID": market.value,
+                            "Exchanges": exchanges,
+                            "Total Exchanges": len(info.exchanges),
+                        }
+                    )
 
                     print(f"  • {info.name} ({market.value}): {exchanges}")
 
@@ -408,10 +450,16 @@ def display_available_markets_info() -> pd.DataFrame:
         for region, region_name in regions.items():
             markets = get_markets_by_region(region)
             total_exchanges = sum(
-                len(MARKET_INFO.get(m, type('obj', (object,), {'exchanges': []})).exchanges) 
+                len(
+                    MARKET_INFO.get(
+                        m, type("obj", (object,), {"exchanges": []})
+                    ).exchanges
+                )
                 for m in markets
             )
-            print(f"  {region_name}: {len(markets)} markets, {total_exchanges} total exchanges")
+            print(
+                f"  {region_name}: {len(markets)} markets, {total_exchanges} total exchanges"
+            )
 
         return summary_df
 
@@ -430,63 +478,77 @@ async def run_all_scanner_examples() -> Dict[str, any]:
 
     # Track all results
     demo_results = {
-        'basic_scan': None,
-        'comprehensive_scan': None,
-        'regional_scan': None,
-        'id_scan': None
+        "basic_scan": None,
+        "comprehensive_scan": None,
+        "regional_scan": None,
+        "id_scan": None,
     }
 
     try:
         # 1. Basic Market Scan
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("1️⃣  BASIC MARKET SCAN")
-        print("="*60)
+        print("=" * 60)
         thailand_data, usa_data = await basic_market_scan_demo()
-        demo_results['basic_scan'] = {'thailand': thailand_data, 'usa': usa_data}
+        demo_results["basic_scan"] = {"thailand": thailand_data, "usa": usa_data}
 
         # 2. Comprehensive Market Scan
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("2️⃣  COMPREHENSIVE MARKET SCAN")
-        print("="*60)
+        print("=" * 60)
         comprehensive_data = await comprehensive_market_scan_demo()
-        demo_results['comprehensive_scan'] = comprehensive_data
+        demo_results["comprehensive_scan"] = comprehensive_data
 
         # 3. Regional Market Scan
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("3️⃣  REGIONAL MARKET SCAN")
-        print("="*60)
+        print("=" * 60)
         regional_data = await regional_market_scan_demo()
-        demo_results['regional_scan'] = regional_data
+        demo_results["regional_scan"] = regional_data
 
         # 4. Market by ID Scan
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("4️⃣  MARKET BY ID SCAN")
-        print("="*60)
+        print("=" * 60)
         market_id_data = await market_by_id_demo()
-        demo_results['id_scan'] = market_id_data
+        demo_results["id_scan"] = market_id_data
 
         # 5. Available Markets Info
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("5️⃣  AVAILABLE MARKETS INFO")
-        print("="*60)
+        print("=" * 60)
         display_available_markets_info()
 
         # Final Summary
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("🎉 ALL EXAMPLES COMPLETED SUCCESSFULLY!")
-        print("="*60)
+        print("=" * 60)
 
         print("\n📊 Demo Summary:")
-        basic_count = len(demo_results['basic_scan']['thailand']) if demo_results['basic_scan'] and demo_results['basic_scan']['thailand'] else 0
-        comp_count = sum(len(stocks) for stocks in demo_results['comprehensive_scan'].values()) if demo_results['comprehensive_scan'] else 0
-        regional_count = sum(len(stocks) for stocks in demo_results['regional_scan'].values()) if demo_results['regional_scan'] else 0
-        id_count = len(demo_results['id_scan']) if demo_results['id_scan'] else 0
+        basic_count = (
+            len(demo_results["basic_scan"]["thailand"])
+            if demo_results["basic_scan"] and demo_results["basic_scan"]["thailand"]
+            else 0
+        )
+        comp_count = (
+            sum(len(stocks) for stocks in demo_results["comprehensive_scan"].values())
+            if demo_results["comprehensive_scan"]
+            else 0
+        )
+        regional_count = (
+            sum(len(stocks) for stocks in demo_results["regional_scan"].values())
+            if demo_results["regional_scan"]
+            else 0
+        )
+        id_count = len(demo_results["id_scan"]) if demo_results["id_scan"] else 0
 
         print(f"  • Basic scan: {basic_count} Thailand stocks + USA comparison")
         print(f"  • Comprehensive scan: {comp_count} stocks across 4 Asian markets")
         print(f"  • Regional scan: {regional_count} stocks across Asia Pacific")
         print(f"  • ID-based scan: {id_count} results across 5 global markets")
-        print(f"  • Market info: {len(Market)} total markets across {len(MarketRegion)} regions")
+        print(
+            f"  • Market info: {len(Market)} total markets across {len(MarketRegion)} regions"
+        )
 
         print("\n🔗 Key Features Demonstrated:")
         print("  ✅ Multi-market scanning with Market enum")
@@ -519,7 +581,9 @@ async def main() -> None:
     """Main function that runs all scanner examples."""
     print("🚀 Multi-Market Scanner Example Script")
     print("=" * 50)
-    print(f"📊 Available markets: {len(Market)} markets across {len(MarketRegion)} regions")
+    print(
+        f"📊 Available markets: {len(Market)} markets across {len(MarketRegion)} regions"
+    )
     print()
 
     # Display available regions first

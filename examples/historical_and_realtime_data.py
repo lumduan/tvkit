@@ -19,7 +19,7 @@ Usage:
 import asyncio
 import logging
 import warnings
-from typing import List, Dict, Any
+from typing import List, Dict
 
 # TVKit imports
 from tvkit.api.chart.ohlcv import OHLCV
@@ -32,6 +32,7 @@ try:
     import polars as pl
     import matplotlib.pyplot as plt
     import seaborn as sns
+
     analysis_available = True
     print("✅ Analysis libraries loaded successfully")
     # Use the imports to avoid F401 warnings
@@ -48,10 +49,10 @@ def configure_logging() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("websockets").setLevel(logging.WARNING)
-    
+
     # Optionally suppress warnings
     warnings.filterwarnings("ignore")
-    
+
     print("🔇 Debug logging disabled - clean output mode enabled")
 
 
@@ -406,10 +407,16 @@ async def main() -> None:
         print("This script has demonstrated the comprehensive capabilities of TVKit:")
         print()
         print("### ✅ Completed Examples")
-        print("- Basic OHLCV Data Fetching - Retrieved historical market data for Apple stock")
-        print("- Multi-format Data Export - Exported to Polars DataFrame, JSON, and CSV formats")
+        print(
+            "- Basic OHLCV Data Fetching - Retrieved historical market data for Apple stock"
+        )
+        print(
+            "- Multi-format Data Export - Exported to Polars DataFrame, JSON, and CSV formats"
+        )
         print("- Multi-symbol Operations - Compared performance across multiple stocks")
-        print("- Cryptocurrency & Forex - Demonstrated support for various asset classes")
+        print(
+            "- Cryptocurrency & Forex - Demonstrated support for various asset classes"
+        )
         print("- Real-time Streaming - Limited demo of live data streaming")
         print("- Error Handling - Best practices for robust applications")
         print()
@@ -417,7 +424,9 @@ async def main() -> None:
         print("- Async Architecture - All operations use modern async/await patterns")
         print("- Type Safety - Comprehensive Pydantic models for data validation")
         print("- Multiple Asset Classes - Stocks, crypto, forex, and more")
-        print("- Flexible Export System - Support for Polars, JSON, CSV with custom options")
+        print(
+            "- Flexible Export System - Support for Polars, JSON, CSV with custom options"
+        )
         print("- Real-time Capabilities - WebSocket streaming for live market data")
         print("- Error Resilience - Robust error handling and validation")
         print()
