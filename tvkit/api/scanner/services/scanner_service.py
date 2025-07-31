@@ -13,7 +13,7 @@ import httpx
 from pydantic import ValidationError
 
 from tvkit.api.scanner.markets import Market, is_valid_market
-from tvkit.api.scanner.models import ScannerRequest, ScannerResponse
+from tvkit.api.scanner.models import ColumnSets, ScannerRequest, ScannerResponse
 
 
 class ScannerServiceError(Exception):
@@ -113,6 +113,11 @@ class ScannerService:
             ... )
             >>> response = await service.scan_market(Market.THAILAND, request)
             >>> print(f"Found {len(response.data)} stocks")
+
+            Note: For comprehensive data with all available columns, use:
+            >>> from tvkit.api.scanner.services import create_comprehensive_request
+            >>> request = create_comprehensive_request()
+            >>> response = await service.scan_market(Market.AMERICA, request)
         """
         endpoint: str = f"{self.base_url}/{market.value}/scan"
         params: Dict[str, str] = {"label-product": label_product}
@@ -252,15 +257,22 @@ def create_comprehensive_request(
     """
     Create a comprehensive scanner request with all available columns.
 
+    This function uses the complete set of TradingView scanner columns
+    for maximum data availability. For more focused requests, consider
+    using create_scanner_request() with specific ColumnSets.
+
     Args:
-        sort_by: Field to sort by
+        sort_by: Field to sort by (e.g., 'name', 'market_cap_basic', 'volume')
         sort_order: Sort order ('asc' or 'desc')
-        range_start: Start index for results
-        range_end: End index for results
-        language: Language code for response
+        range_start: Start index for results (0-based)
+        range_end: End index for results (exclusive)
+        language: Language code for response localization
 
     Returns:
-        Configured ScannerRequest with comprehensive columns
+        Configured ScannerRequest with comprehensive column set
+
+    Raises:
+        ValueError: If range parameters are invalid
 
     Example:
         >>> request = create_comprehensive_request(
@@ -270,183 +282,15 @@ def create_comprehensive_request(
         ... )
         >>> service = ScannerService()
         >>> response = await service.scan_market(Market.THAILAND, request)
+        >>> print(f"Retrieved {len(response.data)} stocks with full data")
     """
-    # The comprehensive column list from the user's example
-    columns: list[str] = [
-        "name",
-        "description",
-        "logoid",
-        "update_mode",
-        "type",
-        "typespecs",
-        "close",
-        "pricescale",
-        "minmov",
-        "fractional",
-        "minmove2",
-        "currency",
-        "change",
-        "Perf.W",
-        "Perf.1M",
-        "Perf.3M",
-        "Perf.6M",
-        "Perf.YTD",
-        "Perf.Y",
-        "Perf.5Y",
-        "Perf.10Y",
-        "Perf.All",
-        "Perf.1Y.MarketCap",
-        "Volatility.W",
-        "Volatility.M",
-        "volume",
-        "relative_volume_10d_calc",
-        "market_cap_basic",
-        "market",
-        "sector",
-        "sector.tr",
-        "fundamental_currency_code",
-        "price_earnings_ttm",
-        "price_earnings_growth_ttm",
-        "price_sales_current",
-        "price_book_fq",
-        "price_to_cash_f_operating_activities_ttm",
-        "price_free_cash_flow_ttm",
-        "price_to_cash_ratio",
-        "enterprise_value_current",
-        "enterprise_value_to_revenue_ttm",
-        "enterprise_value_to_ebit_ttm",
-        "enterprise_value_ebitda_ttm",
-        "earnings_per_share_diluted_ttm",
-        "earnings_per_share_diluted_yoy_growth_ttm",
-        "dps_common_stock_prim_issue_fy",
-        "dps_common_stock_prim_issue_fq",
-        "dividends_yield_current",
-        "dividends_yield",
-        "dividend_payout_ratio_ttm",
-        "dps_common_stock_prim_issue_yoy_growth_fy",
-        "continuous_dividend_payout",
-        "continuous_dividend_growth",
-        "gross_margin_ttm",
-        "operating_margin_ttm",
-        "pre_tax_margin_ttm",
-        "net_margin_ttm",
-        "free_cash_flow_margin_ttm",
-        "return_on_assets_fq",
-        "return_on_equity_fq",
-        "return_on_invested_capital_fq",
-        "research_and_dev_ratio_ttm",
-        "sell_gen_admin_exp_other_ratio_ttm",
-        "total_revenue_ttm",
-        "total_revenue_yoy_growth_ttm",
-        "gross_profit_ttm",
-        "oper_income_ttm",
-        "net_income_ttm",
-        "ebitda_ttm",
-        "total_assets_fq",
-        "total_current_assets_fq",
-        "cash_n_short_term_invest_fq",
-        "total_liabilities_fq",
-        "total_debt_fq",
-        "net_debt_fq",
-        "total_equity_fq",
-        "current_ratio_fq",
-        "quick_ratio_fq",
-        "debt_to_equity_fq",
-        "cash_n_short_term_invest_to_total_debt_fq",
-        "cash_f_operating_activities_ttm",
-        "cash_f_investing_activities_ttm",
-        "cash_f_financing_activities_ttm",
-        "free_cash_flow_ttm",
-        "capital_expenditures_ttm",
-        "recommendation_mark",
-        "Recommend.All",
-        "Recommend.MA",
-        "Recommend.Other",
-        "RSI",
-        "Mom",
-        "AO",
-        "CCI20",
-        "Stoch.K",
-        "Stoch.D",
-        "MACD.macd",
-        "MACD.signal",
-        "high",
-        "low",
-        "open",
-        "change_abs",
-    ]
-
-    from ..models import ScannerOptions, ScannerRequest, SortConfig
+    from tvkit.api.scanner.models import ScannerOptions, ScannerRequest, SortConfig
 
     return ScannerRequest(
-        columns=columns,
+        columns=ColumnSets.COMPREHENSIVE_FULL,
         ignore_unknown_fields=False,
         options=ScannerOptions(lang=language),
         range=(range_start, range_end),
         sort=SortConfig(sortBy=sort_by, sortOrder=sort_order, nullsFirst=False),
         preset="all_stocks",
     )
-
-
-# Convenience functions for specific markets
-async def scan_thailand_market(
-    service: ScannerService, request: ScannerRequest
-) -> ScannerResponse:
-    """
-    Convenience function to scan Thailand market.
-
-    Args:
-        service: ScannerService instance
-        request: Scanner request configuration
-
-    Returns:
-        Scanner response with Thailand market data
-
-    Example:
-        >>> service = ScannerService()
-        >>> request = create_comprehensive_request()
-        >>> response = await scan_thailand_market(service, request)
-    """
-    return await service.scan_market(Market.THAILAND, request)
-
-
-async def scan_usa_market(
-    service: ScannerService, request: ScannerRequest
-) -> ScannerResponse:
-    """
-    Convenience function to scan USA market.
-
-    Args:
-        service: ScannerService instance
-        request: Scanner request configuration
-
-    Returns:
-        Scanner response with USA market data
-
-    Example:
-        >>> service = ScannerService()
-        >>> request = create_comprehensive_request()
-        >>> response = await scan_usa_market(service, request)
-    """
-    return await service.scan_market(Market.AMERICA, request)
-
-
-async def scan_global_market(
-    service: ScannerService, request: ScannerRequest
-) -> ScannerResponse:
-    """
-    Convenience function to scan global market.
-
-    Args:
-        service: ScannerService instance
-        request: Scanner request configuration
-
-    Returns:
-        Scanner response with global market data
-
-    Example:
-        >>> service = ScannerService()
-        >>> request = create_comprehensive_request()
-        >>> response = await scan_global_market(service, request)
-    """
-    return await service.scan_market(Market.GLOBAL, request)
