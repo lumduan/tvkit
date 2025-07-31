@@ -9,7 +9,7 @@ Includes specific examples for Thailand, USA, and other markets.
 import asyncio
 
 from tvkit.api.scanner.services import ScannerService, create_comprehensive_request
-from tvkit.api.scanner.models import ColumnSets, create_scanner_request
+from tvkit.api.scanner.models import ColumnSets, create_scanner_request, StockData
 from tvkit.api.scanner.markets import Market, MarketRegion, get_markets_by_region
 
 
@@ -58,13 +58,13 @@ async def basic_market_scan() -> None:
         print("-" * 80)
 
         for stock in response.data[:5]:  # Show top 5
-            price: str = f"{stock.close:.2f}" if stock.close else "N/A"
-            change: str = f"{stock.change:.2f}" if stock.change else "N/A"
-            volume: str = f"{stock.volume:,}" if stock.volume else "N/A"
-            currency: str = stock.currency or "N/A"
+            price_thai: str = f"{stock.close:.2f}" if stock.close else "N/A"
+            change_thai: str = f"{stock.change:.2f}" if stock.change else "N/A"
+            volume_thai: str = f"{stock.volume:,}" if stock.volume else "N/A"
+            currency_thai: str = stock.currency or "N/A"
 
             print(
-                f"{stock.name:<12} {price:<10} {currency:<8} {change:<10} {volume:<15}"
+                f"{stock.name:<12} {price_thai:<10} {currency_thai:<8} {change_thai:<10} {volume_thai:<15}"
             )
 
         # Display USA results
@@ -76,13 +76,13 @@ async def basic_market_scan() -> None:
         print("-" * 80)
 
         for stock in usa_response.data[:5]:  # Show top 5
-            price: str = f"{stock.close:.2f}" if stock.close else "N/A"
-            change: str = f"{stock.change:.2f}" if stock.change else "N/A"
-            volume: str = f"{stock.volume:,}" if stock.volume else "N/A"
-            currency: str = stock.currency or "N/A"
+            price_usa: str = f"{stock.close:.2f}" if stock.close else "N/A"
+            change_usa: str = f"{stock.change:.2f}" if stock.change else "N/A"
+            volume_usa: str = f"{stock.volume:,}" if stock.volume else "N/A"
+            currency_usa: str = stock.currency or "N/A"
 
             print(
-                f"{stock.name:<12} {price:<10} {currency:<8} {change:<10} {volume:<15}"
+                f"{stock.name:<12} {price_usa:<10} {currency_usa:<8} {change_usa:<10} {volume_usa:<15}"
             )
 
     except Exception as e:
@@ -162,7 +162,7 @@ async def regional_market_scan() -> None:
 
         print(f"Scanning {len(selected_markets)} Asia Pacific markets...")
 
-        all_results: dict[str, list] = {}
+        all_results: dict[str, list[StockData]] = {}
 
         for market in selected_markets:
             if market in asia_markets:

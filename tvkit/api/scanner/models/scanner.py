@@ -344,8 +344,8 @@ class ScannerResponse(BaseModel):
 
         Example:
             >>> response = {
-            ...     "data": [["AAPL", 150.25, "USD"], ["GOOGL", 2500.0, "USD"]],
-            ...     "totalCount": 2
+            ...     "data": [{"s": "NASDAQ:AAPL", "d": ["AAPL", 150.25, "USD"]}],
+            ...     "totalCount": 1
             ... }
             >>> columns = ["name", "close", "currency"]
             >>> scanner_response = ScannerResponse.from_api_response(response, columns)
@@ -353,9 +353,29 @@ class ScannerResponse(BaseModel):
         # Parse rows into StockData instances
         stocks: list[StockData] = []
         if "data" in response_data:
-            for row in response_data["data"]:
+            for item in response_data["data"]:
                 try:
-                    stock = StockData.from_scanner_row(row, columns)
+                    # Handle new API format: {"s": "NASDAQ:AAPL", "d": [data_array]}
+                    if isinstance(item, dict) and "d" in item:
+                        row_data: list[Any] = item["d"]
+                        # Also extract symbol from "s" field if available
+                        if "s" in item and columns and columns[0] == "name":
+                            # Use the symbol from "s" field as the name
+                            symbol_field: str = str(item["s"])
+                            symbol: str = (
+                                symbol_field.split(":")[-1]
+                                if ":" in symbol_field
+                                else symbol_field
+                            )
+                            # Replace first element (name) with the extracted symbol
+                            row_data = [symbol] + row_data[1:]
+                    else:
+                        # Handle legacy format: direct array
+                        row_data = (
+                            list(item) if isinstance(item, (list, tuple)) else [item]
+                        )
+
+                    stock = StockData.from_scanner_row(row_data, columns)
                     stocks.append(stock)
                 except Exception:
                     # Log error but continue processing other rows
