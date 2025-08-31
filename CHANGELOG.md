@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔧 Compatibility
+
+#### 🐍 Extended Python Version Support
+- **Python 3.11+ Support**: Extended compatibility from Python 3.13+ to Python 3.11+ 
+  - Now supports Python 3.11, 3.12, and 3.13 (last 3 stable versions)
+  - Maintains full feature compatibility across all supported versions
+  - Updated documentation and examples to reflect broader compatibility
+  - Reduced deployment barriers for users on slightly older Python versions
+
 ## [0.1.2] - 2025-07-31
 
 ### 🌍 Enhanced Multi-Market Scanner
@@ -141,7 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔧 Development Environment
 
-- **Python 3.13+** support with modern language features
+- **Python 3.11+** support with modern language features
 - **UV package manager** for fast dependency resolution
 - **Comprehensive tooling** with ruff, mypy, and pytest
 - **Quality gates** ensuring code quality and reliability
