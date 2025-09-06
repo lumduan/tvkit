@@ -15,7 +15,7 @@ What you'll learn:
 
 Prerequisites:
 - Internet connection for TradingView API access
-- Python 3.13+ with asyncio support
+- Python 3.11+ with asyncio support
 - tvkit library installed
 
 Usage:
@@ -594,7 +594,7 @@ async def main() -> None:
 
     print("\n### Service Requirements:")
     print("- **Internet Connection**: Required for TradingView API access")
-    print("- **Python 3.13+**: Async/await support needed")
+    print("- **Python 3.11+**: Async/await support needed")
     print("- **Dependencies**: `tvkit`, `pandas`, `httpx`, `websockets`")
 
     print("\n### Key Features:")

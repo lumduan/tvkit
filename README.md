@@ -2,7 +2,7 @@
 
 Modern Python library for TradingView financial data APIs with comprehensive real-time streaming and export capabilities
 
-[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Async/Await](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
 [![Type Safety](https://img.shields.io/badge/typed-pydantic-red.svg)](https://pydantic.dev/)
@@ -442,7 +442,7 @@ async def monitor_portfolio():
 - **[Pydantic](https://pydantic.dev/)** (≥2.11.7): Data validation and settings
 - **[websockets](https://websockets.readthedocs.io/)** (≥13.0): Async WebSocket client
 - **[httpx](https://www.python-httpx.org/)** (≥0.28.0): Async HTTP client
-- **Python 3.13+**: Modern async/await support
+- **Python 3.11+**: Modern async/await support
 
 ## 📚 Complete Getting Started Guide
 
