@@ -23,6 +23,48 @@ Modern Python library for TradingView financial data APIs with comprehensive rea
 
 ## 🚀 Quick Start
 
+### 🏃‍♂️ Super Quick Start (2 minutes)
+
+**Try TVKit instantly:**
+
+```bash
+# Install and test in one command
+pip install tvkit && python -c "import tvkit; print(tvkit.run_async(tvkit.get_stock_price('NASDAQ:AAPL')))"
+
+# Or with uv (recommended)
+uv add tvkit && uv run python -c "import tvkit; print(tvkit.run_async(tvkit.get_stock_price('NASDAQ:AAPL')))"
+```
+
+**One-liner examples:**
+
+```python
+# Get Apple's current price
+import tvkit; print(f"Apple: ${tvkit.run_async(tvkit.get_stock_price('NASDAQ:AAPL'))['price']}")
+
+# Compare tech stocks
+import tvkit; print(tvkit.run_async(tvkit.compare_stocks(['NASDAQ:AAPL', 'NASDAQ:GOOGL'])))
+
+# Get crypto prices
+import tvkit; print(tvkit.run_async(tvkit.get_crypto_prices(3)))
+```
+
+**CLI Testing:**
+
+```bash
+python -m tvkit price NASDAQ:AAPL        # Get Apple's price
+python -m tvkit crypto 3                 # Top 3 crypto prices
+python -m tvkit compare NASDAQ:AAPL NASDAQ:GOOGL  # Compare stocks
+python -m tvkit help                     # Show help
+```
+
+**Verify Installation:**
+
+```bash
+# Run verification script
+uv run python examples/verify_installation.py
+# Or: python examples/verify_installation.py
+```
+
 ### Installation
 
 **Method 1: Using uv (Recommended)**
