@@ -78,17 +78,17 @@ cd my-trading-project
 uv add tvkit
 ```
 
-**Method 2: Using pip with requirements.txt**
+**Method 2: Using pip from source**
 ```bash
 # Clone the repository
 git clone https://github.com/lumduan/tvkit.git
 cd tvkit
 
-# Install dependencies
-pip install -r requirements.txt
+# Install with pip
+pip install .
 
-# For development dependencies (optional)
-pip install mypy>=1.17.0 ruff>=0.12.4
+# For development installation
+pip install -e '.[dev]'
 ```
 
 **Method 3: Direct pip installation**
