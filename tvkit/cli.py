@@ -21,7 +21,7 @@ from tvkit.quickstart import (
     compare_stocks,
     get_crypto_prices,
     POPULAR_STOCKS,
-    MAJOR_CRYPTOS
+    MAJOR_CRYPTOS,
 )
 from tvkit.helpers import create_user_friendly_error, get_help_message
 
@@ -51,11 +51,11 @@ async def cmd_compare(symbols: List[str], days: int = 30):
         print("-" * 50)
 
         for symbol, metrics in comparison.items():
-            if 'error' in metrics:
+            if "error" in metrics:
                 print(f"{symbol:<15} {'--':<10} {'--':<10} ❌ Error")
             else:
-                price = metrics['current_price']
-                change = metrics['change_percent']
+                price = metrics["current_price"]
+                change = metrics["change_percent"]
                 status = "📈" if change > 0 else "📉"
                 print(f"{symbol:<15} ${price:<9.2f} {change:+6.2f}% {status}")
 
@@ -130,27 +130,31 @@ Examples:
   python -m tvkit compare NASDAQ:AAPL NASDAQ:GOOGL NASDAQ:MSFT
   python -m tvkit crypto 5
   python -m tvkit help
-        """
+        """,
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Price command
-    price_parser = subparsers.add_parser('price', help='Get price for a symbol')
-    price_parser.add_argument('symbol', help='Trading symbol (e.g., NASDAQ:AAPL)')
+    price_parser = subparsers.add_parser("price", help="Get price for a symbol")
+    price_parser.add_argument("symbol", help="Trading symbol (e.g., NASDAQ:AAPL)")
 
     # Compare command
-    compare_parser = subparsers.add_parser('compare', help='Compare multiple symbols')
-    compare_parser.add_argument('symbols', nargs='+', help='Symbols to compare')
-    compare_parser.add_argument('--days', type=int, default=30, help='Days to compare (default: 30)')
+    compare_parser = subparsers.add_parser("compare", help="Compare multiple symbols")
+    compare_parser.add_argument("symbols", nargs="+", help="Symbols to compare")
+    compare_parser.add_argument(
+        "--days", type=int, default=30, help="Days to compare (default: 30)"
+    )
 
     # Crypto command
-    crypto_parser = subparsers.add_parser('crypto', help='Get cryptocurrency prices')
-    crypto_parser.add_argument('limit', nargs='?', type=int, default=5, help='Number of cryptos (default: 5)')
+    crypto_parser = subparsers.add_parser("crypto", help="Get cryptocurrency prices")
+    crypto_parser.add_argument(
+        "limit", nargs="?", type=int, default=5, help="Number of cryptos (default: 5)"
+    )
 
     # Help and examples
-    subparsers.add_parser('help', help='Show detailed help')
-    subparsers.add_parser('examples', help='Show example commands')
+    subparsers.add_parser("help", help="Show detailed help")
+    subparsers.add_parser("examples", help="Show example commands")
 
     # Parse arguments
     args = parser.parse_args()
@@ -161,15 +165,15 @@ Examples:
 
     # Execute commands
     try:
-        if args.command == 'price':
+        if args.command == "price":
             asyncio.run(cmd_price(args.symbol))
-        elif args.command == 'compare':
+        elif args.command == "compare":
             asyncio.run(cmd_compare(args.symbols, args.days))
-        elif args.command == 'crypto':
+        elif args.command == "crypto":
             asyncio.run(cmd_crypto(args.limit))
-        elif args.command == 'help':
+        elif args.command == "help":
             cmd_help()
-        elif args.command == 'examples':
+        elif args.command == "examples":
             cmd_examples()
 
     except KeyboardInterrupt:
@@ -179,5 +183,5 @@ Examples:
         print("\n💡 Try: python -m tvkit help")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

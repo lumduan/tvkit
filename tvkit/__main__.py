@@ -8,5 +8,5 @@ This allows users to run:
 
 from tvkit.cli import main
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

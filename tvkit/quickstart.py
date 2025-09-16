@@ -6,12 +6,12 @@ especially for Python 3.11+ users who want immediate results.
 """
 
 import asyncio
-from typing import List, Dict, Any, Coroutine
+from typing import Any, Coroutine, Dict, List
 
-from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.api.chart.models.ohlcv import OHLCVBar
-from tvkit.export import DataExporter
+from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.api.utils import convert_timestamp_to_iso
+from tvkit.export import DataExporter
 
 
 async def get_stock_price(symbol: str) -> Dict[str, Any]:
@@ -48,7 +48,9 @@ async def get_stock_price(symbol: str) -> Dict[str, Any]:
         }
 
 
-async def compare_stocks(symbols: List[str], days: int = 30) -> Dict[str, Dict[str, Any]]:
+async def compare_stocks(
+    symbols: List[str], days: int = 30
+) -> Dict[str, Dict[str, Any]]:
     """
     Compare performance of multiple stocks over a period.
 
@@ -65,7 +67,7 @@ async def compare_stocks(symbols: List[str], days: int = 30) -> Dict[str, Dict[s
         >>> for symbol, metrics in comparison.items():
         ...     print(f"{symbol}: {metrics['change_percent']:.2f}%")
     """
-    results = {}
+    results: dict[str, dict[str, Any]] = {}
 
     async with OHLCV() as client:
         for symbol in symbols:
@@ -113,25 +115,25 @@ async def get_crypto_prices(limit: int = 5) -> Dict[str, float]:
         ...     print(f"{crypto}: ${price:,.2f}")
     """
     crypto_symbols = [
-        "BINANCE:BTCUSDT",   # Bitcoin
-        "BINANCE:ETHUSDT",   # Ethereum
-        "BINANCE:ADAUSDT",   # Cardano
-        "BINANCE:SOLUSDT",   # Solana
-        "BINANCE:DOTUSDT",   # Polkadot
+        "BINANCE:BTCUSDT",  # Bitcoin
+        "BINANCE:ETHUSDT",  # Ethereum
+        "BINANCE:ADAUSDT",  # Cardano
+        "BINANCE:SOLUSDT",  # Solana
+        "BINANCE:DOTUSDT",  # Polkadot
         "BINANCE:LINKUSDT",  # Chainlink
-        "BINANCE:LTCUSDT",   # Litecoin
-        "BINANCE:XRPUSDT",   # Ripple
+        "BINANCE:LTCUSDT",  # Litecoin
+        "BINANCE:XRPUSDT",  # Ripple
     ]
 
-    prices = {}
+    prices: dict[str, float] = {}
     async with OHLCV() as client:
         for symbol in crypto_symbols[:limit]:
             try:
                 bars = await client.get_historical_ohlcv(symbol, "1D", 1)
                 if bars:
-                    # Extract just the crypto name from symbol
                     crypto_name = symbol.split(":")[1].replace("USDT", "")
-                    prices[crypto_name] = bars[0].close
+                    price = bars[0].close
+                    prices[crypto_name] = float(price)
             except Exception:
                 continue
 
@@ -154,11 +156,13 @@ def quick_export_to_csv(bars: List[OHLCVBar], filename: str = "stock_data.csv") 
         >>> csv_path = quick_export_to_csv(bars, "apple_data.csv")
         >>> print(f"Data exported to: {csv_path}")
     """
+
     async def _export():
         exporter = DataExporter()
         return await exporter.to_csv(bars, f"./export/{filename}")
 
-    return asyncio.run(_export())
+    result = asyncio.run(_export())
+    return str(result)
 
 
 async def get_historical_data(symbol: str, days: int) -> List[OHLCVBar]:
@@ -201,30 +205,30 @@ def run_async(coro: Coroutine[Any, Any, Any]) -> Any:
 
 # Pre-defined symbol lists for easy access
 POPULAR_STOCKS = [
-    "NASDAQ:AAPL",   # Apple
+    "NASDAQ:AAPL",  # Apple
     "NASDAQ:GOOGL",  # Google
-    "NASDAQ:MSFT",   # Microsoft
-    "NASDAQ:AMZN",   # Amazon
-    "NASDAQ:TSLA",   # Tesla
-    "NASDAQ:NVDA",   # NVIDIA
-    "NASDAQ:META",   # Meta
-    "NYSE:JPM",      # JPMorgan
-    "NYSE:JNJ",      # Johnson & Johnson
-    "NYSE:V",        # Visa
+    "NASDAQ:MSFT",  # Microsoft
+    "NASDAQ:AMZN",  # Amazon
+    "NASDAQ:TSLA",  # Tesla
+    "NASDAQ:NVDA",  # NVIDIA
+    "NASDAQ:META",  # Meta
+    "NYSE:JPM",  # JPMorgan
+    "NYSE:JNJ",  # Johnson & Johnson
+    "NYSE:V",  # Visa
 ]
 
 MAJOR_CRYPTOS = [
-    "BINANCE:BTCUSDT",   # Bitcoin
-    "BINANCE:ETHUSDT",   # Ethereum
-    "BINANCE:ADAUSDT",   # Cardano
-    "BINANCE:SOLUSDT",   # Solana
-    "BINANCE:DOTUSDT",   # Polkadot
+    "BINANCE:BTCUSDT",  # Bitcoin
+    "BINANCE:ETHUSDT",  # Ethereum
+    "BINANCE:ADAUSDT",  # Cardano
+    "BINANCE:SOLUSDT",  # Solana
+    "BINANCE:DOTUSDT",  # Polkadot
 ]
 
 FOREX_PAIRS = [
-    "FX_IDC:EURUSD",     # EUR/USD
-    "FX_IDC:GBPUSD",     # GBP/USD
-    "FX_IDC:USDJPY",     # USD/JPY
-    "FX_IDC:USDCHF",     # USD/CHF
-    "FX_IDC:AUDUSD",     # AUD/USD
+    "FX_IDC:EURUSD",  # EUR/USD
+    "FX_IDC:GBPUSD",  # GBP/USD
+    "FX_IDC:USDJPY",  # USD/JPY
+    "FX_IDC:USDCHF",  # USD/CHF
+    "FX_IDC:AUDUSD",  # AUD/USD
 ]

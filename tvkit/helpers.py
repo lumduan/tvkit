@@ -29,7 +29,7 @@ class SymbolValidationError(TVKitError):
             f"Check symbol format: '{symbol}' should be like 'EXCHANGE:SYMBOL'",
             "Popular examples: 'NASDAQ:AAPL', 'BINANCE:BTCUSDT', 'FX_IDC:EURUSD'",
             "Use tvkit.POPULAR_STOCKS or tvkit.MAJOR_CRYPTOS for valid symbols",
-            "Search TradingView.com to find the correct symbol format"
+            "Search TradingView.com to find the correct symbol format",
         ]
 
         if not message:
@@ -47,7 +47,7 @@ class ConnectionError(TVKitError):
             "Verify that TradingView.com is accessible",
             "Try again in a few moments (may be rate limited)",
             "Check firewall settings if using corporate network",
-            "Consider using a VPN if region-blocked"
+            "Consider using a VPN if region-blocked",
         ]
         super().__init__(message, suggestions)
 
@@ -62,7 +62,7 @@ class PythonVersionError(TVKitError):
             "Upgrade Python: https://www.python.org/downloads/",
             "Use pyenv to manage multiple Python versions",
             "Consider using uv for automatic Python management: 'uv python install 3.11'",
-            "Check if your system has a newer Python version available"
+            "Check if your system has a newer Python version available",
         ]
         super().__init__(message, suggestions)
 
@@ -91,22 +91,19 @@ def validate_symbol_format(symbol: str) -> bool:
 
     if ":" not in symbol:
         raise SymbolValidationError(
-            symbol,
-            f"Symbol '{symbol}' missing exchange prefix"
+            symbol, f"Symbol '{symbol}' missing exchange prefix"
         )
 
     parts = symbol.split(":")
     if len(parts) != 2:
         raise SymbolValidationError(
-            symbol,
-            f"Symbol '{symbol}' should have exactly one ':' separator"
+            symbol, f"Symbol '{symbol}' should have exactly one ':' separator"
         )
 
     exchange, ticker = parts
     if not exchange or not ticker:
         raise SymbolValidationError(
-            symbol,
-            f"Both exchange and ticker must be specified in '{symbol}'"
+            symbol, f"Both exchange and ticker must be specified in '{symbol}'"
         )
 
     return True
@@ -126,10 +123,12 @@ def provide_symbol_suggestions(failed_symbol: str) -> List[str]:
 
     # Check if it looks like a US stock without exchange
     if failed_symbol.isupper() and len(failed_symbol) <= 5 and ":" not in failed_symbol:
-        suggestions.extend([
-            f"Try 'NASDAQ:{failed_symbol}' for NASDAQ stocks",
-            f"Try 'NYSE:{failed_symbol}' for NYSE stocks",
-        ])
+        suggestions.extend(
+            [
+                f"Try 'NASDAQ:{failed_symbol}' for NASDAQ stocks",
+                f"Try 'NYSE:{failed_symbol}' for NYSE stocks",
+            ]
+        )
 
     # Check if it looks like crypto
     if any(crypto in failed_symbol.upper() for crypto in ["BTC", "ETH", "ADA", "SOL"]):
@@ -141,11 +140,13 @@ def provide_symbol_suggestions(failed_symbol: str) -> List[str]:
         suggestions.append(f"Try 'FX_IDC:{failed_symbol}' for forex pairs")
 
     # General suggestions
-    suggestions.extend([
-        "Use tvkit.POPULAR_STOCKS for common stock symbols",
-        "Use tvkit.MAJOR_CRYPTOS for major cryptocurrency symbols",
-        "Search on TradingView.com to find the correct symbol"
-    ])
+    suggestions.extend(
+        [
+            "Use tvkit.POPULAR_STOCKS for common stock symbols",
+            "Use tvkit.MAJOR_CRYPTOS for major cryptocurrency symbols",
+            "Search on TradingView.com to find the correct symbol",
+        ]
+    )
 
     return suggestions
 
@@ -219,9 +220,10 @@ try:
 except PythonVersionError:
     # Don't raise immediately on import, just warn
     import warnings
+
     warnings.warn(
         f"TVKit works best with Python 3.11+. You're using {sys.version_info.major}.{sys.version_info.minor}. "
         "Some features may not work as expected.",
         UserWarning,
-        stacklevel=2
+        stacklevel=2,
     )

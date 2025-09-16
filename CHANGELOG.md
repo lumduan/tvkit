@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-09-16
+
+- Changed installation method in README from requirements.txt to direct pip install.
+- Updated development dependencies in pyproject.toml to newer versions.
+- Removed requirements.txt file as it is no longer needed.
+
 ## [0.1.3] - 2025-09-08
 
 ### 🔧 Compatibility
 
 #### 🐍 Extended Python Version Support
-- **Python 3.11+ Support**: Extended compatibility from Python 3.13+ to Python 3.11+ 
+
+- **Python 3.11+ Support**: Extended compatibility from Python 3.13+ to Python 3.11+
   - Now supports Python 3.11, 3.12, and 3.13 (last 3 stable versions)
   - Maintains full feature compatibility across all supported versions
   - Updated documentation and examples to reflect broader compatibility
@@ -21,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🌍 Enhanced Multi-Market Scanner
 
 #### 🔍 Comprehensive Global Market Coverage
+
 - **69 Global Markets**: Complete coverage across 6 regions with unified API access
   - **North America**: USA (NASDAQ, NYSE, NYSE ARCA, OTC), Canada (TSX, TSXV, CSE, NEO)
   - **Europe**: 30 markets including Germany, France, UK, Netherlands, Switzerland, Italy
@@ -29,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Latin America**: 7 markets including Brazil, Mexico, Argentina, Chile, Colombia
 
 #### 📊 Advanced Financial Data Analysis
+
 - **101+ Financial Columns**: Comprehensive data retrieval with complete TradingView scanner API coverage
 - **Predefined Column Sets**: `BASIC`, `FUNDAMENTALS`, `TECHNICAL_INDICATORS`, `PERFORMANCE`, `VALUATION`, `PROFITABILITY`, `FINANCIAL_STRENGTH`, `CASH_FLOW`, `DIVIDENDS`, `COMPREHENSIVE_FULL`
 - **Enhanced Data Models**: Complete `StockData` model with all financial metrics including:
@@ -39,18 +48,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Technical Indicators**: RSI, MACD, Stochastic, CCI, momentum indicators, analyst recommendations
 
 #### 🚀 Regional Market Analysis
+
 - **Market Grouping**: `MarketRegion` enum for regional market analysis and filtering
 - **Flexible Market Access**: Support for both `Market` enum and string-based market IDs for dynamic selection
 - **Comprehensive Market Information**: Detailed exchange information and market metadata for all supported markets
 - **Regional Scanning**: Built-in functions for scanning markets by geographic region
 
 #### 🔧 Enhanced Scanner Service
+
 - **`create_comprehensive_request()`**: New function for accessing all 101+ available columns
 - **Error Handling**: Robust error handling with specific exception types and retry mechanisms
 - **Async-First Architecture**: Complete async/await pattern implementation with proper resource management
 - **Type Safety**: Full Pydantic validation for all scanner requests and responses
 
 #### 📚 Comprehensive Examples
+
 - **Multi-Market Scanner Notebook**: Complete example notebook demonstrating:
   - Basic multi-market scanning (Thailand vs USA comparison)
   - Comprehensive data retrieval with all financial metrics
@@ -60,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Data visualization and pandas integration
 
 #### 🛠️ Technical Enhancements
+
 - **Market Validation**: Built-in market ID validation with helpful error messages
 - **Dynamic Column Validation**: Comprehensive column name validation with support for all TradingView fields
 - **Response Parsing**: Enhanced API response parsing handling both legacy and new TradingView formats
@@ -67,18 +80,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Retry Logic**: Exponential backoff retry mechanism for API reliability
 
 #### 📈 Performance Improvements
+
 - **Efficient Market Scanning**: Optimized scanning performance for multi-market analysis
 - **Memory Management**: Efficient data structures for handling large-scale market data
 - **Concurrent Scanning**: Support for concurrent market scanning operations
 - **Data Processing**: Enhanced data processing with proper null value handling
 
 ### 📖 Documentation Updates
+
 - **Enhanced README**: Updated scanner section with multi-market capabilities and comprehensive examples
 - **API Documentation**: Complete documentation for all new scanner features and market coverage
 - **Usage Examples**: Real-world examples for multi-market analysis and regional scanning
 - **Market Coverage Tables**: Detailed tables showing all supported markets and exchanges
 
 ### 🔧 Developer Experience
+
 - **Complete Type Hints**: All scanner functions include comprehensive type annotations
 - **IDE Support**: Enhanced IntelliSense support with proper type information
 - **Error Messages**: Improved error messages with helpful suggestions for market validation

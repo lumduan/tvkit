@@ -17,15 +17,15 @@ from tvkit import (
     get_crypto_prices,
     POPULAR_STOCKS,
     MAJOR_CRYPTOS,
-    run_async
+    run_async,
 )
 
 
 def print_section(title: str):
     """Helper to print section headers."""
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"🚀 {title}")
-    print('='*50)
+    print("=" * 50)
 
 
 async def tutorial_1_single_stock():
@@ -55,17 +55,19 @@ async def tutorial_2_compare_stocks():
     print("-" * 60)
 
     for symbol, metrics in comparison.items():
-        if 'error' in metrics:
+        if "error" in metrics:
             print(f"{symbol:<15} ❌ Error: {metrics['error']}")
             continue
 
-        stock_name = symbol.split(':')[1]
-        price = metrics['current_price']
-        change = metrics['change_percent']
+        stock_name = symbol.split(":")[1]
+        price = metrics["current_price"]
+        change = metrics["change_percent"]
         range_str = f"${metrics['low']:.2f}-${metrics['high']:.2f}"
 
         change_icon = "📈" if change > 0 else "📉"
-        print(f"{stock_name:<15} ${price:<9.2f} {change_icon}{change:+6.2f}% {range_str:<20}")
+        print(
+            f"{stock_name:<15} ${price:<9.2f} {change_icon}{change:+6.2f}% {range_str:<20}"
+        )
 
 
 async def tutorial_3_crypto_prices():
@@ -97,9 +99,9 @@ async def tutorial_4_predefined_lists():
 
     print("\n📈 Weekly Performance (Top 3 Stocks):")
     for symbol, metrics in top_3_comparison.items():
-        if 'error' not in metrics:
-            stock_name = symbol.split(':')[1]
-            change = metrics['change_percent']
+        if "error" not in metrics:
+            stock_name = symbol.split(":")[1]
+            change = metrics["change_percent"]
             icon = "📈" if change > 0 else "📉"
             print(f"   {stock_name}: {icon} {change:+.2f}%")
 

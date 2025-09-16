@@ -28,7 +28,9 @@ def check_python_version() -> Dict[str, Any]:
         "version": version_str,
         "compatible": is_compatible,
         "status": "✅ Compatible" if is_compatible else "⚠️  Outdated",
-        "details": "Python 3.11+ recommended for best performance" if not is_compatible else "Good to go!"
+        "details": "Python 3.11+ recommended for best performance"
+        if not is_compatible
+        else "Good to go!",
     }
 
 
@@ -50,19 +52,23 @@ def check_package_imports() -> List[Dict[str, Any]]:
     for package, description in packages:
         try:
             importlib.import_module(package)
-            results.append({
-                "test": f"Import {package}",
-                "description": description,
-                "status": "✅ Available",
-                "success": True
-            })
+            results.append(
+                {
+                    "test": f"Import {package}",
+                    "description": description,
+                    "status": "✅ Available",
+                    "success": True,
+                }
+            )
         except ImportError as e:
-            results.append({
-                "test": f"Import {package}",
-                "description": description,
-                "status": f"❌ Failed: {e}",
-                "success": False
-            })
+            results.append(
+                {
+                    "test": f"Import {package}",
+                    "description": description,
+                    "status": f"❌ Failed: {e}",
+                    "success": False,
+                }
+            )
 
     return results
 
@@ -76,7 +82,16 @@ async def check_basic_functionality() -> Dict[str, Any]:
         result = await get_stock_price("NASDAQ:AAPL")
 
         # Verify the result structure
-        expected_keys = ['symbol', 'price', 'open', 'high', 'low', 'volume', 'timestamp', 'date']
+        expected_keys = [
+            "symbol",
+            "price",
+            "open",
+            "high",
+            "low",
+            "volume",
+            "timestamp",
+            "date",
+        ]
         missing_keys = [key for key in expected_keys if key not in result]
 
         if missing_keys:
@@ -84,14 +99,14 @@ async def check_basic_functionality() -> Dict[str, Any]:
                 "test": "Basic Functionality",
                 "status": f"⚠️  Partial - Missing keys: {missing_keys}",
                 "success": False,
-                "details": f"Got result but missing expected keys: {missing_keys}"
+                "details": f"Got result but missing expected keys: {missing_keys}",
             }
 
         return {
             "test": "Basic Functionality",
             "status": "✅ Working",
             "success": True,
-            "details": f"Successfully fetched Apple stock price: ${result['price']:.2f}"
+            "details": f"Successfully fetched Apple stock price: ${result['price']:.2f}",
         }
 
     except Exception as e:
@@ -99,7 +114,7 @@ async def check_basic_functionality() -> Dict[str, Any]:
             "test": "Basic Functionality",
             "status": f"❌ Failed: {str(e)}",
             "success": False,
-            "details": "Could not fetch basic stock data. Check internet connection."
+            "details": "Could not fetch basic stock data. Check internet connection.",
         }
 
 
@@ -115,27 +130,33 @@ async def check_advanced_features() -> List[Dict[str, Any]]:
         comparison = await compare_stocks(POPULAR_STOCKS[:2], days=5)
 
         if len(comparison) > 0:
-            results.append({
-                "test": "Stock Comparison",
-                "status": "✅ Working",
-                "success": True,
-                "details": f"Successfully compared {len(comparison)} stocks"
-            })
+            results.append(
+                {
+                    "test": "Stock Comparison",
+                    "status": "✅ Working",
+                    "success": True,
+                    "details": f"Successfully compared {len(comparison)} stocks",
+                }
+            )
         else:
-            results.append({
-                "test": "Stock Comparison",
-                "status": "⚠️  Empty result",
-                "success": False,
-                "details": "Function ran but returned no data"
-            })
+            results.append(
+                {
+                    "test": "Stock Comparison",
+                    "status": "⚠️  Empty result",
+                    "success": False,
+                    "details": "Function ran but returned no data",
+                }
+            )
 
     except Exception as e:
-        results.append({
-            "test": "Stock Comparison",
-            "status": f"❌ Failed: {str(e)}",
-            "success": False,
-            "details": "Could not perform stock comparison"
-        })
+        results.append(
+            {
+                "test": "Stock Comparison",
+                "status": f"❌ Failed: {str(e)}",
+                "success": False,
+                "details": "Could not perform stock comparison",
+            }
+        )
 
     # Test 2: Export functionality
     try:
@@ -148,42 +169,48 @@ async def check_advanced_features() -> List[Dict[str, Any]]:
             exporter = DataExporter()
             await exporter.to_polars(test_data)
 
-            results.append({
-                "test": "Data Export",
-                "status": "✅ Working",
-                "success": True,
-                "details": f"Successfully exported {len(test_data)} bars to Polars DataFrame"
-            })
+            results.append(
+                {
+                    "test": "Data Export",
+                    "status": "✅ Working",
+                    "success": True,
+                    "details": f"Successfully exported {len(test_data)} bars to Polars DataFrame",
+                }
+            )
         else:
-            results.append({
-                "test": "Data Export",
-                "status": "⚠️  No data",
-                "success": False,
-                "details": "Could not get test data for export"
-            })
+            results.append(
+                {
+                    "test": "Data Export",
+                    "status": "⚠️  No data",
+                    "success": False,
+                    "details": "Could not get test data for export",
+                }
+            )
 
     except Exception as e:
-        results.append({
-            "test": "Data Export",
-            "status": f"❌ Failed: {str(e)}",
-            "success": False,
-            "details": "Export functionality not working"
-        })
+        results.append(
+            {
+                "test": "Data Export",
+                "status": f"❌ Failed: {str(e)}",
+                "success": False,
+                "details": "Export functionality not working",
+            }
+        )
 
     return results
 
 
 def print_section(title: str):
     """Print a section header."""
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"🔍 {title}")
-    print('='*50)
+    print("=" * 50)
 
 
 def print_result(result: Dict[str, Any]):
     """Print a test result."""
     print(f"{result['status']} {result['test']}")
-    if 'details' in result:
+    if "details" in result:
         print(f"   {result['details']}")
 
 
@@ -198,27 +225,27 @@ async def main():
     print_section("Python Version Check")
     python_result = check_python_version()
     print_result(python_result)
-    if not python_result['compatible']:
+    if not python_result["compatible"]:
         all_passed = False
 
     # Test 2: Package Imports
     print_section("Package Import Tests")
     import_results = check_package_imports()
 
-    core_packages = ['tvkit', 'pydantic', 'websockets', 'httpx', 'polars']
+    core_packages = ["tvkit", "pydantic", "websockets", "httpx", "polars"]
 
     for result in import_results:
         print_result(result)
         # Only mark as failed if it's a core package
-        package_name = result['test'].replace('Import ', '')
-        if not result['success'] and package_name in core_packages:
+        package_name = result["test"].replace("Import ", "")
+        if not result["success"] and package_name in core_packages:
             all_passed = False
 
     # Test 3: Basic Functionality
     print_section("Basic Functionality Test")
     basic_result = await check_basic_functionality()
     print_result(basic_result)
-    if not basic_result['success']:
+    if not basic_result["success"]:
         all_passed = False
 
     # Test 4: Advanced Features
@@ -237,7 +264,9 @@ async def main():
         print("📚 Next Steps:")
         print("   • Try the quick tutorial: uv run python examples/quick_tutorial.py")
         print("   • Use the CLI: python -m tvkit price NASDAQ:AAPL")
-        print("   • Explore examples: uv run python examples/historical_and_realtime_data.py")
+        print(
+            "   • Explore examples: uv run python examples/historical_and_realtime_data.py"
+        )
     else:
         print("⚠️  Some tests failed. TVKit may not work correctly.")
         print()
