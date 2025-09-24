@@ -584,6 +584,7 @@ uv run python examples/export_demo.py
 
 - **[Real-time Streaming Guide](docs/realtime_streaming.md)**: WebSocket streaming documentation
 - **[Polars Integration](docs/POLARS_INTEGRATION.md)**: Data processing and analysis
+- **[ConnectionService Documentation](docs/api/chart/services/connection_service.md)**: WebSocket connection management and TradingView session handling
 - **[API Reference](https://github.com/lumduan/tvkit#readme)**: Complete API documentation
 
 ## 🤝 Contributing
