@@ -586,6 +586,7 @@ uv run python examples/export_demo.py
 - **[Polars Integration](docs/POLARS_INTEGRATION.md)**: Data processing and analysis
 - **[OHLCV Client Documentation](docs/api/chart/ohlcv.md)**: Primary client for real-time OHLCV data streaming and historical data retrieval
 - **[Chart Utils Documentation](docs/api/chart/utils.md)**: Utility functions for interval validation and chart API operations
+- **[ScannerService Documentation](docs/api/scanner/services/scanner_service.md)**: Market screening service for 69+ global markets with 101+ financial metrics
 - **[ConnectionService Documentation](docs/api/chart/services/connection_service.md)**: WebSocket connection management and TradingView session handling
 - **[MessageService Documentation](docs/api/chart/services/message_service.md)**: WebSocket message construction, protocol handling, and transmission
 - **[API Reference](https://github.com/lumduan/tvkit#readme)**: Complete API documentation
