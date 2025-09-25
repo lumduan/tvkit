@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `tvkit.api.utils` module provides essential utility functions for the tvkit TradingView API library. This module centralizes common operations including timestamp conversion, symbol validation, and TradingView indicator calculations. It serves as a foundational layer supporting both the chart API and scanner API components with standardized data processing and validation capabilities.
+The `tvkit.api.utils` module provides essential utility functions for validating exchange symbols and fetching TradingView indicators and their metadata. This module contains async functions for symbol validation, TradingView indicator search and selection, and metadata processing for Pine script indicators.
 
 ## Architecture
 
@@ -12,41 +12,40 @@ The module is designed with a functional programming approach, providing statele
 
 - **Timestamp Utilities**: Convert between Unix timestamps and ISO 8601 format
 - **Symbol Validation**: Async validation of trading symbols against TradingView API
-- **TradingView Indicators**: Built-in technical analysis indicators with Pydantic models
-- **Data Processing**: Helper functions for financial data manipulation
+- **TradingView Indicator Search**: Search and fetch TradingView indicators
+- **Interactive Indicator Selection**: User-friendly indicator selection interface
+- **Metadata Processing**: Pine script metadata preparation for indicator creation
 
 ## Functions
 
 ### convert_timestamp_to_iso
 
 ```python
-def convert_timestamp_to_iso(timestamp: int) -> str
+def convert_timestamp_to_iso(timestamp: float) -> str
 ```
 
-Converts a Unix timestamp to ISO 8601 formatted string.
+Convert a Unix timestamp to ISO 8601 format string.
+
+This function converts TradingView timestamps (Unix epoch seconds) to human-readable ISO 8601 format with UTC timezone.
 
 **Parameters:**
-- `timestamp` (int): Unix timestamp in seconds
+- `timestamp` (float): Unix timestamp as a float (seconds since epoch)
 
 **Returns:**
-- `str`: ISO 8601 formatted timestamp string (YYYY-MM-DDTHH:MM:SSZ)
-
-**Raises:**
-- `ValueError`: If timestamp is invalid or out of range
-- `OSError`: If system cannot handle the timestamp conversion
+- `str`: ISO 8601 formatted datetime string with UTC timezone
 
 **Example:**
 ```python
 from tvkit.api.utils import convert_timestamp_to_iso
 
 # Convert Unix timestamp to ISO format
-timestamp = 1640995200  # January 1, 2022 00:00:00 UTC
+timestamp = 1753436820.0
 iso_time = convert_timestamp_to_iso(timestamp)
-print(iso_time)  # "2022-01-01T00:00:00Z"
+print(iso_time)  # '2025-07-28T12:13:40+00:00'
 
 # Handle current time
 import time
-current_timestamp = int(time.time())
+current_timestamp = time.time()
 current_iso = convert_timestamp_to_iso(current_timestamp)
 print(f"Current time: {current_iso}")
 ```
@@ -54,21 +53,22 @@ print(f"Current time: {current_iso}")
 ### validate_symbols
 
 ```python
-async def validate_symbols(symbols: List[str]) -> Dict[str, bool]
+async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool
 ```
 
-Asynchronously validates a list of trading symbols against TradingView's API to ensure they exist and are tradeable.
+Validate one or more exchange symbols asynchronously.
+
+This function checks whether the provided symbol or list of symbols follows the expected format ("EXCHANGE:SYMBOL") and validates each symbol by making a request to a TradingView validation URL.
 
 **Parameters:**
-- `symbols` (List[str]): List of symbol strings to validate (e.g., ["AAPL", "MSFT", "GOOGL"])
+- `exchange_symbol` (Union[str, List[str]]): A single symbol or a list of symbols in the format "EXCHANGE:SYMBOL"
 
 **Returns:**
-- `Dict[str, bool]`: Dictionary mapping each symbol to its validation status (True if valid, False if invalid)
+- `bool`: True if all provided symbols are valid
 
 **Raises:**
-- `httpx.RequestError`: If network request fails
-- `httpx.HTTPStatusError`: If API returns error status
-- `ValidationError`: If symbols format is invalid
+- `ValueError`: If exchange_symbol is empty, if a symbol does not follow the "EXCHANGE:SYMBOL" format, or if the symbol fails validation after retries
+- `httpx.HTTPError`: If there's an HTTP-related error during validation
 
 **Example:**
 ```python
@@ -76,497 +76,645 @@ import asyncio
 from tvkit.api.utils import validate_symbols
 
 async def main():
+    # Validate single symbol
+    is_valid = await validate_symbols("BINANCE:BTCUSDT")
+    print(f"Single symbol valid: {is_valid}")
+
     # Validate multiple symbols
-    symbols_to_check = ["AAPL", "MSFT", "INVALID_SYMBOL", "TSLA"]
-    results = await validate_symbols(symbols_to_check)
+    symbols = ["BINANCE:BTCUSDT", "NASDAQ:AAPL"]
+    is_valid = await validate_symbols(symbols)
+    print(f"Multiple symbols valid: {is_valid}")
 
-    for symbol, is_valid in results.items():
-        status = "✓ Valid" if is_valid else "✗ Invalid"
-        print(f"{symbol}: {status}")
-
-    # Filter only valid symbols
-    valid_symbols = [symbol for symbol, valid in results.items() if valid]
-    print(f"Valid symbols: {valid_symbols}")
-
-# Run validation
 asyncio.run(main())
 ```
 
-### TradingView Indicator Functions
-
-The module includes several TradingView-specific indicator functions that return structured data using Pydantic models:
-
-#### get_sma_data
+### fetch_tradingview_indicators
 
 ```python
-def get_sma_data(period: int = 20) -> SMAIndicator
+async def fetch_tradingview_indicators(query: str) -> List[IndicatorData]
 ```
 
-Returns Simple Moving Average indicator configuration.
+Fetch TradingView indicators based on a search query asynchronously.
+
+This function sends a GET request to the TradingView public endpoint for indicator suggestions and filters the results by checking if the search query appears in either the script name or the author's username.
 
 **Parameters:**
-- `period` (int, optional): SMA period in bars. Defaults to 20.
+- `query` (str): The search term used to filter indicators by script name or author
 
 **Returns:**
-- `SMAIndicator`: Pydantic model containing SMA configuration
+- `List[IndicatorData]`: A list of IndicatorData objects containing details of matching indicators
 
-#### get_ema_data
-
-```python
-def get_ema_data(period: int = 20) -> EMAIndicator
-```
-
-Returns Exponential Moving Average indicator configuration.
-
-**Parameters:**
-- `period` (int, optional): EMA period in bars. Defaults to 20.
-
-**Returns:**
-- `EMAIndicator`: Pydantic model containing EMA configuration
-
-#### get_rsi_data
-
-```python
-def get_rsi_data(period: int = 14) -> RSIIndicator
-```
-
-Returns Relative Strength Index indicator configuration.
-
-**Parameters:**
-- `period` (int, optional): RSI period in bars. Defaults to 14.
-
-**Returns:**
-- `RSIIndicator`: Pydantic model containing RSI configuration
-
-#### get_volume_data
-
-```python
-def get_volume_data() -> VolumeIndicator
-```
-
-Returns Volume indicator configuration.
-
-**Returns:**
-- `VolumeIndicator`: Pydantic model containing volume configuration
+**Raises:**
+- `httpx.HTTPError`: If there's an HTTP-related error during the request
 
 **Example:**
 ```python
-from tvkit.api.utils import get_sma_data, get_ema_data, get_rsi_data, get_volume_data
+import asyncio
+from tvkit.api.utils import fetch_tradingview_indicators
 
-# Get indicator configurations
-sma_20 = get_sma_data(period=20)
-sma_50 = get_sma_data(period=50)
-ema_12 = get_ema_data(period=12)
-rsi_14 = get_rsi_data(period=14)
-volume = get_volume_data()
+async def main():
+    # Search for RSI indicators
+    indicators = await fetch_tradingview_indicators("RSI")
 
-# Use with chart API
-from tvkit.api.chart import OHLCV
+    for indicator in indicators:
+        print(f"Indicator: {indicator.script_name}")
+        print(f"Author: {indicator.author}")
+        print(f"Agree Count: {indicator.agree_count}")
+        print(f"Recommended: {indicator.is_recommended}")
+        print("---")
 
-async def get_data_with_indicators():
-    client = OHLCV()
+asyncio.run(main())
+```
 
-    # Get OHLCV data with technical indicators
-    data = await client.get_ohlcv(
-        symbol="NASDAQ:AAPL",
-        interval="1D",
-        indicators=[sma_20, sma_50, ema_12, rsi_14, volume]
+### display_and_select_indicator
+
+```python
+def display_and_select_indicator(indicators: List[IndicatorData]) -> Optional[Tuple[Optional[str], Optional[str]]]
+```
+
+Display a list of indicators and prompt the user to select one.
+
+This function prints the available indicators with numbering, waits for the user to input the number corresponding to their preferred indicator, and returns the selected indicator's scriptId and version.
+
+**Parameters:**
+- `indicators` (List[IndicatorData]): A list of IndicatorData objects containing indicator details
+
+**Returns:**
+- `Optional[Tuple[Optional[str], Optional[str]]]`: A tuple (scriptId, version) of the selected indicator if the selection is valid; otherwise, None
+
+**Example:**
+```python
+import asyncio
+from tvkit.api.utils import fetch_tradingview_indicators, display_and_select_indicator
+
+async def main():
+    # Fetch indicators
+    indicators = await fetch_tradingview_indicators("RSI")
+
+    # Display and let user select
+    result = display_and_select_indicator(indicators)
+
+    if result:
+        script_id, version = result
+        print(f"Selected script ID: {script_id}, version: {version}")
+    else:
+        print("No indicator selected")
+
+asyncio.run(main())
+```
+
+### fetch_indicator_metadata
+
+```python
+async def fetch_indicator_metadata(script_id: str, script_version: str, chart_session: str) -> Dict[str, Any]
+```
+
+Fetch metadata for a TradingView indicator based on its script ID and version asynchronously.
+
+This function constructs a URL using the provided script ID and version, sends a GET request to fetch the indicator metadata, and then prepares the metadata for further processing using the chart session.
+
+**Parameters:**
+- `script_id` (str): The unique identifier for the indicator script
+- `script_version` (str): The version of the indicator script
+- `chart_session` (str): The chart session identifier used in further processing
+
+**Returns:**
+- `Dict[str, Any]`: A dictionary containing the prepared indicator metadata if successful; an empty dictionary if an error occurs
+
+**Raises:**
+- `httpx.HTTPError`: If there's an HTTP-related error during the request
+
+**Example:**
+```python
+import asyncio
+from tvkit.api.utils import fetch_indicator_metadata
+
+async def main():
+    # Fetch metadata for a specific indicator
+    metadata = await fetch_indicator_metadata(
+        script_id="PUB;123",
+        script_version="1.0",
+        chart_session="session123"
     )
 
-    return data
+    if metadata:
+        print("Metadata fetched successfully")
+        print(f"Method: {metadata.get('m')}")
+        print(f"Parameters count: {len(metadata.get('p', []))}")
+    else:
+        print("Failed to fetch metadata")
+
+asyncio.run(main())
+```
+
+### prepare_indicator_metadata
+
+```python
+def prepare_indicator_metadata(script_id: str, metainfo: Dict[str, Any], chart_session: str) -> Dict[str, Any]
+```
+
+Prepare indicator metadata into the required payload structure.
+
+This function constructs a dictionary payload for creating a study (indicator) session. It extracts default input values and metadata from the provided metainfo and combines them with the provided script ID and chart session.
+
+**Parameters:**
+- `script_id` (str): The unique identifier for the indicator script
+- `metainfo` (Dict[str, Any]): A dictionary containing metadata information for the indicator
+- `chart_session` (str): The chart session identifier
+
+**Returns:**
+- `Dict[str, Any]`: A dictionary representing the payload required to create a study with the indicator
+
+**Example:**
+```python
+from tvkit.api.utils import prepare_indicator_metadata
+
+# Example metainfo structure
+metainfo = {
+    "inputs": [
+        {"defval": "test", "id": "in_param1", "type": "string"}
+    ],
+    "pine": {"version": "5"}
+}
+
+payload = prepare_indicator_metadata("PUB;123", metainfo, "session123")
+print(f"Method: {payload['m']}")  # "create_study"
+print(f"Parameters: {len(payload['p'])}")  # Number of parameters
 ```
 
 ## Data Models
 
-### Indicator Models
-
-The module defines several Pydantic models for TradingView indicators:
+### IndicatorData
 
 ```python
-class SMAIndicator(BaseModel):
-    """Simple Moving Average indicator model."""
-    name: str = "SMA"
-    period: int = Field(ge=1, le=1000, description="Period for SMA calculation")
+class IndicatorData(BaseModel):
+    """Data structure for TradingView indicator information."""
 
-class EMAIndicator(BaseModel):
-    """Exponential Moving Average indicator model."""
-    name: str = "EMA"
-    period: int = Field(ge=1, le=1000, description="Period for EMA calculation")
+    script_name: str = Field(..., description="Name of the indicator script")
+    image_url: str = Field(..., description="URL of the indicator image")
+    author: str = Field(..., description="Author username")
+    agree_count: int = Field(..., ge=0, description="Number of agree votes")
+    is_recommended: bool = Field(..., description="Whether the indicator is recommended")
+    script_id_part: str = Field(..., description="Script ID part for the indicator")
+    version: Optional[str] = Field(None, description="Version of the indicator script")
 
-class RSIIndicator(BaseModel):
-    """Relative Strength Index indicator model."""
-    name: str = "RSI"
-    period: int = Field(ge=1, le=100, description="Period for RSI calculation")
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary representation."""
+```
 
-class VolumeIndicator(BaseModel):
-    """Volume indicator model."""
-    name: str = "VOLUME"
+### PineFeatures
+
+```python
+class PineFeatures(BaseModel):
+    """Pydantic model for Pine script features configuration."""
+
+    v: str = Field(..., description="Pine features JSON string")
+    f: bool = Field(True, description="Features flag")
+    t: str = Field("text", description="Type identifier")
+```
+
+### ProfileConfig
+
+```python
+class ProfileConfig(BaseModel):
+    """Pydantic model for profile configuration."""
+
+    v: bool = Field(False, description="Profile value")
+    f: bool = Field(True, description="Profile flag")
+    t: str = Field("bool", description="Type identifier")
+```
+
+### InputValue
+
+```python
+class InputValue(BaseModel):
+    """Pydantic model for input value configuration."""
+
+    v: Any = Field(..., description="Input value")
+    f: bool = Field(True, description="Input flag")
+    t: str = Field(..., description="Input type")
+```
+
+### StudyPayload
+
+```python
+class StudyPayload(BaseModel):
+    """Pydantic model for study creation payload."""
+
+    m: str = Field("create_study", description="Method name")
+    p: List[Any] = Field(..., description="Parameters list")
 ```
 
 ## Usage Examples
 
-### Basic Utility Usage
+### Basic Symbol Validation
 
 ```python
 import asyncio
-from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
+from tvkit.api.utils import validate_symbols
 
-async def basic_utilities_example():
-    # Timestamp conversion
-    timestamps = [1640995200, 1641081600, 1641168000]
-    iso_times = [convert_timestamp_to_iso(ts) for ts in timestamps]
-    print("Converted timestamps:", iso_times)
+async def basic_validation_example():
+    """Basic symbol validation example."""
 
-    # Symbol validation
-    symbols = ["AAPL", "MSFT", "GOOGL", "INVALID"]
-    validation_results = await validate_symbols(symbols)
+    # Validate single symbol
+    try:
+        is_valid = await validate_symbols("BINANCE:BTCUSDT")
+        print(f"BINANCE:BTCUSDT is valid: {is_valid}")
+    except ValueError as e:
+        print(f"Validation error: {e}")
 
-    valid_symbols = [s for s, valid in validation_results.items() if valid]
-    invalid_symbols = [s for s, valid in validation_results.items() if not valid]
+    # Validate multiple symbols
+    symbols = ["NASDAQ:AAPL", "NYSE:TSLA", "INVALID:SYMBOL"]
+    try:
+        is_valid = await validate_symbols(symbols)
+        print(f"All symbols valid: {is_valid}")
+    except ValueError as e:
+        print(f"Validation error: {e}")
 
-    print(f"Valid symbols: {valid_symbols}")
-    print(f"Invalid symbols: {invalid_symbols}")
-
-asyncio.run(basic_utilities_example())
+asyncio.run(basic_validation_example())
 ```
 
-### Integration with Chart API
+### Complete Indicator Search and Selection Workflow
 
 ```python
 import asyncio
-from tvkit.api.chart import OHLCV
-from tvkit.api.utils import validate_symbols, get_sma_data, get_rsi_data
+from tvkit.api.utils import (
+    fetch_tradingview_indicators,
+    display_and_select_indicator,
+    fetch_indicator_metadata
+)
 
-async def chart_integration_example():
-    # Validate symbols before requesting data
-    symbols_to_analyze = ["NASDAQ:AAPL", "NYSE:TSLA", "NASDAQ:MSFT"]
-    validation_results = await validate_symbols(symbols_to_analyze)
+async def complete_indicator_workflow():
+    """Complete workflow for finding and selecting TradingView indicators."""
 
-    valid_symbols = [s for s, valid in validation_results.items() if valid]
+    # Step 1: Search for indicators
+    query = "RSI"
+    print(f"Searching for '{query}' indicators...")
 
-    if not valid_symbols:
-        print("No valid symbols found")
+    indicators = await fetch_tradingview_indicators(query)
+
+    if not indicators:
+        print("No indicators found")
         return
 
-    # Get technical indicators
-    sma_20 = get_sma_data(period=20)
-    rsi_14 = get_rsi_data(period=14)
+    print(f"Found {len(indicators)} indicators")
 
-    # Initialize OHLCV client
-    client = OHLCV()
+    # Step 2: Display and select indicator
+    selection = display_and_select_indicator(indicators)
 
-    # Fetch data for each valid symbol
-    for symbol in valid_symbols:
-        try:
-            data = await client.get_ohlcv(
-                symbol=symbol,
-                interval="1H",
-                indicators=[sma_20, rsi_14]
-            )
-            print(f"Successfully fetched data for {symbol}")
+    if not selection:
+        print("No indicator selected")
+        return
 
-        except Exception as e:
-            print(f"Error fetching data for {symbol}: {e}")
+    script_id, version = selection
+    print(f"Selected: {script_id}, version: {version}")
 
-    await client.close()
+    # Step 3: Fetch metadata for the selected indicator
+    chart_session = "chart_session_123"
 
-asyncio.run(chart_integration_example())
+    metadata = await fetch_indicator_metadata(
+        script_id=script_id,
+        script_version=version or "1",
+        chart_session=chart_session
+    )
+
+    if metadata:
+        print("Successfully fetched indicator metadata")
+        print(f"Payload method: {metadata.get('m')}")
+        print(f"Parameters count: {len(metadata.get('p', []))}")
+    else:
+        print("Failed to fetch indicator metadata")
+
+# Run the complete workflow
+asyncio.run(complete_indicator_workflow())
 ```
 
-### Batch Processing with Error Handling
+### Timestamp Processing with Error Handling
 
 ```python
-import asyncio
-from typing import List, Dict, Any
-from tvkit.api.utils import validate_symbols, convert_timestamp_to_iso
-import logging
+from tvkit.api.utils import convert_timestamp_to_iso
+import time
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def timestamp_processing_example():
+    """Example of timestamp processing with error handling."""
 
-async def batch_processing_example():
-    """Example of batch processing with comprehensive error handling."""
-
-    # Large batch of symbols to validate
-    symbols_batch = [
-        "NASDAQ:AAPL", "NYSE:TSLA", "NASDAQ:MSFT", "NYSE:GOOGL",
-        "NASDAQ:AMZN", "NYSE:META", "NASDAQ:NFLX", "NYSE:NVDA",
-        "INVALID_SYMBOL_1", "INVALID_SYMBOL_2"
+    # Process various timestamps
+    timestamps = [
+        time.time(),           # Current time
+        1640995200.0,         # New Year 2022
+        1753436820.0,         # Future timestamp
     ]
 
-    try:
-        # Validate symbols in batch
-        logger.info(f"Validating {len(symbols_batch)} symbols...")
-        validation_results = await validate_symbols(symbols_batch)
+    for ts in timestamps:
+        try:
+            iso_time = convert_timestamp_to_iso(ts)
+            print(f"Timestamp {ts} -> {iso_time}")
+        except (ValueError, OSError) as e:
+            print(f"Error converting {ts}: {e}")
 
-        # Process results
-        valid_count = sum(validation_results.values())
-        invalid_count = len(symbols_batch) - valid_count
-
-        logger.info(f"Validation complete: {valid_count} valid, {invalid_count} invalid")
-
-        # Generate timestamps for analysis periods
-        import time
-        current_time = int(time.time())
-        timestamps = [
-            current_time - (86400 * days)  # Go back N days
-            for days in [1, 7, 30, 90]
-        ]
-
-        # Convert timestamps
-        iso_times = []
-        for ts in timestamps:
-            try:
-                iso_time = convert_timestamp_to_iso(ts)
-                iso_times.append(iso_time)
-            except (ValueError, OSError) as e:
-                logger.error(f"Failed to convert timestamp {ts}: {e}")
-
-        logger.info(f"Analysis periods: {iso_times}")
-
-        return {
-            'validation_results': validation_results,
-            'analysis_periods': iso_times,
-            'summary': {
-                'total_symbols': len(symbols_batch),
-                'valid_symbols': valid_count,
-                'invalid_symbols': invalid_count
-            }
-        }
-
-    except Exception as e:
-        logger.error(f"Batch processing failed: {e}")
-        raise
-
-# Run batch processing
-result = asyncio.run(batch_processing_example())
-print("Batch processing result:", result)
-```
-
-## Error Handling
-
-### Common Exceptions
-
-The utility functions handle several types of errors:
-
-```python
-import asyncio
-from tvkit.api.utils import validate_symbols, convert_timestamp_to_iso
-import logging
-
-async def error_handling_example():
-    """Demonstrate comprehensive error handling patterns."""
-
-    # Handle timestamp conversion errors
-    invalid_timestamps = [-1, 253402300800, "invalid"]  # Negative, far future, string
+    # Handle invalid timestamps
+    invalid_timestamps = [-1, "invalid", None]
 
     for ts in invalid_timestamps:
         try:
             if isinstance(ts, (int, float)):
-                iso_time = convert_timestamp_to_iso(int(ts))
-                print(f"Converted {ts} to {iso_time}")
+                iso_time = convert_timestamp_to_iso(ts)
+                print(f"Converted {ts} -> {iso_time}")
             else:
-                print(f"Skipping invalid timestamp type: {type(ts)}")
-        except ValueError as e:
-            print(f"ValueError for timestamp {ts}: {e}")
-        except OSError as e:
-            print(f"OSError for timestamp {ts}: {e}")
+                print(f"Skipping invalid type {type(ts)}: {ts}")
+        except Exception as e:
+            print(f"Error with {ts}: {e}")
 
-    # Handle symbol validation errors
-    try:
-        # Test with various invalid inputs
-        invalid_symbols = ["", None, 123, "SYMBOL_WITH_VERY_LONG_NAME"]
-
-        # Filter out non-string values
-        string_symbols = [s for s in invalid_symbols if isinstance(s, str) and s]
-
-        if string_symbols:
-            results = await validate_symbols(string_symbols)
-            print(f"Validation results: {results}")
-        else:
-            print("No valid string symbols to validate")
-
-    except Exception as e:
-        print(f"Symbol validation error: {e}")
-
-asyncio.run(error_handling_example())
+timestamp_processing_example()
 ```
 
-### Retry Logic Pattern
+### Batch Indicator Processing
 
 ```python
 import asyncio
-from typing import List, Dict
+from typing import List
+from tvkit.api.utils import fetch_tradingview_indicators, IndicatorData
+
+async def batch_indicator_processing():
+    """Process multiple indicator searches in batch."""
+
+    search_terms = ["RSI", "MACD", "Moving Average", "Bollinger", "Stochastic"]
+    all_indicators: List[IndicatorData] = []
+
+    print("Searching for indicators...")
+
+    # Fetch indicators for all search terms
+    for term in search_terms:
+        try:
+            indicators = await fetch_tradingview_indicators(term)
+            all_indicators.extend(indicators)
+            print(f"Found {len(indicators)} indicators for '{term}'")
+        except Exception as e:
+            print(f"Error searching for '{term}': {e}")
+
+    # Remove duplicates based on script_id_part
+    unique_indicators = {}
+    for indicator in all_indicators:
+        unique_indicators[indicator.script_id_part] = indicator
+
+    print(f"\nTotal unique indicators found: {len(unique_indicators)}")
+
+    # Display top rated indicators
+    sorted_indicators = sorted(
+        unique_indicators.values(),
+        key=lambda x: x.agree_count,
+        reverse=True
+    )
+
+    print("\nTop 10 most agreed indicators:")
+    for i, indicator in enumerate(sorted_indicators[:10], 1):
+        print(f"{i}. {indicator.script_name} by {indicator.author}")
+        print(f"   Agrees: {indicator.agree_count}, Recommended: {indicator.is_recommended}")
+
+asyncio.run(batch_indicator_processing())
+```
+
+## Error Handling
+
+### Symbol Validation Errors
+
+```python
+import asyncio
 from tvkit.api.utils import validate_symbols
 import logging
 
-async def validate_symbols_with_retry(
-    symbols: List[str],
-    max_retries: int = 3,
-    delay: float = 1.0
-) -> Dict[str, bool]:
-    """Validate symbols with retry logic for network resilience."""
+logging.basicConfig(level=logging.INFO)
+
+async def symbol_validation_error_handling():
+    """Demonstrate comprehensive error handling for symbol validation."""
+
+    # Test various invalid inputs
+    test_cases = [
+        "",                           # Empty string
+        [],                          # Empty list
+        "INVALID_FORMAT",            # Missing colon
+        "EXCHANGE:",                 # Missing symbol part
+        ":SYMBOL",                   # Missing exchange part
+        ["VALID:SYMBOL", "INVALID"], # Mixed valid/invalid
+    ]
+
+    for test_case in test_cases:
+        try:
+            print(f"Testing: {test_case}")
+            result = await validate_symbols(test_case)
+            print(f"✓ Valid: {result}")
+        except ValueError as e:
+            print(f"✗ ValueError: {e}")
+        except Exception as e:
+            print(f"✗ Unexpected error: {e}")
+        print()
+
+asyncio.run(symbol_validation_error_handling())
+```
+
+### Network Error Handling
+
+```python
+import asyncio
+import httpx
+from tvkit.api.utils import fetch_tradingview_indicators
+
+async def network_error_handling():
+    """Handle network-related errors gracefully."""
+
+    # Test with various network conditions
+    test_queries = ["RSI", "MACD", "Invalid_Query_That_Might_Fail"]
+
+    for query in test_queries:
+        try:
+            indicators = await fetch_tradingview_indicators(query)
+            print(f"✓ Found {len(indicators)} indicators for '{query}'")
+
+        except httpx.RequestError as e:
+            print(f"✗ Network error for '{query}': {e}")
+
+        except httpx.HTTPStatusError as e:
+            print(f"✗ HTTP error for '{query}': {e.response.status_code}")
+
+        except Exception as e:
+            print(f"✗ Unexpected error for '{query}': {e}")
+
+asyncio.run(network_error_handling())
+```
+
+### Retry Logic for Robust Operations
+
+```python
+import asyncio
+from typing import List
+from tvkit.api.utils import validate_symbols, fetch_tradingview_indicators, IndicatorData
+
+async def retry_operation(operation, *args, max_retries=3, delay=1.0):
+    """Generic retry wrapper for async operations."""
 
     for attempt in range(max_retries):
         try:
-            return await validate_symbols(symbols)
-
+            return await operation(*args)
         except Exception as e:
             if attempt == max_retries - 1:
-                logging.error(f"Symbol validation failed after {max_retries} attempts: {e}")
                 raise
-
-            logging.warning(f"Validation attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
+            print(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
             await asyncio.sleep(delay)
             delay *= 2  # Exponential backoff
 
-# Usage
-async def main():
-    symbols = ["AAPL", "MSFT", "GOOGL"]
-    try:
-        results = await validate_symbols_with_retry(symbols)
-        print(f"Validation successful: {results}")
-    except Exception as e:
-        print(f"All validation attempts failed: {e}")
+async def robust_operations_example():
+    """Example using retry logic for robust operations."""
 
-asyncio.run(main())
+    # Robust symbol validation
+    try:
+        result = await retry_operation(validate_symbols, ["NASDAQ:AAPL", "NYSE:TSLA"])
+        print(f"Validation successful: {result}")
+    except Exception as e:
+        print(f"Validation failed after retries: {e}")
+
+    # Robust indicator search
+    try:
+        indicators = await retry_operation(fetch_tradingview_indicators, "RSI")
+        print(f"Found {len(indicators)} indicators")
+    except Exception as e:
+        print(f"Indicator search failed after retries: {e}")
+
+asyncio.run(robust_operations_example())
 ```
 
 ## Performance Considerations
 
 ### Efficient Symbol Validation
 
-- The `validate_symbols` function processes symbols in batches for optimal performance
-- Use connection pooling by reusing the same HTTP client session
-- Consider caching validation results for frequently used symbols
+- The `validate_symbols` function validates symbols with built-in retry logic (3 attempts)
+- Use connection pooling by reusing HTTP clients for multiple validation calls
+- Batch symbol validation when possible to reduce network overhead
 
-### Timestamp Processing
+### Indicator Search Optimization
 
-- `convert_timestamp_to_iso` is optimized for bulk operations
-- Consider processing timestamps in batches when dealing with large datasets
+- Cache frequently searched indicators to reduce API calls
+- Use specific search terms to get more relevant results
+- Consider implementing local filtering for better performance
 
-### Memory Usage
+### Memory Management
 
-- All utility functions are stateless and memory-efficient
-- Pydantic models use slots for reduced memory footprint
-- Consider using generators for large-scale data processing
+- All Pydantic models are frozen (immutable) for better memory efficiency
+- Use async/await patterns to prevent blocking operations
+- Process large indicator lists in batches to manage memory usage
 
 ## Integration Examples
 
-### With Scanner API
+### Integration with Chart API
 
 ```python
 import asyncio
-from tvkit.api.scanner import ScannerService, Market
-from tvkit.api.utils import validate_symbols, convert_timestamp_to_iso
+from tvkit.api.utils import validate_symbols
+from tvkit.api.chart.ohlcv import OHLCV
 
-async def scanner_integration_example():
-    """Integrate utils with scanner API for enhanced functionality."""
+async def chart_integration_example():
+    """Integrate utils with chart API for validated streaming."""
 
-    # Get top performers from US market
-    scanner = ScannerService()
+    # Step 1: Validate symbols before streaming
+    symbols_to_stream = ["BINANCE:BTCUSDT", "NASDAQ:AAPL", "FOREX:EURUSD"]
 
     try:
-        results = await scanner.scan_market(
-            market=Market.UNITED_STATES,
-            columns=['name', 'close', 'change', 'volume'],
-            sort_by='change',
-            sort_order='desc',
-            range_size=10
-        )
+        is_valid = await validate_symbols(symbols_to_stream)
+        print(f"All symbols valid: {is_valid}")
+    except ValueError as e:
+        print(f"Symbol validation failed: {e}")
+        return
 
-        # Extract symbols for validation
-        symbols = [item.name for item in results.data]
-        print(f"Top performers: {symbols}")
+    # Step 2: Stream data for validated symbols
+    async with OHLCV() as client:
+        for symbol in symbols_to_stream:
+            try:
+                # Get recent historical data
+                bars = await client.get_historical_ohlcv(symbol, "1H", 5)
+                print(f"{symbol}: Latest price ${bars[-1].close}")
+            except Exception as e:
+                print(f"Error fetching data for {symbol}: {e}")
 
-        # Validate symbols
-        validation_results = await validate_symbols(symbols)
-        valid_symbols = [s for s, valid in validation_results.items() if valid]
-
-        print(f"Validated symbols: {valid_symbols}")
-
-        # Add timestamp information
-        import time
-        scan_time = convert_timestamp_to_iso(int(time.time()))
-        print(f"Scan completed at: {scan_time}")
-
-    except Exception as e:
-        print(f"Scanner integration error: {e}")
-
-    finally:
-        await scanner.close()
-
-asyncio.run(scanner_integration_example())
+asyncio.run(chart_integration_example())
 ```
 
-### Custom Utility Composition
+### Custom Indicator Management System
 
 ```python
-from typing import List, Dict, Optional
-from tvkit.api.utils import validate_symbols, convert_timestamp_to_iso, get_sma_data
 import asyncio
-import time
+import json
+from typing import Dict, List, Optional
+from tvkit.api.utils import (
+    fetch_tradingview_indicators,
+    fetch_indicator_metadata,
+    IndicatorData
+)
 
-class TradingAnalysisUtils:
-    """Custom utility class combining tvkit utils for trading analysis."""
+class IndicatorManager:
+    """Custom indicator management system using tvkit utilities."""
 
-    @staticmethod
-    async def prepare_analysis_session(
-        symbols: List[str],
-        analysis_periods: List[int]  # Days back from now
-    ) -> Dict[str, any]:
-        """Prepare a complete analysis session with validated symbols and timestamps."""
+    def __init__(self):
+        self.indicators_cache: Dict[str, List[IndicatorData]] = {}
+        self.metadata_cache: Dict[str, Dict] = {}
 
-        # Validate symbols
-        validation_results = await validate_symbols(symbols)
-        valid_symbols = [s for s, valid in validation_results.items() if valid]
+    async def search_and_cache_indicators(self, query: str) -> List[IndicatorData]:
+        """Search for indicators and cache results."""
 
-        # Generate timestamps
-        current_time = int(time.time())
-        timestamps = {}
+        if query in self.indicators_cache:
+            print(f"Using cached results for '{query}'")
+            return self.indicators_cache[query]
 
-        for days_back in analysis_periods:
-            timestamp = current_time - (86400 * days_back)
-            iso_time = convert_timestamp_to_iso(timestamp)
-            timestamps[f"{days_back}d_ago"] = {
-                'unix': timestamp,
-                'iso': iso_time
-            }
+        indicators = await fetch_tradingview_indicators(query)
+        self.indicators_cache[query] = indicators
+        print(f"Cached {len(indicators)} indicators for '{query}'")
 
-        # Prepare technical indicators
-        indicators = {
-            'sma_20': get_sma_data(20),
-            'sma_50': get_sma_data(50),
-        }
+        return indicators
 
-        return {
-            'symbols': {
-                'valid': valid_symbols,
-                'invalid': [s for s, valid in validation_results.items() if not valid],
-                'validation_results': validation_results
+    async def get_indicator_metadata(self, script_id: str, version: str, session: str) -> Dict:
+        """Get indicator metadata with caching."""
+
+        cache_key = f"{script_id}:{version}"
+
+        if cache_key in self.metadata_cache:
+            print(f"Using cached metadata for {cache_key}")
+            return self.metadata_cache[cache_key]
+
+        metadata = await fetch_indicator_metadata(script_id, version, session)
+        if metadata:
+            self.metadata_cache[cache_key] = metadata
+            print(f"Cached metadata for {cache_key}")
+
+        return metadata
+
+    def save_cache_to_file(self, filename: str):
+        """Save cache to JSON file."""
+
+        # Convert IndicatorData objects to dictionaries
+        cache_data = {
+            "indicators": {
+                query: [ind.to_dict() for ind in indicators]
+                for query, indicators in self.indicators_cache.items()
             },
-            'timestamps': timestamps,
-            'indicators': indicators,
-            'session_info': {
-                'created_at': convert_timestamp_to_iso(current_time),
-                'total_symbols': len(symbols),
-                'valid_symbols_count': len(valid_symbols)
-            }
+            "metadata": self.metadata_cache
         }
+
+        with open(filename, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+
+        print(f"Cache saved to {filename}")
 
 # Usage example
 async def main():
-    utils = TradingAnalysisUtils()
+    manager = IndicatorManager()
 
-    session = await utils.prepare_analysis_session(
-        symbols=['AAPL', 'MSFT', 'GOOGL', 'INVALID_SYM'],
-        analysis_periods=[1, 7, 30]
-    )
+    # Search for different types of indicators
+    queries = ["RSI", "MACD", "Volume"]
 
-    print("Analysis session prepared:")
-    print(f"Valid symbols: {session['symbols']['valid']}")
-    print(f"Analysis periods: {list(session['timestamps'].keys())}")
-    print(f"Session created: {session['session_info']['created_at']}")
+    for query in queries:
+        indicators = await manager.search_and_cache_indicators(query)
+        print(f"Found {len(indicators)} indicators for {query}")
+
+    # Save cache for future use
+    manager.save_cache_to_file("indicators_cache.json")
 
 asyncio.run(main())
 ```
@@ -577,29 +725,29 @@ asyncio.run(main())
 
 | Function | Parameters | Returns | Description |
 |----------|------------|---------|-------------|
-| `convert_timestamp_to_iso` | `timestamp: int` | `str` | Converts Unix timestamp to ISO 8601 format |
-| `validate_symbols` | `symbols: List[str]` | `Dict[str, bool]` | Validates trading symbols against TradingView API |
-| `get_sma_data` | `period: int = 20` | `SMAIndicator` | Returns SMA indicator configuration |
-| `get_ema_data` | `period: int = 20` | `EMAIndicator` | Returns EMA indicator configuration |
-| `get_rsi_data` | `period: int = 14` | `RSIIndicator` | Returns RSI indicator configuration |
-| `get_volume_data` | None | `VolumeIndicator` | Returns volume indicator configuration |
+| `convert_timestamp_to_iso` | `timestamp: float` | `str` | Converts Unix timestamp to ISO 8601 format |
+| `validate_symbols` | `exchange_symbol: Union[str, List[str]]` | `bool` | Validates trading symbols against TradingView API |
+| `fetch_tradingview_indicators` | `query: str` | `List[IndicatorData]` | Fetches TradingView indicators based on search query |
+| `display_and_select_indicator` | `indicators: List[IndicatorData]` | `Optional[Tuple[str, str]]` | Interactive indicator selection interface |
+| `fetch_indicator_metadata` | `script_id: str, script_version: str, chart_session: str` | `Dict[str, Any]` | Fetches metadata for TradingView indicator |
+| `prepare_indicator_metadata` | `script_id: str, metainfo: Dict, chart_session: str` | `Dict[str, Any]` | Prepares indicator metadata payload |
 
 ### Models
 
-| Model | Fields | Description |
-|-------|--------|-------------|
-| `SMAIndicator` | `name: str`, `period: int` | Simple Moving Average indicator |
-| `EMAIndicator` | `name: str`, `period: int` | Exponential Moving Average indicator |
-| `RSIIndicator` | `name: str`, `period: int` | Relative Strength Index indicator |
-| `VolumeIndicator` | `name: str` | Volume indicator |
+| Model | Key Fields | Description |
+|-------|------------|-------------|
+| `IndicatorData` | `script_name`, `author`, `agree_count`, `is_recommended` | TradingView indicator information |
+| `PineFeatures` | `v`, `f`, `t` | Pine script features configuration |
+| `ProfileConfig` | `v`, `f`, `t` | Profile configuration for indicators |
+| `InputValue` | `v`, `f`, `t` | Input value configuration |
+| `StudyPayload` | `m`, `p` | Study creation payload structure |
 
 ### Exceptions
 
-- `ValueError`: Invalid input parameters
-- `OSError`: System-level errors (timestamp conversion)
+- `ValueError`: Invalid input parameters or symbol formats
 - `httpx.RequestError`: Network request failures
 - `httpx.HTTPStatusError`: API error responses
-- `ValidationError`: Pydantic model validation errors
+- `httpx.HTTPError`: General HTTP-related errors
 
 ---
 
