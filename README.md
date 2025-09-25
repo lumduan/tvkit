@@ -590,6 +590,7 @@ uv run python examples/export_demo.py
 - **[Markets Documentation](docs/api/scanner/markets.md)**: Global market identifiers, exchange information, and regional organization for 69+ markets
 - **[ConnectionService Documentation](docs/api/chart/services/connection_service.md)**: WebSocket connection management and TradingView session handling
 - **[MessageService Documentation](docs/api/chart/services/message_service.md)**: WebSocket message construction, protocol handling, and transmission
+- **[Utils Documentation](docs/api/utils.md)**: Utility functions for timestamp conversion, symbol validation, and TradingView indicators
 - **[API Reference](https://github.com/lumduan/tvkit#readme)**: Complete API documentation
 
 ## 🤝 Contributing
