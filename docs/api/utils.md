@@ -77,16 +77,16 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool
 
 Validate one or more exchange symbols asynchronously.
 
-This function checks whether the provided symbol or list of symbols follows the expected format ("EXCHANGE:SYMBOL") and validates each symbol by making a request to a TradingView validation URL.
+This function validates trading symbols by making requests to TradingView's symbol URL endpoint. Symbols can be in various formats including "EXCHANGE:SYMBOL" format or other TradingView-compatible formats like "USI-PCC". The validation considers both 200 and 301 HTTP status codes as successful validation.
 
 **Parameters:**
-- `exchange_symbol` (Union[str, List[str]]): A single symbol or a list of symbols in the format "EXCHANGE:SYMBOL"
+- `exchange_symbol` (Union[str, List[str]]): A single symbol or a list of symbols to validate. Supports formats like "BINANCE:BTCUSDT", "USI-PCC", "NASDAQ:AAPL", etc.
 
 **Returns:**
 - `bool`: True if all provided symbols are valid
 
 **Raises:**
-- `ValueError`: If exchange_symbol is empty, if a symbol does not follow the "EXCHANGE:SYMBOL" format, or if the symbol fails validation after retries
+- `ValueError`: If exchange_symbol is empty or if the symbol fails validation (returns 404 - "Invalid exchange or symbol or index")
 - `httpx.HTTPError`: If there's an HTTP-related error during validation
 
 **Example:**
@@ -95,14 +95,24 @@ import asyncio
 from tvkit.api.utils import validate_symbols
 
 async def main():
-    # Validate single symbol
+    # Validate single symbol with standard format
     is_valid = await validate_symbols("BINANCE:BTCUSDT")
-    print(f"Single symbol valid: {is_valid}")
+    print(f"Bitcoin symbol valid: {is_valid}")
 
-    # Validate multiple symbols
-    symbols = ["BINANCE:BTCUSDT", "NASDAQ:AAPL"]
+    # Validate symbol with alternative format
+    is_valid = await validate_symbols("USI-PCC")
+    print(f"Alternative format valid: {is_valid}")
+
+    # Validate multiple symbols with mixed formats
+    symbols = ["BINANCE:BTCUSDT", "NASDAQ:AAPL", "USI-PCC"]
     is_valid = await validate_symbols(symbols)
     print(f"Multiple symbols valid: {is_valid}")
+
+    # Handle validation errors
+    try:
+        await validate_symbols("INVALID:SYMBOL123")
+    except ValueError as e:
+        print(f"Validation error: {e}")
 
 asyncio.run(main())
 ```
@@ -337,20 +347,33 @@ from tvkit.api.utils import validate_symbols
 async def basic_validation_example():
     """Basic symbol validation example."""
 
-    # Validate single symbol
+    # Validate single symbol with standard format
     try:
         is_valid = await validate_symbols("BINANCE:BTCUSDT")
         print(f"BINANCE:BTCUSDT is valid: {is_valid}")
     except ValueError as e:
         print(f"Validation error: {e}")
 
-    # Validate multiple symbols
-    symbols = ["NASDAQ:AAPL", "NYSE:TSLA", "INVALID:SYMBOL"]
+    # Validate symbol with alternative format
+    try:
+        is_valid = await validate_symbols("USI-PCC")
+        print(f"USI-PCC is valid: {is_valid}")
+    except ValueError as e:
+        print(f"Validation error: {e}")
+
+    # Validate multiple symbols with mixed formats
+    symbols = ["NASDAQ:AAPL", "NYSE:TSLA", "USI-PCC"]
     try:
         is_valid = await validate_symbols(symbols)
         print(f"All symbols valid: {is_valid}")
     except ValueError as e:
         print(f"Validation error: {e}")
+
+    # Test invalid symbol (will raise ValueError with "Invalid exchange or symbol or index")
+    try:
+        await validate_symbols("INVALID:SYMBOL123")
+    except ValueError as e:
+        print(f"Expected validation error: {e}")
 
 asyncio.run(basic_validation_example())
 ```
@@ -528,14 +551,14 @@ logging.basicConfig(level=logging.INFO)
 async def symbol_validation_error_handling():
     """Demonstrate comprehensive error handling for symbol validation."""
 
-    # Test various invalid inputs
+    # Test various invalid inputs and formats
     test_cases = [
         "",                           # Empty string
         [],                          # Empty list
-        "INVALID_FORMAT",            # Missing colon
-        "EXCHANGE:",                 # Missing symbol part
-        ":SYMBOL",                   # Missing exchange part
-        ["VALID:SYMBOL", "INVALID"], # Mixed valid/invalid
+        "INVALID-SYMBOL123",         # Invalid symbol
+        "NONEXISTENT:FAKE",          # Non-existent symbol
+        ["NASDAQ:AAPL", "INVALID123"], # Mixed valid/invalid
+        "USI-PCC",                   # Alternative format (should be valid)
     ]
 
     for test_case in test_cases:

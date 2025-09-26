@@ -16,16 +16,17 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
     """
     Validate one or more exchange symbols asynchronously.
 
-    This function checks whether the provided symbol or list of symbols follows
-    the expected format ("EXCHANGE:SYMBOL") and validates each symbol by making a
-    request to a TradingView validation URL.
+    This function validates trading symbols by making requests to TradingView's
+    symbol URL endpoint. Symbols can be in various formats including "EXCHANGE:SYMBOL"
+    format or other TradingView-compatible formats like "USI-PCC".
 
     Args:
-        exchange_symbol: A single symbol or a list of symbols in the format "EXCHANGE:SYMBOL".
+        exchange_symbol: A single symbol or a list of symbols to validate.
+                        Supports formats like "BINANCE:BTCUSDT", "USI-PCC", etc.
 
     Raises:
-        ValueError: If exchange_symbol is empty, if a symbol does not follow the "EXCHANGE:SYMBOL" format,
-                    or if the symbol fails validation after the allowed number of retries.
+        ValueError: If exchange_symbol is empty or if the symbol fails validation
+                    after the allowed number of retries.
         httpx.HTTPError: If there's an HTTP-related error during validation.
 
     Returns:
@@ -34,13 +35,12 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
     Example:
         >>> await validate_symbols("BINANCE:BTCUSDT")
         True
-        >>> await validate_symbols(["BINANCE:BTCUSDT", "NASDAQ:AAPL"])
+        >>> await validate_symbols(["BINANCE:BTCUSDT", "USI-PCC"])
+        True
+        >>> await validate_symbols("NASDAQ:AAPL")
         True
     """
-    validate_url: str = (
-        "https://scanner.tradingview.com/symbol?"
-        "symbol={exchange}%3A{symbol}&fields=market&no_404=false"
-    )
+    validate_url: str = "https://www.tradingview.com/symbols/{exchange_symbol}"
 
     if not exchange_symbol:
         raise ValueError("exchange_symbol cannot be empty")
@@ -53,31 +53,32 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
 
     async with httpx.AsyncClient(timeout=5.0) as client:
         for item in symbols:
-            parts: List[str] = item.split(":")
-            if len(parts) != 2:
-                raise ValueError(
-                    f"Invalid symbol format '{item}'. Must be like 'BINANCE:BTCUSDT'"
-                )
-
-            exchange: str
-            symbol: str
-            exchange, symbol = parts
             retries: int = 3
 
             for attempt in range(retries):
                 try:
                     response: httpx.Response = await client.get(
-                        url=validate_url.format(exchange=exchange, symbol=symbol)
+                        url=validate_url.format(exchange_symbol=item)
                     )
-                    response.raise_for_status()
+
+                    # Consider both 200 and 301 status codes as valid
+                    if response.status_code in [200, 301]:
+                        break  # Valid symbol, exit retry loop
+                    elif response.status_code == 404:
+                        raise ValueError(
+                            f"Invalid exchange or symbol or index '{item}'"
+                        )
+                    else:
+                        response.raise_for_status()
+
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 404:
                         raise ValueError(
-                            f"Invalid exchange:symbol '{item}' after {retries} attempts"
+                            f"Invalid exchange or symbol or index '{item}'"
                         ) from exc
 
                     logging.warning(
-                        "Attempt %d failed to validate exchange:symbol '%s': %s",
+                        "Attempt %d failed to validate symbol '%s': %s",
                         attempt + 1,
                         item,
                         exc,
@@ -87,11 +88,11 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
                         await asyncio.sleep(delay=1.0)  # Wait briefly before retrying
                     else:
                         raise ValueError(
-                            f"Invalid exchange:symbol '{item}' after {retries} attempts"
+                            f"Invalid symbol '{item}' after {retries} attempts"
                         ) from exc
                 except httpx.RequestError as exc:
                     logging.warning(
-                        "Attempt %d failed to validate exchange:symbol '%s': %s",
+                        "Attempt %d failed to validate symbol '%s': %s",
                         attempt + 1,
                         item,
                         exc,
@@ -101,9 +102,7 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
                         await asyncio.sleep(delay=1.0)  # Wait briefly before retrying
                     else:
                         raise ValueError(
-                            f"Invalid exchange:symbol '{item}' after {retries} attempts"
+                            f"Invalid symbol '{item}' after {retries} attempts"
                         ) from exc
-                else:
-                    break  # Successful request; exit retry loop
 
     return True
