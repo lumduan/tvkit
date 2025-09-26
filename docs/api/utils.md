@@ -2,11 +2,29 @@
 
 ## Overview
 
-The `tvkit.api.utils` module provides essential utility functions for validating exchange symbols and fetching TradingView indicators and their metadata. This module contains async functions for symbol validation, TradingView indicator search and selection, and metadata processing for Pine script indicators.
+The `tvkit.api.utils` package provides essential utility functions for validating exchange symbols and fetching TradingView indicators and their metadata. This package is organized into focused modules for better maintainability and type safety, while maintaining backward compatibility through its main package interface.
+
+## Package Structure
+
+The utils package is organized into the following modules:
+
+```
+tvkit/api/utils/
+├── __init__.py              # Package exports and backward compatibility
+├── models.py                # Pydantic data models
+├── timestamp.py             # Timestamp conversion utilities
+├── symbol_validator.py      # Symbol validation service
+└── indicator_service.py     # TradingView indicator management
+```
 
 ## Architecture
 
-The module is designed with a functional programming approach, providing stateless utility functions that can be safely used across the entire tvkit ecosystem. Each function is focused on a specific task with clear input/output contracts and comprehensive error handling.
+The package is designed with a modular architecture, separating concerns into focused modules:
+
+- **`models.py`**: Contains all Pydantic data models for type safety and validation
+- **`timestamp.py`**: Timestamp conversion utilities for TradingView data
+- **`symbol_validator.py`**: Symbol validation against TradingView's API
+- **`indicator_service.py`**: TradingView indicator search, selection, and metadata management
 
 ### Key Components
 
@@ -15,10 +33,11 @@ The module is designed with a functional programming approach, providing statele
 - **TradingView Indicator Search**: Search and fetch TradingView indicators
 - **Interactive Indicator Selection**: User-friendly indicator selection interface
 - **Metadata Processing**: Pine script metadata preparation for indicator creation
+- **Type-Safe Models**: Comprehensive Pydantic models for all data structures
 
 ## Functions
 
-### convert_timestamp_to_iso
+### timestamp.convert_timestamp_to_iso
 
 ```python
 def convert_timestamp_to_iso(timestamp: float) -> str
@@ -50,7 +69,7 @@ current_iso = convert_timestamp_to_iso(current_timestamp)
 print(f"Current time: {current_iso}")
 ```
 
-### validate_symbols
+### symbol_validator.validate_symbols
 
 ```python
 async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool
@@ -88,7 +107,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### fetch_tradingview_indicators
+### indicator_service.fetch_tradingview_indicators
 
 ```python
 async def fetch_tradingview_indicators(query: str) -> List[IndicatorData]
@@ -126,7 +145,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### display_and_select_indicator
+### indicator_service.display_and_select_indicator
 
 ```python
 def display_and_select_indicator(indicators: List[IndicatorData]) -> Optional[Tuple[Optional[str], Optional[str]]]
@@ -163,7 +182,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### fetch_indicator_metadata
+### indicator_service.fetch_indicator_metadata
 
 ```python
 async def fetch_indicator_metadata(script_id: str, script_version: str, chart_session: str) -> Dict[str, Any]
@@ -207,7 +226,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### prepare_indicator_metadata
+### indicator_service.prepare_indicator_metadata
 
 ```python
 def prepare_indicator_metadata(script_id: str, metainfo: Dict[str, Any], chart_session: str) -> Dict[str, Any]
@@ -244,7 +263,9 @@ print(f"Parameters: {len(payload['p'])}")  # Number of parameters
 
 ## Data Models
 
-### IndicatorData
+All data models are defined in `models.py` and use Pydantic for validation and type safety.
+
+### models.IndicatorData
 
 ```python
 class IndicatorData(BaseModel):
@@ -262,7 +283,7 @@ class IndicatorData(BaseModel):
         """Convert to dictionary representation."""
 ```
 
-### PineFeatures
+### models.PineFeatures
 
 ```python
 class PineFeatures(BaseModel):
@@ -273,7 +294,7 @@ class PineFeatures(BaseModel):
     t: str = Field("text", description="Type identifier")
 ```
 
-### ProfileConfig
+### models.ProfileConfig
 
 ```python
 class ProfileConfig(BaseModel):
@@ -284,7 +305,7 @@ class ProfileConfig(BaseModel):
     t: str = Field("bool", description="Type identifier")
 ```
 
-### InputValue
+### models.InputValue
 
 ```python
 class InputValue(BaseModel):
@@ -295,7 +316,7 @@ class InputValue(BaseModel):
     t: str = Field(..., description="Input type")
 ```
 
-### StudyPayload
+### models.StudyPayload
 
 ```python
 class StudyPayload(BaseModel):
@@ -426,6 +447,25 @@ def timestamp_processing_example():
             print(f"Error with {ts}: {e}")
 
 timestamp_processing_example()
+```
+
+### Modular Import Examples
+
+```python
+# Import specific services
+from tvkit.api.utils.timestamp import convert_timestamp_to_iso
+from tvkit.api.utils.symbol_validator import validate_symbols
+from tvkit.api.utils.indicator_service import fetch_tradingview_indicators
+from tvkit.api.utils.models import IndicatorData, StudyPayload
+
+# Or use the main package interface (recommended for backward compatibility)
+from tvkit.api.utils import (
+    convert_timestamp_to_iso,
+    validate_symbols,
+    fetch_tradingview_indicators,
+    IndicatorData,
+    StudyPayload
+)
 ```
 
 ### Batch Indicator Processing
@@ -719,7 +759,29 @@ async def main():
 asyncio.run(main())
 ```
 
-## API Reference Summary
+## Module Reference
+
+### Package Import Patterns
+
+```python
+# Backward-compatible imports (recommended)
+from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
+
+# Direct module imports (for specific use cases)
+from tvkit.api.utils.timestamp import convert_timestamp_to_iso
+from tvkit.api.utils.symbol_validator import validate_symbols
+from tvkit.api.utils.indicator_service import fetch_tradingview_indicators
+from tvkit.api.utils.models import IndicatorData
+```
+
+### API Reference Summary
+
+| Module | Functions | Models | Description |
+|--------|-----------|--------|-------------|
+| `timestamp.py` | `convert_timestamp_to_iso` | - | Timestamp conversion utilities |
+| `symbol_validator.py` | `validate_symbols` | - | Symbol validation against TradingView API |
+| `indicator_service.py` | `fetch_tradingview_indicators`, `display_and_select_indicator`, `fetch_indicator_metadata`, `prepare_indicator_metadata` | - | TradingView indicator management |
+| `models.py` | - | `IndicatorData`, `PineFeatures`, `ProfileConfig`, `InputValue`, `StudyPayload` | Pydantic data models |
 
 ### Functions
 
@@ -751,4 +813,4 @@ asyncio.run(main())
 
 ---
 
-*This documentation is part of the tvkit library. For more information, see the main project documentation and examples.*
+*This documentation reflects the modular structure of the tvkit.api.utils package. All functions remain accessible through the main package interface for backward compatibility, while the new modular structure provides better organization and maintainability.*
