@@ -38,7 +38,7 @@ class OHLCV:
         and request headers for TradingView data streaming.
         """
         self.ws_url: str = (
-            "wss://data.tradingview.com/socket.io/websocket?from=screener%2F"
+            "wss://data.tradingview.com/socket.io/websocket?from=chart%2F"
         )
         self.connection_service: Optional[ConnectionService] = None
         self.message_service: Optional[MessageService] = None
@@ -184,6 +184,26 @@ class OHLCV:
                         logging.debug(f"Failed to parse 'quote_completed' message: {e}")
                     continue
 
+                elif message_type == "series_loading":
+                    # Series loading message - continue waiting for data
+                    logging.debug("Series loading for real-time data stream")
+                    continue
+
+                elif message_type == "study_loading":
+                    # Study loading message - continue waiting for data
+                    logging.debug("Study loading for real-time data stream")
+                    continue
+
+                elif message_type == "series_completed":
+                    # Series completed message - continue waiting for data
+                    logging.debug("Series completed for real-time data stream")
+                    continue
+
+                elif message_type == "study_completed":
+                    # Study completed message - continue waiting for data
+                    logging.debug("Study completed for real-time data stream")
+                    continue
+
                 else:
                     # Other message types (heartbeats, etc.)
                     logging.debug(f"Skipping message type '{message_type}': {data}")
@@ -262,21 +282,28 @@ class OHLCV:
                 if message_type == "timescale_update":
                     # Parse as timescale update (historical OHLCV data)
                     try:
+                        logging.debug(f"Raw timescale_update data: {data}")
                         timescale_response: TimescaleUpdateResponse = (
                             TimescaleUpdateResponse.model_validate(data)
                         )
                         logging.info(
                             f"Received {len(timescale_response.ohlcv_bars)} historical OHLCV bars"
                         )
+
+                        # Log the bars for debugging
+                        for bar in timescale_response.ohlcv_bars:
+                            logging.debug(f"Parsed OHLCV bar: {bar}")
+
                         historical_bars.extend(timescale_response.ohlcv_bars)
 
                         # If we have enough bars or this appears to be the complete dataset, break
                         if len(historical_bars) >= bars_count:
                             break
                     except Exception as e:
-                        logging.debug(
+                        logging.warning(
                             f"Failed to parse 'timescale_update' message: {e}"
                         )
+                        logging.debug(f"Raw message that failed to parse: {data}")
                         continue
 
                 elif message_type == "du":
@@ -305,6 +332,26 @@ class OHLCV:
                         )
                     except Exception as e:
                         logging.debug(f"Failed to parse 'quote_completed' message: {e}")
+                    continue
+
+                elif message_type == "series_loading":
+                    # Series loading message - continue waiting for data
+                    logging.debug("Series loading for historical data fetch")
+                    continue
+
+                elif message_type == "study_loading":
+                    # Study loading message - continue waiting for data
+                    logging.debug("Study loading for historical data fetch")
+                    continue
+
+                elif message_type == "series_completed":
+                    # Series completed message - continue waiting for data
+                    logging.debug("Series completed for historical data fetch")
+                    continue
+
+                elif message_type == "study_completed":
+                    # Study completed message - continue waiting for data
+                    logging.debug("Study completed for historical data fetch")
                     continue
 
                 else:
@@ -413,6 +460,26 @@ class OHLCV:
                         )
                     except Exception as e:
                         logging.debug(f"Failed to parse 'quote_completed' message: {e}")
+                    continue
+
+                elif message_type == "series_loading":
+                    # Series loading message - continue waiting for data
+                    logging.debug("Series loading for quote data stream")
+                    continue
+
+                elif message_type == "study_loading":
+                    # Study loading message - continue waiting for data
+                    logging.debug("Study loading for quote data stream")
+                    continue
+
+                elif message_type == "series_completed":
+                    # Series completed message - continue waiting for data
+                    logging.debug("Series completed for quote data stream")
+                    continue
+
+                elif message_type == "study_completed":
+                    # Study completed message - continue waiting for data
+                    logging.debug("Study completed for quote data stream")
                     continue
 
                 else:
@@ -556,25 +623,37 @@ async def main():
     """
     Example usage of the OHLCV class with async patterns.
     """
+    # Set logging to DEBUG for detailed output
+    logging.getLogger().setLevel(logging.DEBUG)
+
     async with OHLCV() as real_time_data:
-        # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD"]
-        exchange_symbol = ["SET:AOT"]
+        # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD","SET:AOT"]
+        # exchange_symbol = ["SET:CPALL"]
+        exchange_symbol = ["USI:PCC"]
         bars: int = 1000
 
-        historical_bars: list[OHLCVBar] = await real_time_data.get_historical_ohlcv(
-            exchange_symbol=exchange_symbol[0], interval="1D", bars_count=bars
-        )
+        try:
+            historical_bars: list[OHLCVBar] = await real_time_data.get_historical_ohlcv(
+                exchange_symbol=exchange_symbol[0], interval="1D", bars_count=bars
+            )
 
-        for bar in historical_bars:
-            print("-" * 50)
-            print(f"Bar Index: {historical_bars.index(bar) + 1}")
-            print(f"Timestamp: {bar.timestamp}")
-            print(f"ISO Time: {convert_timestamp_to_iso(bar.timestamp)}")
-            print(f"Open: {bar.open}")
-            print(f"High: {bar.high}")
-            print(f"Low: {bar.low}")
-            print(f"Close: {bar.close}")
-            print(f"Volume: {bar.volume}")
+            print(f"\n🎯 Successfully retrieved {len(historical_bars)} bars for {exchange_symbol[0]}")
+            print("=" * 60)
+
+            for bar in historical_bars:
+                print("-" * 50)
+                print(f"Bar Index: {historical_bars.index(bar) + 1}")
+                print(f"Timestamp: {bar.timestamp}")
+                print(f"ISO Time: {convert_timestamp_to_iso(bar.timestamp)}")
+                print(f"Open: {bar.open}")
+                print(f"High: {bar.high}")
+                print(f"Low: {bar.low}")
+                print(f"Close: {bar.close}")
+                print(f"Volume: {bar.volume}")
+
+        except Exception as e:
+            print(f"❌ Error retrieving data for {exchange_symbol[0]}: {e}")
+            logging.error(f"Full error details: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
