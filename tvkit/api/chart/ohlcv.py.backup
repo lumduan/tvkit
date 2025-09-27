@@ -16,7 +16,7 @@ from tvkit.api.chart.models.ohlcv import (
 )
 from tvkit.api.chart.services import ConnectionService, MessageService
 from tvkit.api.chart.utils import validate_interval
-from tvkit.api.utils import validate_symbols, convert_symbol_format
+from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols, convert_symbol_format
 
 # Configure logging
 logging.basicConfig(
@@ -113,7 +113,7 @@ class OHLCV:
         await self.connection_service.add_symbol_to_sessions(
             quote_session,
             chart_session,
-            converted_symbol,
+            exchange_symbol,
             interval,
             bars_count,
             send_message_func,
@@ -168,7 +168,7 @@ class OHLCV:
                         current_price: Optional[float] = quote_data.current_price
                         if current_price is not None:
                             logging.info(
-                                f"Quote data for {converted_symbol}: Current price = ${current_price}"
+                                f"Quote data for {exchange_symbol}: Current price = ${current_price}"
                             )
                         logging.debug(f"Quote symbol data: {quote_data.symbol_info}")
                     except Exception as e:
@@ -244,10 +244,9 @@ class OHLCV:
         Returns a list of historical OHLCV data for a specified symbol.
 
         This method fetches historical OHLCV data from TradingView and returns it as a list of OHLCVBar objects.
-        Symbols are automatically converted from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
 
         Args:
-            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' or 'EXCHANGE-SYMBOL' format (e.g., 'BINANCE:BTCUSDT' or 'USI-PCC').
+            exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'BINANCE:BTCUSDT').
             interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
@@ -259,9 +258,6 @@ class OHLCV:
             WebSocketException: If connection or streaming fails
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
         await self._setup_services()
 
@@ -281,7 +277,7 @@ class OHLCV:
         await self.connection_service.add_symbol_to_sessions(
             quote_session,
             chart_session,
-            converted_symbol,
+            exchange_symbol,
             interval,
             bars_count,
             send_message_func,
@@ -420,11 +416,11 @@ class OHLCV:
 
         if not historical_bars:
             raise RuntimeError(
-                f"No historical data received for symbol {converted_symbol}"
+                f"No historical data received for symbol {exchange_symbol}"
             )
 
         logging.info(
-            f"Successfully fetched {len(historical_bars)} historical OHLCV bars for {converted_symbol}"
+            f"Successfully fetched {len(historical_bars)} historical OHLCV bars for {exchange_symbol}"
         )
         return historical_bars
 
@@ -436,10 +432,9 @@ class OHLCV:
 
         This method is useful for symbols that provide quote data (current price, volume, etc.)
         but may not have OHLCV chart data available. It's ideal for getting real-time price updates.
-        Symbols are automatically converted from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
 
         Args:
-            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' or 'EXCHANGE-SYMBOL' format (e.g., 'NASDAQ:AAPL' or 'USI-PCC').
+            exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'NASDAQ:AAPL').
             interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
@@ -456,9 +451,6 @@ class OHLCV:
             ...         print(f"Price: ${quote.current_price}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
         await self._setup_services()
 
@@ -478,7 +470,7 @@ class OHLCV:
         await self.connection_service.add_symbol_to_sessions(
             quote_session,
             chart_session,
-            converted_symbol,
+            exchange_symbol,
             interval,
             bars_count,
             send_message_func,
@@ -577,10 +569,9 @@ class OHLCV:
 
         This method provides the raw JSON data from TradingView for debugging purposes.
         Use this when you need to inspect the raw message format or implement custom parsing.
-        Symbols are automatically converted from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
 
         Args:
-            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' or 'EXCHANGE-SYMBOL' format.
+            exchange_symbol: The symbol in the format 'EXCHANGE:SYMBOL'.
             interval: The interval for the chart (default is "1" for 1 minute).
             bars_count: The number of bars to fetch (default is 10).
 
@@ -597,9 +588,6 @@ class OHLCV:
             ...         print(f"Raw message: {raw_data}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
         await self._setup_services()
 
@@ -619,7 +607,7 @@ class OHLCV:
         await self.connection_service.add_symbol_to_sessions(
             quote_session,
             chart_session,
-            converted_symbol,
+            exchange_symbol,
             interval,
             bars_count,
             send_message_func,
@@ -636,11 +624,10 @@ class OHLCV:
         change percentage, and last trade time.
 
         This method allows you to monitor multiple symbols simultaneously and get
-        comprehensive trading information for each. All symbols are automatically
-        converted from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
+        comprehensive trading information for each.
 
         Args:
-            exchange_symbol: A list of symbols in 'EXCHANGE:SYMBOL' or 'EXCHANGE-SYMBOL' format.
+            exchange_symbol: A list of symbols in the format 'EXCHANGE:SYMBOL'.
 
         Returns:
             An async generator yielding summary information as JSON dictionary objects.
@@ -656,10 +643,6 @@ class OHLCV:
             ...         print(f"Trade info: {trade_info}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol formats from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
-        symbol_results = convert_symbol_format(exchange_symbol)
-        # Since exchange_symbol is List[str], symbol_results is List[SymbolConversionResult]
-        converted_symbols = [result.converted_symbol for result in symbol_results]  # type: ignore
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -676,7 +659,7 @@ class OHLCV:
             quote_session, chart_session, send_message_func
         )
         await self.connection_service.add_multiple_symbols_to_sessions(
-            quote_session, converted_symbols, send_message_func
+            quote_session, exchange_symbol, send_message_func
         )
 
         async for data in self.connection_service.get_data_stream():
@@ -698,3 +681,47 @@ def signal_handler(sig: int, frame: Optional[types.FrameType]) -> None:
 
 # Register the signal handler
 signal.signal(signal.SIGINT, signal_handler)
+
+
+# Example Usage
+async def main():
+    """
+    Example usage of the OHLCV class with async patterns.
+    """
+    # Set logging to DEBUG for detailed output
+    logging.getLogger().setLevel(logging.DEBUG)
+
+    async with OHLCV() as real_time_data:
+        # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD","SET:AOT"]
+        # exchange_symbol = ["SET:CPALL"]
+        exchange_symbol = ["USI-PCC"]
+        bars: int = 5
+
+        try:
+            historical_bars: list[OHLCVBar] = await real_time_data.get_historical_ohlcv(
+                exchange_symbol=exchange_symbol[0], interval="1D", bars_count=bars
+            )
+
+            print(
+                f"\n🎯 Successfully retrieved {len(historical_bars)} bars for {exchange_symbol[0]}"
+            )
+            print("=" * 60)
+
+            for bar in historical_bars:
+                print("-" * 50)
+                print(f"Bar Index: {historical_bars.index(bar) + 1}")
+                print(f"Timestamp: {bar.timestamp}")
+                print(f"ISO Time: {convert_timestamp_to_iso(bar.timestamp)}")
+                print(f"Open: {bar.open}")
+                print(f"High: {bar.high}")
+                print(f"Low: {bar.low}")
+                print(f"Close: {bar.close}")
+                print(f"Volume: {bar.volume}")
+
+        except Exception as e:
+            print(f"❌ Error retrieving data for {exchange_symbol[0]}: {e}")
+            logging.error(f"Full error details: {e}", exc_info=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -412,16 +412,28 @@ class WebSocketMessage(BaseModel):
 
 ## Symbol Format Reference
 
-### Exchange:Symbol Format
+### Symbol Format Support
 
-All methods require symbols in the standardized format: `EXCHANGE:SYMBOL`
+All methods accept symbols in both `EXCHANGE:SYMBOL` and `EXCHANGE-SYMBOL` formats, with automatic conversion:
 
-**Stock Examples**:
+**Accepted Formats**:
+- `EXCHANGE:SYMBOL` (preferred TradingView format)
+- `EXCHANGE-SYMBOL` (automatically converted to colon format)
+
+**Stock Examples** (both formats supported):
 ```python
+# Preferred format (no conversion needed)
 "NASDAQ:AAPL"     # Apple Inc.
 "NYSE:MSFT"       # Microsoft Corp.
+
+# Alternative format (automatically converted)
+"NASDAQ-AAPL"     # Converted to "NASDAQ:AAPL"
+"NYSE-MSFT"       # Converted to "NYSE:MSFT"
+
+# International exchanges
 "LSE:VODL"        # Vodafone Group PLC
 "TSE:7203"        # Toyota Motor Corp.
+"USI-PCC"         # Converted to "USI:PCC"
 ```
 
 **Cryptocurrency Examples**:
@@ -448,11 +460,18 @@ All methods require symbols in the standardized format: `EXCHANGE:SYMBOL`
 "NYMEX:NG1!"          # Natural gas futures
 ```
 
-### Symbol Validation
+### Symbol Validation and Format Conversion
 
-The client automatically validates symbol formats using the `validate_symbols()` utility:
+The client automatically validates symbol formats and converts them using the `validate_symbols()` and `convert_symbol_format()` utilities:
 
-- **Format Check**: Ensures "EXCHANGE:SYMBOL" pattern
+**Symbol Format Conversion**:
+- **Automatic Conversion**: Converts "EXCHANGE-SYMBOL" to "EXCHANGE:SYMBOL" format
+- **Format Detection**: Automatically detects symbol format and converts when needed
+- **Backward Compatibility**: Symbols already in "EXCHANGE:SYMBOL" format are unchanged
+- **Type Safety**: Returns `SymbolConversionResult` with conversion status
+
+**Symbol Validation**:
+- **Format Check**: Ensures valid symbol format after conversion
 - **Exchange Validation**: Verifies exchange is supported
 - **Symbol Verification**: Confirms symbol exists on specified exchange
 
