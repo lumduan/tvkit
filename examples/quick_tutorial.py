@@ -106,9 +106,99 @@ async def tutorial_4_predefined_lists():
             print(f"   {stock_name}: {icon} {change:+.2f}%")
 
 
-def tutorial_5_sync_wrapper():
-    """Tutorial 5: Using the sync wrapper for non-async code."""
-    print_section("Tutorial 5: Synchronous Wrapper")
+async def tutorial_5_macro_indicators():
+    """Tutorial 5: Macro liquidity and market breadth indicators."""
+    from tvkit.api.chart.ohlcv import OHLCV
+    from tvkit.api.utils import convert_timestamp_to_iso
+
+    print_section("Tutorial 5: Macro Liquidity Indicators")
+
+    print("🎯 Accessing Macro Indicators for Quantitative Analysis")
+    print("These indicators are essential for:")
+    print("   • Liquidity regime detection")
+    print("   • Market breadth analysis")
+    print("   • Systematic trading strategies")
+    print("   • Risk management")
+    print()
+
+    # Define key macro indicators
+    macro_symbols = {
+        "INDEX:NDFI": "Net Demand For Income (Market Breadth)",
+        "USI:PCC": "Put/Call Ratio (Sentiment & Liquidity)",
+    }
+
+    async with OHLCV() as ohlcv:
+        for symbol, description in macro_symbols.items():
+            try:
+                print(f"📊 Fetching {symbol} - {description}")
+
+                # Get recent data for analysis
+                data = await ohlcv.get_historical_ohlcv(
+                    exchange_symbol=symbol,
+                    interval="1D",
+                    bars_count=30,  # Last 30 days
+                )
+
+                if data:
+                    latest = data[-1]
+                    earliest = data[0]
+
+                    # Calculate basic statistics
+                    values = [bar.close for bar in data]
+                    avg_value = sum(values) / len(values)
+                    current_value = latest.close
+
+                    # Simple percentile calculation
+                    sorted_values = sorted(values)
+                    percentile = (
+                        sum(1 for v in sorted_values if v <= current_value)
+                        / len(sorted_values)
+                    ) * 100
+
+                    print(
+                        f"   📅 Period: {convert_timestamp_to_iso(earliest.timestamp)[:10]} to {convert_timestamp_to_iso(latest.timestamp)[:10]}"
+                    )
+                    print(f"   📈 Current Value: {current_value:.6f}")
+                    print(f"   📊 30-day Average: {avg_value:.6f}")
+                    print(f"   📊 Current Percentile: {percentile:.1f}%")
+
+                    # Basic interpretation
+                    if symbol == "INDEX:NDFI":
+                        if percentile > 75:
+                            signal = "🟢 High income demand - Market strength signal"
+                        elif percentile < 25:
+                            signal = "🔴 Low income demand - Potential weakness"
+                        else:
+                            signal = "🟡 Neutral income demand"
+                        print(f"   🎯 Signal: {signal}")
+
+                    elif symbol == "USI:PCC":
+                        if percentile > 75:
+                            signal = "🟠 High fear - Potential contrarian opportunity"
+                        elif percentile < 25:
+                            signal = "🔵 Low fear - Potential complacency"
+                        else:
+                            signal = "🟡 Neutral sentiment"
+                        print(f"   🎯 Signal: {signal}")
+
+                else:
+                    print("   ❌ No data available")
+
+            except Exception as e:
+                print(f"   ❌ Error: {e}")
+
+            print()  # Add spacing between indicators
+
+    print("💡 Integration Tips:")
+    print("   • Use NDFI for liquidity regime detection")
+    print("   • Use PCC for contrarian sentiment signals")
+    print("   • Combine both for comprehensive market analysis")
+    print("   • Export data for systematic trading models")
+
+
+def tutorial_6_sync_wrapper():
+    """Tutorial 6: Using the sync wrapper for non-async code."""
+    print_section("Tutorial 6: Synchronous Wrapper")
 
     print("🔄 For users not familiar with async/await:")
     print("   Use the run_async() helper function")
@@ -133,7 +223,8 @@ async def main():
         await tutorial_2_compare_stocks()
         await tutorial_3_crypto_prices()
         await tutorial_4_predefined_lists()
-        tutorial_5_sync_wrapper()
+        await tutorial_5_macro_indicators()
+        tutorial_6_sync_wrapper()
 
         # Final tips
         print_section("🎉 Congratulations!")
@@ -146,6 +237,7 @@ async def main():
         print("      • uv run python examples/multi_market_scanner_example.py")
         print("   3. Check out real-time streaming capabilities")
         print("   4. Experiment with data export features")
+        print("   5. Explore macro indicators for quantitative analysis")
         print()
         print("🚀 Happy Trading with TVKit!")
 

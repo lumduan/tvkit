@@ -46,6 +46,10 @@ import tvkit; print(tvkit.run_async(tvkit.compare_stocks(['NASDAQ:AAPL', 'NASDAQ
 
 # Get crypto prices
 import tvkit; print(tvkit.run_async(tvkit.get_crypto_prices(3)))
+
+# Access macro liquidity indicators (INDEX:NDFI, USI:PCC)
+from tvkit.api.chart.ohlcv import OHLCV; import asyncio
+asyncio.run(OHLCV().get_historical_ohlcv("INDEX:NDFI", "1D", 30))
 ```
 
 **CLI Testing:**
@@ -359,6 +363,8 @@ result = await exporter.export_ohlcv_data(bars, ExportFormat.CSV, config=config)
 - **Quote Data**: Real-time price feeds and market status
 - **Trade Information**: Latest trades, price changes, volumes
 - **Multiple Timeframes**: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 1d, 1w, 1M
+- **Macro Indicators**: INDEX:NDFI (Net Demand For Income), USI:PCC (Put/Call Ratio)
+- **Quantitative Analysis**: Liquidity regime detection, market breadth analysis
 
 ## 🔧 Advanced Usage
 
@@ -467,13 +473,60 @@ async def monitor_portfolio():
         "BINANCE:BTCUSDT",    # Cryptocurrency
         "NASDAQ:AAPL",        # US Stock
         "FOREX:EURUSD",       # Forex
-        "OANDA:XAUUSD"        # Commodities (Gold)
+        "OANDA:XAUUSD",       # Commodities (Gold)
+        "INDEX:NDFI",         # Macro Liquidity Indicator
+        "USI:PCC"             # Put/Call Ratio
     ]
 
     async with OHLCV() as client:
         async for trade_info in client.get_latest_trade_info(symbols):
             # Process multi-asset trade information
             print(f"Portfolio update: {trade_info}")
+```
+
+### Macro Liquidity and Market Breadth Indicators
+
+```python
+import asyncio
+from tvkit.api.chart.ohlcv import OHLCV
+
+async def analyze_macro_liquidity():
+    """Access macro indicators for quantitative analysis."""
+
+    # Key indicators for systematic trading strategies
+    macro_indicators = {
+        "INDEX:NDFI": "Net Demand For Income (Market Breadth)",
+        "USI:PCC": "Put/Call Ratio (Sentiment & Liquidity)"
+    }
+
+    async with OHLCV() as client:
+        for symbol, description in macro_indicators.items():
+            print(f"📊 Fetching {symbol} - {description}")
+
+            # Get historical data for analysis
+            data = await client.get_historical_ohlcv(
+                exchange_symbol=symbol,
+                interval="1D",
+                bars_count=100  # ~3-4 months
+            )
+
+            # Calculate percentile for regime detection
+            values = [bar.close for bar in data]
+            current = data[-1].close
+            percentile = sum(1 for v in values if v <= current) / len(values) * 100
+
+            print(f"   Current Level: {current:.6f} ({percentile:.1f}th percentile)")
+
+            # Simple regime classification
+            if symbol == "INDEX:NDFI":
+                regime = "High Liquidity" if percentile > 75 else "Low Liquidity" if percentile < 25 else "Neutral"
+                print(f"   Liquidity Regime: {regime}")
+            elif symbol == "USI:PCC":
+                sentiment = "Extreme Fear" if percentile > 80 else "Complacency" if percentile < 20 else "Neutral"
+                print(f"   Market Sentiment: {sentiment}")
+
+# Run the analysis
+asyncio.run(analyze_macro_liquidity())
 ```
 
 ## 📦 Dependencies
@@ -569,11 +622,15 @@ python -m pytest tests/ -v --cov=tvkit
 ```bash
 # Comprehensive historical and real-time data demo
 uv run python examples/historical_and_realtime_data.py
-# ⏱️ Runtime: ~2-3 minutes | 📋 Features: OHLCV, exports, multi-symbol, streaming
+# ⏱️ Runtime: ~2-3 minutes | 📋 Features: OHLCV, exports, multi-symbol, streaming, macro indicators
 
 # Global market scanner with 69 markets
-uv run python examples/multi_market_scanner_example.py  
+uv run python examples/multi_market_scanner_example.py
 # ⏱️ Runtime: ~1-2 minutes | 📋 Features: Regional analysis, 101+ metrics
+
+# Quick tutorial with macro indicators
+uv run python examples/quick_tutorial.py
+# ⏱️ Runtime: ~1 minute | 📋 Features: Basic usage, macro indicators (INDEX:NDFI, USI:PCC)
 
 # Multiple export formats demo
 uv run python examples/export_demo.py
@@ -584,6 +641,13 @@ uv run python examples/export_demo.py
 
 - **[Real-time Streaming Guide](docs/realtime_streaming.md)**: WebSocket streaming documentation
 - **[Polars Integration](docs/POLARS_INTEGRATION.md)**: Data processing and analysis
+- **[OHLCV Client Documentation](docs/api/chart/ohlcv.md)**: Primary client for real-time OHLCV data streaming and historical data retrieval
+- **[Chart Utils Documentation](docs/api/chart/utils.md)**: Utility functions for interval validation and chart API operations
+- **[ScannerService Documentation](docs/api/scanner/services/scanner_service.md)**: Market screening service for 69+ global markets with 101+ financial metrics
+- **[Markets Documentation](docs/api/scanner/markets.md)**: Global market identifiers, exchange information, and regional organization for 69+ markets
+- **[ConnectionService Documentation](docs/api/chart/services/connection_service.md)**: WebSocket connection management and TradingView session handling
+- **[MessageService Documentation](docs/api/chart/services/message_service.md)**: WebSocket message construction, protocol handling, and transmission
+- **[Utils Documentation](docs/api/utils.md)**: Utility functions for timestamp conversion, symbol format conversion, flexible symbol validation, and TradingView indicators
 - **[API Reference](https://github.com/lumduan/tvkit#readme)**: Complete API documentation
 
 ## 🤝 Contributing

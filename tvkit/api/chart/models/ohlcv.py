@@ -34,15 +34,18 @@ class OHLCVBar(BaseModel):
 
         Args:
             data: Array in format [timestamp, open, high, low, close, volume]
+                  or [timestamp, open, high, low, close] (volume defaults to 0)
 
         Returns:
             OHLCVBar instance
 
         Raises:
-            ValueError: If data array doesn't have exactly 6 elements
+            ValueError: If data array doesn't have 5 or 6 elements
         """
-        if len(data) != 6:
-            raise ValueError(f"Expected 6 elements in OHLCV array, got {len(data)}")
+        if len(data) < 5 or len(data) > 6:
+            raise ValueError(
+                f"Expected 5 or 6 elements in OHLCV array, got {len(data)}"
+            )
 
         return cls(
             timestamp=data[0],
@@ -50,7 +53,9 @@ class OHLCVBar(BaseModel):
             high=data[2],
             low=data[3],
             close=data[4],
-            volume=data[5],
+            volume=data[5]
+            if len(data) == 6
+            else 0.0,  # Default volume to 0 if not provided
         )
 
 
@@ -255,20 +260,20 @@ class TimescaleUpdateResponse(BaseModel):
         series_data_dict: dict[str, Any] = self.parameters[1]
 
         # Look for series data (usually named like "sds_1")
-        for series_name, series_info in series_data_dict.items():
+        for series_info in series_data_dict.values():
             if isinstance(series_info, dict) and "s" in series_info:
                 # Extract the series array
-                series_array = series_info["s"]
+                series_array: List[Any] = series_info["s"]
 
                 # Each item in the series has "i" (index) and "v" (values array)
                 for item in series_array:
                     if isinstance(item, dict) and "v" in item:
                         values = item["v"]
                         if (
-                            len(values) >= 6
-                        ):  # [timestamp, open, high, low, close, volume]
+                            isinstance(values, list) and len(values) >= 5  # type: ignore[arg-type]
+                        ):  # [timestamp, open, high, low, close] or [timestamp, open, high, low, close, volume]
                             try:
-                                bars.append(OHLCVBar.from_array(values))
+                                bars.append(OHLCVBar.from_array(values))  # type: ignore[arg-type]
                             except Exception:
                                 continue  # Skip malformed bars
 
