@@ -11,6 +11,8 @@ from typing import List, Union
 
 import httpx
 
+from .models import SymbolConversionResult
+
 
 async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
     """
@@ -106,3 +108,68 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
                         ) from exc
 
     return True
+
+
+def convert_symbol_format(
+    exchange_symbol: Union[str, List[str]],
+) -> Union[SymbolConversionResult, List[SymbolConversionResult]]:
+    """
+    Convert exchange symbols from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
+
+    This function converts trading symbols from the dash-separated format (e.g., "USI-PCC")
+    to the colon-separated format (e.g., "USI:PCC") that is commonly used in TradingView.
+    Symbols already in colon format are returned unchanged.
+
+    Args:
+        exchange_symbol: A single symbol or a list of symbols to convert.
+                        Supports formats like "USI-PCC", "NASDAQ-AAPL", etc.
+
+    Returns:
+        SymbolConversionResult or List[SymbolConversionResult]: Conversion results containing
+        original symbol, converted symbol, and conversion status.
+
+    Raises:
+        ValueError: If exchange_symbol is empty.
+
+    Example:
+        >>> result = convert_symbol_format("USI-PCC")
+        >>> print(result.converted_symbol)
+        'USI:PCC'
+        >>> print(result.is_converted)
+        True
+        >>>
+        >>> results = convert_symbol_format(["USI-PCC", "NASDAQ:AAPL"])
+        >>> print(results[0].converted_symbol)  # "USI:PCC"
+        >>> print(results[1].converted_symbol)  # "NASDAQ:AAPL"
+        >>> print(results[1].is_converted)      # False (already in correct format)
+    """
+    if not exchange_symbol:
+        raise ValueError("exchange_symbol cannot be empty")
+
+    def _convert_single_symbol(symbol: str) -> SymbolConversionResult:
+        """Convert a single symbol from dash to colon format."""
+        if not symbol:
+            raise ValueError("Symbol cannot be empty")
+
+        # Check if symbol already contains colon (correct format)
+        if ":" in symbol:
+            return SymbolConversionResult(
+                original_symbol=symbol, converted_symbol=symbol, is_converted=False
+            )
+
+        # Check if symbol contains dash (needs conversion)
+        if "-" in symbol:
+            converted: str = symbol.replace("-", ":", 1)  # Replace only first dash
+            return SymbolConversionResult(
+                original_symbol=symbol, converted_symbol=converted, is_converted=True
+            )
+
+        # Symbol doesn't contain dash or colon, return as-is
+        return SymbolConversionResult(
+            original_symbol=symbol, converted_symbol=symbol, is_converted=False
+        )
+
+    if isinstance(exchange_symbol, str):
+        return _convert_single_symbol(exchange_symbol)
+    else:
+        return [_convert_single_symbol(symbol) for symbol in exchange_symbol]

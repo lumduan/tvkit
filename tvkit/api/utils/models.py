@@ -75,3 +75,17 @@ class StudyPayload(BaseModel):
     p: List[Any] = Field(..., description="Parameters list")
 
     model_config = {"frozen": True}
+
+
+class SymbolConversionResult(BaseModel):
+    """Pydantic model for symbol format conversion result."""
+
+    original_symbol: str = Field(
+        ..., description="Original symbol in EXCHANGE-SYMBOL format"
+    )
+    converted_symbol: str = Field(
+        ..., description="Converted symbol in EXCHANGE:SYMBOL format"
+    )
+    is_converted: bool = Field(..., description="Whether conversion was performed")
+
+    model_config = {"frozen": True}

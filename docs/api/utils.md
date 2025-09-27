@@ -117,6 +117,64 @@ async def main():
 asyncio.run(main())
 ```
 
+### symbol_validator.convert_symbol_format
+
+```python
+def convert_symbol_format(exchange_symbol: Union[str, List[str]]) -> Union[SymbolConversionResult, List[SymbolConversionResult]]
+```
+
+Convert exchange symbols from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
+
+This function converts trading symbols from the dash-separated format (e.g., "USI-PCC") to the colon-separated format (e.g., "USI:PCC") that is commonly used in TradingView. Symbols already in colon format are returned unchanged. This is particularly useful when working with symbols from various data sources that use different format conventions.
+
+**Parameters:**
+- `exchange_symbol` (Union[str, List[str]]): A single symbol or a list of symbols to convert. Supports formats like "USI-PCC", "NASDAQ-AAPL", etc.
+
+**Returns:**
+- `SymbolConversionResult` or `List[SymbolConversionResult]`: Conversion results containing original symbol, converted symbol, and conversion status.
+
+**Raises:**
+- `ValueError`: If exchange_symbol is empty or contains empty symbols.
+
+**Example:**
+```python
+from tvkit.api.utils import convert_symbol_format
+
+# Convert single symbol from dash to colon format
+result = convert_symbol_format("USI-PCC")
+print(f"Original: {result.original_symbol}")     # "USI-PCC"
+print(f"Converted: {result.converted_symbol}")   # "USI:PCC"
+print(f"Was converted: {result.is_converted}")   # True
+
+# Convert symbol already in correct format
+result = convert_symbol_format("NASDAQ:AAPL")
+print(f"Original: {result.original_symbol}")     # "NASDAQ:AAPL"
+print(f"Converted: {result.converted_symbol}")   # "NASDAQ:AAPL"
+print(f"Was converted: {result.is_converted}")   # False
+
+# Convert multiple symbols with mixed formats
+symbols = ["USI-PCC", "NASDAQ:AAPL", "NYSE-TSLA"]
+results = convert_symbol_format(symbols)
+
+for result in results:
+    print(f"{result.original_symbol} -> {result.converted_symbol} (converted: {result.is_converted})")
+# Output:
+# USI-PCC -> USI:PCC (converted: True)
+# NASDAQ:AAPL -> NASDAQ:AAPL (converted: False)
+# NYSE-TSLA -> NYSE:TSLA (converted: True)
+
+# Use with symbol validation workflow
+converted_results = convert_symbol_format(["USI-PCC", "NASDAQ-AAPL"])
+converted_symbols = [result.converted_symbol for result in converted_results]
+
+import asyncio
+async def validate_converted():
+    is_valid = await validate_symbols(converted_symbols)
+    print(f"All converted symbols valid: {is_valid}")
+
+asyncio.run(validate_converted())
+```
+
 ### indicator_service.fetch_tradingview_indicators
 
 ```python
@@ -336,6 +394,17 @@ class StudyPayload(BaseModel):
     p: List[Any] = Field(..., description="Parameters list")
 ```
 
+### models.SymbolConversionResult
+
+```python
+class SymbolConversionResult(BaseModel):
+    """Pydantic model for symbol format conversion result."""
+
+    original_symbol: str = Field(..., description="Original symbol in EXCHANGE-SYMBOL format")
+    converted_symbol: str = Field(..., description="Converted symbol in EXCHANGE:SYMBOL format")
+    is_converted: bool = Field(..., description="Whether conversion was performed")
+```
+
 ## Usage Examples
 
 ### Basic Symbol Validation
@@ -376,6 +445,61 @@ async def basic_validation_example():
         print(f"Expected validation error: {e}")
 
 asyncio.run(basic_validation_example())
+```
+
+### Symbol Format Conversion
+
+```python
+from tvkit.api.utils import convert_symbol_format, validate_symbols
+import asyncio
+
+def symbol_conversion_example():
+    """Symbol format conversion example."""
+
+    # Convert single symbol from dash to colon format
+    result = convert_symbol_format("USI-PCC")
+    print(f"Converted: {result.original_symbol} -> {result.converted_symbol}")
+    print(f"Was conversion needed: {result.is_converted}")
+
+    # Convert multiple symbols with mixed formats
+    symbols = ["USI-PCC", "NASDAQ:AAPL", "NYSE-TSLA", "BINANCE-BTCUSDT"]
+    results = convert_symbol_format(symbols)
+
+    print("\nBatch conversion results:")
+    for result in results:
+        status = "✓ converted" if result.is_converted else "○ unchanged"
+        print(f"  {result.original_symbol} -> {result.converted_symbol} ({status})")
+
+    # Extract converted symbols for validation
+    converted_symbols = [result.converted_symbol for result in results]
+    print(f"\nExtracted symbols for validation: {converted_symbols}")
+
+    return converted_symbols
+
+async def conversion_with_validation_example():
+    """Complete workflow: convert symbols then validate them."""
+
+    # Step 1: Convert symbol formats
+    symbols_to_convert = ["USI-PCC", "NASDAQ-AAPL", "NYSE:TSLA"]
+    conversion_results = convert_symbol_format(symbols_to_convert)
+
+    print("Symbol conversion results:")
+    for result in conversion_results:
+        print(f"  {result.original_symbol} -> {result.converted_symbol}")
+
+    # Step 2: Extract converted symbols
+    converted_symbols = [result.converted_symbol for result in conversion_results]
+
+    # Step 3: Validate the converted symbols
+    try:
+        is_valid = await validate_symbols(converted_symbols)
+        print(f"\nAll converted symbols are valid: {is_valid}")
+    except ValueError as e:
+        print(f"Validation error: {e}")
+
+# Run examples
+symbol_conversion_example()
+asyncio.run(conversion_with_validation_example())
 ```
 
 ### Complete Indicator Search and Selection Workflow
@@ -477,17 +601,19 @@ timestamp_processing_example()
 ```python
 # Import specific services
 from tvkit.api.utils.timestamp import convert_timestamp_to_iso
-from tvkit.api.utils.symbol_validator import validate_symbols
+from tvkit.api.utils.symbol_validator import validate_symbols, convert_symbol_format
 from tvkit.api.utils.indicator_service import fetch_tradingview_indicators
-from tvkit.api.utils.models import IndicatorData, StudyPayload
+from tvkit.api.utils.models import IndicatorData, StudyPayload, SymbolConversionResult
 
 # Or use the main package interface (recommended for backward compatibility)
 from tvkit.api.utils import (
     convert_timestamp_to_iso,
     validate_symbols,
+    convert_symbol_format,
     fetch_tradingview_indicators,
     IndicatorData,
-    StudyPayload
+    StudyPayload,
+    SymbolConversionResult
 )
 ```
 
@@ -788,13 +914,13 @@ asyncio.run(main())
 
 ```python
 # Backward-compatible imports (recommended)
-from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols
+from tvkit.api.utils import convert_timestamp_to_iso, validate_symbols, convert_symbol_format
 
 # Direct module imports (for specific use cases)
 from tvkit.api.utils.timestamp import convert_timestamp_to_iso
-from tvkit.api.utils.symbol_validator import validate_symbols
+from tvkit.api.utils.symbol_validator import validate_symbols, convert_symbol_format
 from tvkit.api.utils.indicator_service import fetch_tradingview_indicators
-from tvkit.api.utils.models import IndicatorData
+from tvkit.api.utils.models import IndicatorData, SymbolConversionResult
 ```
 
 ### API Reference Summary
@@ -802,9 +928,9 @@ from tvkit.api.utils.models import IndicatorData
 | Module | Functions | Models | Description |
 |--------|-----------|--------|-------------|
 | `timestamp.py` | `convert_timestamp_to_iso` | - | Timestamp conversion utilities |
-| `symbol_validator.py` | `validate_symbols` | - | Symbol validation against TradingView API |
+| `symbol_validator.py` | `validate_symbols`, `convert_symbol_format` | - | Symbol validation and format conversion |
 | `indicator_service.py` | `fetch_tradingview_indicators`, `display_and_select_indicator`, `fetch_indicator_metadata`, `prepare_indicator_metadata` | - | TradingView indicator management |
-| `models.py` | - | `IndicatorData`, `PineFeatures`, `ProfileConfig`, `InputValue`, `StudyPayload` | Pydantic data models |
+| `models.py` | - | `IndicatorData`, `PineFeatures`, `ProfileConfig`, `InputValue`, `StudyPayload`, `SymbolConversionResult` | Pydantic data models |
 
 ### Functions
 
@@ -812,6 +938,7 @@ from tvkit.api.utils.models import IndicatorData
 |----------|------------|---------|-------------|
 | `convert_timestamp_to_iso` | `timestamp: float` | `str` | Converts Unix timestamp to ISO 8601 format |
 | `validate_symbols` | `exchange_symbol: Union[str, List[str]]` | `bool` | Validates trading symbols against TradingView API |
+| `convert_symbol_format` | `exchange_symbol: Union[str, List[str]]` | `Union[SymbolConversionResult, List[SymbolConversionResult]]` | Converts symbols from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format |
 | `fetch_tradingview_indicators` | `query: str` | `List[IndicatorData]` | Fetches TradingView indicators based on search query |
 | `display_and_select_indicator` | `indicators: List[IndicatorData]` | `Optional[Tuple[str, str]]` | Interactive indicator selection interface |
 | `fetch_indicator_metadata` | `script_id: str, script_version: str, chart_session: str` | `Dict[str, Any]` | Fetches metadata for TradingView indicator |
@@ -826,6 +953,7 @@ from tvkit.api.utils.models import IndicatorData
 | `ProfileConfig` | `v`, `f`, `t` | Profile configuration for indicators |
 | `InputValue` | `v`, `f`, `t` | Input value configuration |
 | `StudyPayload` | `m`, `p` | Study creation payload structure |
+| `SymbolConversionResult` | `original_symbol`, `converted_symbol`, `is_converted` | Symbol format conversion result |
 
 ### Exceptions
 

@@ -26,14 +26,16 @@ from .models import (
     PineFeatures,
     ProfileConfig,
     StudyPayload,
+    SymbolConversionResult,
 )
-from .symbol_validator import validate_symbols
+from .symbol_validator import convert_symbol_format, validate_symbols
 from .timestamp import convert_timestamp_to_iso
 
 __all__ = [
     # Functions
     "convert_timestamp_to_iso",
     "validate_symbols",
+    "convert_symbol_format",
     "fetch_tradingview_indicators",
     "display_and_select_indicator",
     "fetch_indicator_metadata",
@@ -44,4 +46,5 @@ __all__ = [
     "ProfileConfig",
     "InputValue",
     "StudyPayload",
+    "SymbolConversionResult",
 ]

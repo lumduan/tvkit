@@ -208,7 +208,9 @@ class OHLCV:
                     # Series error - invalid interval or bars count
                     logging.error("Series error received from TradingView")
                     logging.error(f"Error details: {data}")
-                    logging.error("Please check the interval - this timeframe may not be supported for the symbol")
+                    logging.error(
+                        "Please check the interval - this timeframe may not be supported for the symbol"
+                    )
                     logging.error("Also verify that bars_count is within valid range")
 
                     # Close connection and raise error
@@ -373,9 +375,13 @@ class OHLCV:
 
                 elif message_type == "series_error":
                     # Series error - invalid interval or bars count
-                    logging.error("Series error received from TradingView during historical data fetch")
+                    logging.error(
+                        "Series error received from TradingView during historical data fetch"
+                    )
                     logging.error(f"Error details: {data}")
-                    logging.error("Please check the interval - this timeframe may not be supported for the symbol")
+                    logging.error(
+                        "Please check the interval - this timeframe may not be supported for the symbol"
+                    )
                     logging.error("Also verify that bars_count is within valid range")
 
                     # Close connection and raise error
@@ -518,9 +524,13 @@ class OHLCV:
 
                 elif message_type == "series_error":
                     # Series error - invalid interval or bars count
-                    logging.error("Series error received from TradingView during quote data stream")
+                    logging.error(
+                        "Series error received from TradingView during quote data stream"
+                    )
                     logging.error(f"Error details: {data}")
-                    logging.error("Please check the interval - this timeframe may not be supported for the symbol")
+                    logging.error(
+                        "Please check the interval - this timeframe may not be supported for the symbol"
+                    )
                     logging.error("Also verify that bars_count is within valid range")
 
                     # Close connection and raise error
@@ -680,7 +690,7 @@ async def main():
     async with OHLCV() as real_time_data:
         # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD","SET:AOT"]
         # exchange_symbol = ["SET:CPALL"]
-        exchange_symbol = ["INDEX:NDTW"]
+        exchange_symbol = ["USI-PCC"]
         bars: int = 5
 
         try:
@@ -688,7 +698,9 @@ async def main():
                 exchange_symbol=exchange_symbol[0], interval="1D", bars_count=bars
             )
 
-            print(f"\n🎯 Successfully retrieved {len(historical_bars)} bars for {exchange_symbol[0]}")
+            print(
+                f"\n🎯 Successfully retrieved {len(historical_bars)} bars for {exchange_symbol[0]}"
+            )
             print("=" * 60)
 
             for bar in historical_bars:

@@ -43,7 +43,9 @@ class OHLCVBar(BaseModel):
             ValueError: If data array doesn't have 5 or 6 elements
         """
         if len(data) < 5 or len(data) > 6:
-            raise ValueError(f"Expected 5 or 6 elements in OHLCV array, got {len(data)}")
+            raise ValueError(
+                f"Expected 5 or 6 elements in OHLCV array, got {len(data)}"
+            )
 
         return cls(
             timestamp=data[0],
@@ -51,7 +53,9 @@ class OHLCVBar(BaseModel):
             high=data[2],
             low=data[3],
             close=data[4],
-            volume=data[5] if len(data) == 6 else 0.0,  # Default volume to 0 if not provided
+            volume=data[5]
+            if len(data) == 6
+            else 0.0,  # Default volume to 0 if not provided
         )
 
 
