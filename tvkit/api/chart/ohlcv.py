@@ -204,6 +204,23 @@ class OHLCV:
                     logging.debug("Study completed for real-time data stream")
                     continue
 
+                elif message_type == "series_error":
+                    # Series error - invalid interval or bars count
+                    logging.error("Series error received from TradingView")
+                    logging.error(f"Error details: {data}")
+                    logging.error("Please check the interval - this timeframe may not be supported for the symbol")
+                    logging.error("Also verify that bars_count is within valid range")
+
+                    # Close connection and raise error
+                    if self.connection_service:
+                        await self.connection_service.close()
+
+                    raise ValueError(
+                        "TradingView series error: Invalid interval or bars count. "
+                        "Please check that the timeframe is supported for this symbol "
+                        "and that bars_count is within valid range."
+                    )
+
                 else:
                     # Other message types (heartbeats, etc.)
                     logging.debug(f"Skipping message type '{message_type}': {data}")
@@ -354,6 +371,23 @@ class OHLCV:
                     logging.debug("Study completed for historical data fetch")
                     continue
 
+                elif message_type == "series_error":
+                    # Series error - invalid interval or bars count
+                    logging.error("Series error received from TradingView during historical data fetch")
+                    logging.error(f"Error details: {data}")
+                    logging.error("Please check the interval - this timeframe may not be supported for the symbol")
+                    logging.error("Also verify that bars_count is within valid range")
+
+                    # Close connection and raise error
+                    if self.connection_service:
+                        await self.connection_service.close()
+
+                    raise ValueError(
+                        "TradingView series error: Invalid interval or bars count. "
+                        "Please check that the timeframe is supported for this symbol "
+                        "and that bars_count is within valid range."
+                    )
+
                 else:
                     # Other message types - continue waiting
                     logging.debug(
@@ -481,6 +515,23 @@ class OHLCV:
                     # Study completed message - continue waiting for data
                     logging.debug("Study completed for quote data stream")
                     continue
+
+                elif message_type == "series_error":
+                    # Series error - invalid interval or bars count
+                    logging.error("Series error received from TradingView during quote data stream")
+                    logging.error(f"Error details: {data}")
+                    logging.error("Please check the interval - this timeframe may not be supported for the symbol")
+                    logging.error("Also verify that bars_count is within valid range")
+
+                    # Close connection and raise error
+                    if self.connection_service:
+                        await self.connection_service.close()
+
+                    raise ValueError(
+                        "TradingView series error: Invalid interval or bars count. "
+                        "Please check that the timeframe is supported for this symbol "
+                        "and that bars_count is within valid range."
+                    )
 
                 else:
                     # Other message types - skip
@@ -629,8 +680,8 @@ async def main():
     async with OHLCV() as real_time_data:
         # exchange_symbol = ["BINANCE:ETHUSDT", "FXOPEN:XAUUSD","SET:AOT"]
         # exchange_symbol = ["SET:CPALL"]
-        exchange_symbol = ["USI:PCC"]
-        bars: int = 1000
+        exchange_symbol = ["INDEX:NDTW"]
+        bars: int = 5
 
         try:
             historical_bars: list[OHLCVBar] = await real_time_data.get_historical_ohlcv(
