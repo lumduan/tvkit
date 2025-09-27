@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-09-27
+
+### 🎯 Major Feature: Universal TradingView Indicators Access
+
+#### 📊 Comprehensive Indicator Support
+
+- **Universal Indicator Access**: TVKit now supports fetching any indicators available on TradingView
+  - Access to thousands of financial indicators including macro, technical, and custom indicators
+  - Seamless integration with TradingView's complete indicator ecosystem
+  - Professional-grade data access for institutional and retail analysis
+
+- **Macro and Market Indicators**: Enhanced support for professional analysis including:
+  - Market breadth indicators (e.g., INDEX:NDFI for Net Demand For Income analysis)
+  - Sentiment indicators (e.g., USI:PCC for Put/Call Ratio analysis)
+  - Custom indicators and proprietary TradingView metrics
+  - Economic indicators and macro data points
+
+#### 🚀 Enhanced Examples and Documentation
+
+- **Comprehensive Tutorial Integration**: Added Tutorial 5 to `quick_tutorial.py` demonstrating:
+  - Universal indicator access patterns and data interpretation
+  - Example implementations using popular indicators like NDFI and PCC
+  - Integration patterns for quantitative models and analysis frameworks
+  - Professional use case scenarios across different indicator types
+
+- **Advanced Quantitative Examples**: Enhanced `historical_and_realtime_data.py` with:
+  - `fetch_macro_liquidity_indicators()` - Universal indicator data acquisition function
+  - `analyze_macro_indicators_for_quantitative_models()` - Advanced analysis algorithms
+  - Risk assessment frameworks supporting any TradingView indicators
+  - Signal generation patterns adaptable to various indicator types
+
+- **Interactive Jupyter Integration**: Updated `historical_and_realtime_data.ipynb` with:
+  - Interactive cells for real-time indicator analysis across all TradingView metrics
+  - Quantitative model integration examples using sample indicators
+  - Regime detection and classification algorithms adaptable to any indicators
+  - Export capabilities for external analysis tools and indicator data
+
+#### 🔬 Universal Quantitative Analysis Framework
+
+- **Flexible Indicator Analysis**: Professional algorithms adaptable to any TradingView indicators
+  - Percentile-based analysis for any indicator type
+  - Combined indicator scoring supporting multiple data sources
+  - Risk assessment frameworks compatible with diverse indicator sets
+
+- **Systematic Trading Integration**: Code templates and examples for:
+  - Algorithmic trading strategy development using any available indicators
+  - Portfolio optimization based on custom indicator combinations
+  - Risk management parameter adjustment across indicator types
+  - Market timing signal generation from various TradingView metrics
+
+#### 📈 Professional Applications
+
+This universal indicator access enables professional research applications critical for:
+
+- **Quantitative Models**: Advanced modeling using any TradingView indicators for market analysis
+- **Regime Detection**: Systematic identification of market changes using diverse indicator sets
+- **Systematic Trading Strategies**: Integration with algorithmic systems using custom indicator combinations
+- **Portfolio Optimization**: Dynamic allocation based on comprehensive indicator analysis
+- **Risk Management**: Professional-grade assessment using multiple indicator sources
+- **Market Analysis**: Comprehensive analysis using the full TradingView indicator ecosystem
+
+#### 🛠️ Technical Implementation
+
+- **Async-First Architecture**: All indicator functions use modern async/await patterns
+- **Type Safety**: Complete Pydantic validation for universal indicator data models
+- **Export Integration**: Seamless CSV/JSON export for any indicator data and analysis
+- **Error Handling**: Robust error management for production environments across all indicators
+- **Documentation**: Comprehensive inline documentation and usage examples for indicator access
+
+#### 📚 Updated Documentation
+
+- **README.md**: Enhanced with universal indicator examples and professional use cases
+- **CLAUDE.md**: Comprehensive documentation of indicator access capabilities and integration patterns
+- **Code Examples**: Real-world examples demonstrating applications across various indicator types
+- **Integration Guides**: Step-by-step guidance for quantitative model integration with any indicators
+
+### 🔧 Quality Assurance
+
+- **Code Quality**: All new code passes ruff linting and mypy type checking
+- **Testing**: Comprehensive testing ensuring reliability across all indicator types
+- **Performance**: Optimized for high-frequency analysis workflows with any TradingView indicators
+- **Compatibility**: Maintains full backward compatibility with existing tvkit functionality
+
 ## [0.1.4] - 2025-09-16
 
 - Changed installation method in README from requirements.txt to direct pip install.
