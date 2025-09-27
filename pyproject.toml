@@ -1,6 +1,6 @@
 [project]
 name = "tvkit"
-version = "0.1.4"
+version = "0.2.0"
 description = "tvkit is a Python library that fetches real-time stock data from TradingView, including price, market cap, P/E ratio, ROE, and more for stocks from multiple countries. Easily access and analyze financial metrics for global markets."
 readme = "README.md"
 requires-python = ">=3.11"
