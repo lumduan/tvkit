@@ -282,6 +282,269 @@ async def limited_realtime_demo() -> None:
     print(f"\n✅ Real-time demo completed. Received {bar_count} bars.")
 
 
+async def fetch_macro_liquidity_indicators() -> Dict[str, Dict]:
+    """
+    Fetch macro liquidity and market breadth indicators.
+
+    These indicators are essential for:
+    - Macro liquidity regime detection
+    - Market breadth analysis
+    - Systematic trading strategies
+    - Risk management and portfolio optimization
+    """
+
+    # Define macro indicators with descriptions
+    macro_indicators = {
+        "INDEX:NDFI": {
+            "name": "Net Demand For Income",
+            "description": "Market breadth indicator measuring income-seeking demand",
+            "use_case": "Liquidity regime detection, macro trend analysis",
+        },
+        "USI:PCC": {
+            "name": "Put/Call Ratio",
+            "description": "Options sentiment and liquidity indicator",
+            "use_case": "Market sentiment, volatility prediction, contrarian signals",
+        },
+    }
+
+    indicator_data = {}
+
+    print("🎯 Fetching Macro Liquidity and Market Breadth Indicators")
+    print("=" * 65)
+
+    async with OHLCV() as ohlcv:
+        for symbol, info in macro_indicators.items():
+            try:
+                print(f"\n📊 Fetching {info['name']} ({symbol})...")
+                print(f"   📝 Description: {info['description']}")
+                print(f"   🎯 Use Case: {info['use_case']}")
+
+                # Fetch historical data - using daily intervals for macro analysis
+                data = await ohlcv.get_historical_ohlcv(
+                    exchange_symbol=symbol,
+                    interval="1D",  # Daily data for macro analysis
+                    bars_count=100,  # ~3-4 months of data
+                )
+
+                indicator_data[symbol] = {"data": data, "info": info}
+
+                # Display latest values and basic statistics
+                if data:
+                    latest = data[-1]
+                    earliest = data[0]
+
+                    # Calculate some basic statistics
+                    values = [bar.close for bar in data]
+                    avg_value = sum(values) / len(values)
+                    max_value = max(values)
+                    min_value = min(values)
+
+                    # Calculate volatility (standard deviation)
+                    variance = sum((x - avg_value) ** 2 for x in values) / len(values)
+                    volatility = variance**0.5
+
+                    print(f"   ✅ Successfully fetched {len(data)} bars")
+                    print(
+                        f"   📅 Data range: {convert_timestamp_to_iso(earliest.timestamp)[:10]} to {convert_timestamp_to_iso(latest.timestamp)[:10]}"
+                    )
+                    print(f"   📈 Latest value: {latest.close:.6f}")
+                    print(
+                        f"   📊 Statistics: Min={min_value:.6f}, Max={max_value:.6f}, Avg={avg_value:.6f}"
+                    )
+                    print(f"   📉 Volatility: {volatility:.6f}")
+
+                else:
+                    print("   ❌ No data received")
+
+            except Exception as e:
+                print(f"   ❌ Error fetching {symbol}: {type(e).__name__}: {e}")
+                indicator_data[symbol] = {"error": str(e), "info": info}
+
+    return indicator_data
+
+
+async def analyze_macro_indicators_for_quantitative_models(
+    macro_data: Dict[str, Dict],
+) -> Dict:
+    """
+    Analyze macro indicators for quantitative trading models.
+
+    This demonstrates:
+    - Regime detection algorithms
+    - Risk management applications
+    - Signal generation for systematic strategies
+    """
+
+    print("\n🔬 Analyzing Macro Indicators for Quantitative Models")
+    print("=" * 55)
+
+    exporter = DataExporter()
+    analysis_results = {}
+
+    for symbol, indicator_info in macro_data.items():
+        if "error" in indicator_info:
+            print(f"\n❌ Skipping {symbol} due to error: {indicator_info['error']}")
+            continue
+
+        data = indicator_info["data"]
+        info = indicator_info["info"]
+
+        if not data:
+            print(f"\n❌ No data available for {symbol}")
+            continue
+
+        print(f"\n📊 Analyzing {info['name']} ({symbol})")
+        print("-" * 50)
+
+        # Calculate additional metrics for macro analysis
+        if len(data) > 20:  # Ensure sufficient data
+            # Recent vs Historical comparison (last 20 days vs previous 20)
+            recent_values = [bar.close for bar in data[-20:]]
+            historical_values = (
+                [bar.close for bar in data[-40:-20]]
+                if len(data) >= 40
+                else [bar.close for bar in data[:-20]]
+            )
+
+            recent_avg = sum(recent_values) / len(recent_values)
+            historical_avg = (
+                sum(historical_values) / len(historical_values)
+                if historical_values
+                else recent_avg
+            )
+
+            # Trend analysis
+            trend_change = (
+                ((recent_avg - historical_avg) / historical_avg * 100)
+                if historical_avg != 0
+                else 0
+            )
+
+            # Volatility analysis
+            recent_volatility = (
+                sum((x - recent_avg) ** 2 for x in recent_values) / len(recent_values)
+            ) ** 0.5
+
+            # Percentile analysis (current position relative to historical range)
+            all_values = [bar.close for bar in data]
+            current_value = data[-1].close
+            sorted_values = sorted(all_values)
+            percentile = (
+                sum(1 for v in sorted_values if v <= current_value) / len(sorted_values)
+            ) * 100
+
+            analysis_results[symbol] = {
+                "name": info["name"],
+                "current_value": current_value,
+                "recent_avg": recent_avg,
+                "historical_avg": historical_avg,
+                "trend_change_pct": trend_change,
+                "volatility": recent_volatility,
+                "percentile": percentile,
+                "use_case": info["use_case"],
+            }
+
+            print(f"   📈 Current Value: {current_value:.6f}")
+            print(f"   📊 Recent Avg (20d): {recent_avg:.6f}")
+            print(f"   📊 Historical Avg: {historical_avg:.6f}")
+            print(f"   📈 Trend Change: {trend_change:+.2f}%")
+            print(f"   📉 Recent Volatility: {recent_volatility:.6f}")
+            print(f"   📊 Current Percentile: {percentile:.1f}%")
+
+            # Interpretation for trading strategies
+            if symbol == "INDEX:NDFI":
+                if percentile > 75:
+                    signal = "High income demand - Potential market strength"
+                elif percentile < 25:
+                    signal = "Low income demand - Potential market weakness"
+                else:
+                    signal = "Neutral income demand"
+                print(f"   🎯 Signal: {signal}")
+
+            elif symbol == "USI:PCC":
+                if percentile > 75:
+                    signal = "High put/call ratio - Potential contrarian bullish signal"
+                elif percentile < 25:
+                    signal = "Low put/call ratio - Potential market complacency"
+                else:
+                    signal = "Neutral sentiment"
+                print(f"   🎯 Signal: {signal}")
+
+        # Export individual indicator data
+        try:
+            # Export to CSV for systematic trading models
+            csv_path = await exporter.to_csv(
+                data,
+                f"./export/macro_{symbol.replace(':', '_').lower()}_data.csv",
+                include_metadata=True,
+                timestamp_format="iso",
+            )
+            print(f"   💾 Exported to CSV: {csv_path}")
+
+            # Export to JSON for web applications
+            json_path = await exporter.to_json(
+                data,
+                f"./export/macro_{symbol.replace(':', '_').lower()}_data.json",
+                include_metadata=True,
+                indent=2,
+            )
+            print(f"   💾 Exported to JSON: {json_path}")
+
+        except Exception as e:
+            print(f"   ❌ Export error: {e}")
+
+    # Summary analysis for quantitative models
+    print("\n🎯 Quantitative Model Integration Summary")
+    print("=" * 45)
+
+    # Risk assessment based on indicators
+    risk_score = 0
+    signal_count = 0
+
+    for symbol, analysis in analysis_results.items():
+        if symbol == "INDEX:NDFI":
+            # Low NDFI = higher risk
+            if analysis["percentile"] < 25:
+                risk_score += 2
+            elif analysis["percentile"] < 50:
+                risk_score += 1
+            signal_count += 1
+
+        elif symbol == "USI:PCC":
+            # Extreme levels indicate higher volatility risk
+            if analysis["percentile"] > 75 or analysis["percentile"] < 25:
+                risk_score += 1
+            signal_count += 1
+
+    if signal_count > 0:
+        avg_risk = risk_score / signal_count
+
+        if avg_risk >= 1.5:
+            risk_level = "HIGH"
+            portfolio_action = "Reduce position sizes, increase cash allocation"
+        elif avg_risk >= 0.75:
+            risk_level = "MEDIUM"
+            portfolio_action = "Moderate position sizing, maintain diversification"
+        else:
+            risk_level = "LOW"
+            portfolio_action = "Normal position sizing, consider growth allocation"
+
+        print("\n📊 Combined Risk Assessment:")
+        print(f"   Risk Score: {risk_score}/{signal_count * 2} ({avg_risk:.2f})")
+        print(f"   Risk Level: {risk_level}")
+        print(f"   Portfolio Action: {portfolio_action}")
+
+    # Display use cases for each indicator
+    print("\n🧮 Integration with Systematic Models:")
+    for symbol, analysis in analysis_results.items():
+        print(f"\n{analysis['name']} ({symbol}):")
+        print(f"  Current Level: {analysis['percentile']:.1f}th percentile")
+        print(f"  Trend: {analysis['trend_change_pct']:+.2f}% (recent vs historical)")
+        print(f"  Applications: {analysis['use_case']}")
+
+    return analysis_results
+
+
 async def demonstrate_error_handling(apple_data: List[OHLCVBar]) -> None:
     """Show proper error handling techniques with TVKit."""
 
@@ -387,6 +650,17 @@ async def main() -> None:
         print("=" * 50)
         await fetch_crypto_and_forex_data()
 
+        # Macro Liquidity and Market Breadth Indicators
+        print("\n" + "=" * 50)
+        print("🎯 Macro Liquidity and Market Breadth Indicators")
+        print("=" * 50)
+        print(
+            "⚠️ Note: These indicators are essential for quantitative liquidity models"
+        )
+        macro_data = await fetch_macro_liquidity_indicators()
+        if macro_data:
+            await analyze_macro_indicators_for_quantitative_models(macro_data)
+
         # Real-time Data Streaming (Limited Demo)
         print("\n" + "=" * 50)
         print("📡 Real-time Data Streaming (Limited Demo)")
@@ -417,17 +691,27 @@ async def main() -> None:
         print(
             "- Cryptocurrency & Forex - Demonstrated support for various asset classes"
         )
+        print(
+            "- Macro Liquidity Indicators - Accessed INDEX:NDFI and USI:PCC for quantitative analysis"
+        )
+        print(
+            "- Quantitative Integration - Showed integration with systematic trading models"
+        )
         print("- Real-time Streaming - Limited demo of live data streaming")
         print("- Error Handling - Best practices for robust applications")
         print()
         print("### 🔧 Key Features Highlighted")
         print("- Async Architecture - All operations use modern async/await patterns")
         print("- Type Safety - Comprehensive Pydantic models for data validation")
-        print("- Multiple Asset Classes - Stocks, crypto, forex, and more")
+        print("- Multiple Asset Classes - Stocks, crypto, forex, and macro indicators")
         print(
             "- Flexible Export System - Support for Polars, JSON, CSV with custom options"
         )
         print("- Real-time Capabilities - WebSocket streaming for live market data")
+        print(
+            "- Quantitative Analysis - Tools for systematic trading and risk management"
+        )
+        print("- Macro Indicators - Access to essential liquidity and breadth metrics")
         print("- Error Resilience - Robust error handling and validation")
         print()
         print("### 📚 Next Steps")
@@ -435,6 +719,7 @@ async def main() -> None:
         print("- Check out additional examples in the examples/ directory")
         print("- Review the API reference for advanced features")
         print("- Consider integrating TVKit into your financial analysis workflows")
+        print("- Implement macro indicators in your quantitative trading models")
         print()
         print("Happy Trading! 📈")
 
