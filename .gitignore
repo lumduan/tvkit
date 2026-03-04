@@ -178,8 +178,10 @@ debug/
 docs/plans/
 .claude/
 CLAUDE.md
-.github/
 scripts/
+.github/instructions/
+.github/prompts/
+.github/copilot-instructions.md
 main.py
 tvkit.code-workspace
 

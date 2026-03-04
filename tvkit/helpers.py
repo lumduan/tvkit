@@ -3,13 +3,12 @@ Helper functions to improve user experience and provide better error messages.
 """
 
 import sys
-from typing import List, Optional
 
 
 class TVKitError(Exception):
     """Base exception for TVKit with helpful error messages."""
 
-    def __init__(self, message: str, suggestions: Optional[List[str]] = None):
+    def __init__(self, message: str, suggestions: list[str] | None = None):
         self.suggestions = suggestions or []
         super().__init__(message)
 
@@ -69,7 +68,7 @@ class PythonVersionError(TVKitError):
 
 def check_python_version():
     """Check if Python version is supported."""
-    if sys.version_info < (3, 11):
+    if sys.version_info < (3, 11):  # noqa: UP036
         raise PythonVersionError()
 
 
@@ -90,9 +89,7 @@ def validate_symbol_format(symbol: str) -> bool:
         raise SymbolValidationError(symbol, "Symbol must be a non-empty string")
 
     if ":" not in symbol:
-        raise SymbolValidationError(
-            symbol, f"Symbol '{symbol}' missing exchange prefix"
-        )
+        raise SymbolValidationError(symbol, f"Symbol '{symbol}' missing exchange prefix")
 
     parts = symbol.split(":")
     if len(parts) != 2:
@@ -109,7 +106,7 @@ def validate_symbol_format(symbol: str) -> bool:
     return True
 
 
-def provide_symbol_suggestions(failed_symbol: str) -> List[str]:
+def provide_symbol_suggestions(failed_symbol: str) -> list[str]:
     """
     Provide helpful symbol suggestions when a symbol fails.
 
@@ -167,7 +164,9 @@ def create_user_friendly_error(error: Exception, context: str = "") -> str:
 
     # Common error patterns and their user-friendly versions
     if "timeout" in error_msg.lower():
-        return f"⏱️ Request timed out{' while ' + context if context else ''}. Try again in a moment."
+        return (
+            f"⏱️ Request timed out{' while ' + context if context else ''}. Try again in a moment."
+        )
 
     if "connection" in error_msg.lower() or "network" in error_msg.lower():
         return f"🌐 Network connection issue{' while ' + context if context else ''}. Check your internet connection."

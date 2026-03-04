@@ -7,14 +7,13 @@ API to ensure they follow the correct format and exist in TradingView's system.
 
 import asyncio
 import logging
-from typing import List, Union
 
 import httpx
 
 from .models import SymbolConversionResult
 
 
-async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
+async def validate_symbols(exchange_symbol: str | list[str]) -> bool:
     """
     Validate one or more exchange symbols asynchronously.
 
@@ -47,7 +46,7 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
     if not exchange_symbol:
         raise ValueError("exchange_symbol cannot be empty")
 
-    symbols: List[str]
+    symbols: list[str]
     if isinstance(exchange_symbol, str):
         symbols = [exchange_symbol]
     else:
@@ -67,17 +66,13 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
                     if response.status_code in [200, 301]:
                         break  # Valid symbol, exit retry loop
                     elif response.status_code == 404:
-                        raise ValueError(
-                            f"Invalid exchange or symbol or index '{item}'"
-                        )
+                        raise ValueError(f"Invalid exchange or symbol or index '{item}'")
                     else:
                         response.raise_for_status()
 
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 404:
-                        raise ValueError(
-                            f"Invalid exchange or symbol or index '{item}'"
-                        ) from exc
+                        raise ValueError(f"Invalid exchange or symbol or index '{item}'") from exc
 
                     logging.warning(
                         "Attempt %d failed to validate symbol '%s': %s",
@@ -111,8 +106,8 @@ async def validate_symbols(exchange_symbol: Union[str, List[str]]) -> bool:
 
 
 def convert_symbol_format(
-    exchange_symbol: Union[str, List[str]],
-) -> Union[SymbolConversionResult, List[SymbolConversionResult]]:
+    exchange_symbol: str | list[str],
+) -> SymbolConversionResult | list[SymbolConversionResult]:
     """
     Convert exchange symbols from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
 

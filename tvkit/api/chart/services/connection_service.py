@@ -2,7 +2,8 @@
 
 import json
 import logging
-from typing import Any, AsyncGenerator, Awaitable, Callable, List
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import Any
 
 from websockets import ClientConnection
 from websockets.asyncio.client import connect
@@ -90,9 +91,7 @@ class ConnectionService:
         await send_message_func("set_locale", ["en", "US"])
         await send_message_func("chart_create_session", [chart_session, ""])
         await send_message_func("quote_create_session", [quote_session])
-        await send_message_func(
-            "quote_set_fields", [quote_session, *self._get_quote_fields()]
-        )
+        await send_message_func("quote_set_fields", [quote_session, *self._get_quote_fields()])
         await send_message_func("quote_hibernate_all", [quote_session])
 
     def _get_quote_fields(self) -> list[str]:
@@ -148,12 +147,8 @@ class ConnectionService:
             bars_count: Number of bars to fetch for the chart
             send_message_func: Function to send messages through the WebSocket
         """
-        resolve_symbol: str = json.dumps(
-            {"adjustment": "splits", "symbol": exchange_symbol}
-        )
-        await send_message_func(
-            "quote_add_symbols", [quote_session, f"={resolve_symbol}"]
-        )
+        resolve_symbol: str = json.dumps({"adjustment": "splits", "symbol": exchange_symbol})
+        await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
         await send_message_func(
             "resolve_symbol", [chart_session, "sds_sym_1", f"={resolve_symbol}"]
         )
@@ -178,7 +173,7 @@ class ConnectionService:
     async def add_multiple_symbols_to_sessions(
         self,
         quote_session: str,
-        exchange_symbols: List[str],
+        exchange_symbols: list[str],
         send_message_func: Callable[[str, list[Any]], Awaitable[None]],
     ) -> None:
         """
@@ -197,17 +192,11 @@ class ConnectionService:
                 "symbol": exchange_symbols[0],
             }
         )
-        await send_message_func(
-            "quote_add_symbols", [quote_session, f"={resolve_symbol}"]
-        )
-        await send_message_func(
-            "quote_fast_symbols", [quote_session, f"={resolve_symbol}"]
-        )
+        await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
+        await send_message_func("quote_fast_symbols", [quote_session, f"={resolve_symbol}"])
 
         await send_message_func("quote_add_symbols", [quote_session] + exchange_symbols)
-        await send_message_func(
-            "quote_fast_symbols", [quote_session] + exchange_symbols
-        )
+        await send_message_func("quote_fast_symbols", [quote_session] + exchange_symbols)
 
     async def get_data_stream(self) -> AsyncGenerator[dict[str, Any], None]:
         """
@@ -241,9 +230,7 @@ class ConnectionService:
                         logging.debug(f"Received heartbeat: {result}")
                         await self.ws.send(result)  # Echo back the heartbeat
                     else:
-                        split_result: list[str] = [
-                            x for x in re.split(r"~m~\d+~m~", result) if x
-                        ]
+                        split_result: list[str] = [x for x in re.split(r"~m~\d+~m~", result) if x]
                         for item in split_result:
                             if item:
                                 try:

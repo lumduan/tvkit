@@ -6,7 +6,7 @@ OHLCV (Open, High, Low, Close, Volume) data received from TradingView's
 WebSocket API.
 """
 
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
@@ -28,7 +28,7 @@ class OHLCVBar(BaseModel):
     volume: float = Field(description="Total volume traded during the time period")
 
     @classmethod
-    def from_array(cls, data: List[float]) -> "OHLCVBar":
+    def from_array(cls, data: list[float]) -> "OHLCVBar":
         """
         Create an OHLCVBar from TradingView's array format.
 
@@ -43,9 +43,7 @@ class OHLCVBar(BaseModel):
             ValueError: If data array doesn't have 5 or 6 elements
         """
         if len(data) < 5 or len(data) > 6:
-            raise ValueError(
-                f"Expected 5 or 6 elements in OHLCV array, got {len(data)}"
-            )
+            raise ValueError(f"Expected 5 or 6 elements in OHLCV array, got {len(data)}")
 
         return cls(
             timestamp=data[0],
@@ -53,9 +51,7 @@ class OHLCVBar(BaseModel):
             high=data[2],
             low=data[3],
             close=data[4],
-            volume=data[5]
-            if len(data) == 6
-            else 0.0,  # Default volume to 0 if not provided
+            volume=data[5] if len(data) == 6 else 0.0,  # Default volume to 0 if not provided
         )
 
 
@@ -67,7 +63,7 @@ class SeriesData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     index: int = Field(alias="i", description="Bar index in the series")
-    values: List[float] = Field(
+    values: list[float] = Field(
         alias="v",
         description="OHLCV values array [timestamp, open, high, low, close, volume]",
     )
@@ -112,14 +108,10 @@ class SeriesUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    series_data: List[SeriesData] = Field(
-        alias="s", description="List of series data points"
-    )
+    series_data: list[SeriesData] = Field(alias="s", description="List of series data points")
     namespace: NamespaceData = Field(alias="ns", description="Namespace metadata")
     type: str = Field(alias="t", description="Series type identifier")
-    last_bar_status: LastBarStatus = Field(
-        alias="lbs", description="Last bar status information"
-    )
+    last_bar_status: LastBarStatus = Field(alias="lbs", description="Last bar status information")
 
 
 class OHLCVResponse(BaseModel):
@@ -132,10 +124,8 @@ class OHLCVResponse(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    message_type: str = Field(
-        alias="m", description="Message type ('du' or 'timescale_update')"
-    )
-    parameters: List[Any] = Field(
+    message_type: str = Field(alias="m", description="Message type ('du' or 'timescale_update')")
+    parameters: list[Any] = Field(
         alias="p", description="Message parameters containing session ID and data"
     )
 
@@ -144,14 +134,12 @@ class OHLCVResponse(BaseModel):
     def validate_message_type(cls, v: str) -> str:
         """Validate that message type is a data update or timescale update."""
         if v not in ["du", "timescale_update"]:
-            raise ValueError(
-                f"Expected message type 'du' or 'timescale_update', got '{v}'"
-            )
+            raise ValueError(f"Expected message type 'du' or 'timescale_update', got '{v}'")
         return v
 
     @field_validator("parameters")
     @classmethod
-    def validate_parameters(cls, v: List[Any]) -> List[Any]:
+    def validate_parameters(cls, v: list[Any]) -> list[Any]:
         """Validate parameters structure."""
         if len(v) < 2:
             raise ValueError("Parameters must contain at least session ID and data")
@@ -194,14 +182,14 @@ class OHLCVResponse(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def ohlcv_bars(self) -> List[OHLCVBar]:
+    def ohlcv_bars(self) -> list[OHLCVBar]:
         """
         Extract all OHLCV bars from all series in the response.
 
         Returns:
             List[OHLCVBar]: List of all OHLCV bars in the update
         """
-        bars: List[OHLCVBar] = []
+        bars: list[OHLCVBar] = []
 
         for series_update in self.series_updates.values():
             for series_data in series_update.series_data:
@@ -220,10 +208,8 @@ class TimescaleUpdateResponse(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    message_type: str = Field(
-        alias="m", description="Message type ('timescale_update')"
-    )
-    parameters: List[Any] = Field(
+    message_type: str = Field(alias="m", description="Message type ('timescale_update')")
+    parameters: list[Any] = Field(
         alias="p",
         description="Message parameters containing session ID and timescale data",
     )
@@ -244,14 +230,14 @@ class TimescaleUpdateResponse(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def ohlcv_bars(self) -> List[OHLCVBar]:
+    def ohlcv_bars(self) -> list[OHLCVBar]:
         """
         Extract all OHLCV bars from the timescale update.
 
         Returns:
             List[OHLCVBar]: List of all OHLCV bars in the update
         """
-        bars: List[OHLCVBar] = []
+        bars: list[OHLCVBar] = []
 
         if len(self.parameters) < 2:
             return bars
@@ -263,7 +249,7 @@ class TimescaleUpdateResponse(BaseModel):
         for series_info in series_data_dict.values():
             if isinstance(series_info, dict) and "s" in series_info:
                 # Extract the series array
-                series_array: List[Any] = series_info["s"]
+                series_array: list[Any] = series_info["s"]
 
                 # Each item in the series has "i" (index) and "v" (values array)
                 for item in series_array:
@@ -289,10 +275,8 @@ class QuoteSymbolData(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    message_type: str = Field(
-        alias="m", description="Message type ('qsd' for quote symbol data)"
-    )
-    parameters: List[Any] = Field(
+    message_type: str = Field(alias="m", description="Message type ('qsd' for quote symbol data)")
+    parameters: list[Any] = Field(
         alias="p", description="Parameters containing session ID and quote data"
     )
 
@@ -320,7 +304,7 @@ class QuoteSymbolData(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def current_price(self) -> Optional[float]:
+    def current_price(self) -> float | None:
         """Extract current price from quote data."""
         quote_data = self.quote_data
         if "v" in quote_data and isinstance(quote_data["v"], dict):
@@ -347,7 +331,7 @@ class QuoteCompletedMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message_type: str = Field(alias="m", description="Message type ('quote_completed')")
-    parameters: List[Any] = Field(
+    parameters: list[Any] = Field(
         alias="p", description="Parameters containing session ID and symbol"
     )
 
@@ -382,7 +366,7 @@ class WebSocketMessage(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     message_type: str = Field(alias="m", description="Message type")
-    parameters: List[Any] = Field(alias="p", description="Message parameters")
+    parameters: list[Any] = Field(alias="p", description="Message parameters")
 
     @computed_field  # type: ignore[prop-decorator]
     @property

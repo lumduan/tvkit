@@ -23,19 +23,20 @@ Usage:
 """
 
 import asyncio
+
 import pandas as pd
-from typing import Dict, List
+
+from tvkit.api.scanner.markets import (
+    MARKET_INFO,
+    Market,
+    MarketRegion,
+    get_all_markets,
+    get_markets_by_region,
+)
+from tvkit.api.scanner.models import ColumnSets, StockData, create_scanner_request
 
 # Import tvkit scanner components
 from tvkit.api.scanner.services import ScannerService, create_comprehensive_request
-from tvkit.api.scanner.models import ColumnSets, create_scanner_request, StockData
-from tvkit.api.scanner.markets import (
-    Market,
-    MarketRegion,
-    get_markets_by_region,
-    get_all_markets,
-    MARKET_INFO,
-)
 
 
 def display_available_regions() -> None:
@@ -66,9 +67,7 @@ def display_available_regions() -> None:
         print()
 
 
-async def basic_market_scan_demo() -> tuple[
-    List[StockData] | None, List[StockData] | None
-]:
+async def basic_market_scan_demo() -> tuple[list[StockData] | None, list[StockData] | None]:
     """Perform a basic scan of multiple markets."""
     print("🌍 Multi-Market Scanner - Basic Example")
     print("=" * 50)
@@ -105,7 +104,7 @@ async def basic_market_scan_demo() -> tuple[
             print(f"Total US stocks available: {usa_response.total_count:,}")
 
         # Convert to DataFrames for better display
-        def stocks_to_df(stocks: List[StockData], market_name: str) -> pd.DataFrame:
+        def stocks_to_df(stocks: list[StockData], market_name: str) -> pd.DataFrame:
             data = []
             for stock in stocks:
                 data.append(
@@ -139,7 +138,7 @@ async def basic_market_scan_demo() -> tuple[
         return None, None
 
 
-async def comprehensive_market_scan_demo() -> Dict[str, List[StockData]]:
+async def comprehensive_market_scan_demo() -> dict[str, list[StockData]]:
     """Perform a comprehensive scan with all available data."""
     print("🌏 Multi-Market Scanner - Comprehensive Example")
     print("=" * 60)
@@ -207,9 +206,7 @@ async def comprehensive_market_scan_demo() -> Dict[str, List[StockData]]:
                     {
                         "Market": market_name,
                         "Symbol": stock.name,
-                        "Price": f"{stock.close:.2f} {stock.currency}"
-                        if stock.close
-                        else "N/A",
+                        "Price": f"{stock.close:.2f} {stock.currency}" if stock.close else "N/A",
                         "Market Cap (USD)": f"${stock.market_cap_basic:,.0f}"
                         if stock.market_cap_basic
                         else "N/A",
@@ -235,7 +232,7 @@ async def comprehensive_market_scan_demo() -> Dict[str, List[StockData]]:
         return {}
 
 
-async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
+async def regional_market_scan_demo() -> dict[str, list[StockData]]:
     """Demonstrate scanning multiple markets by region."""
     print("🌍 Regional Market Scanner - Asia Pacific")
     print("=" * 50)
@@ -256,8 +253,7 @@ async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
 
         # Create request focused on key metrics
         request = create_scanner_request(
-            columns=ColumnSets.BASIC
-            + ["market_cap_basic", "sector", "price_earnings_ttm"],
+            columns=ColumnSets.BASIC + ["market_cap_basic", "sector", "price_earnings_ttm"],
             sort_by="market_cap_basic",
             sort_order="desc",
             range_end=3,  # Top 3 from each market
@@ -266,7 +262,7 @@ async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
         print(f"Scanning {len(selected_markets)} Asia Pacific markets...")
         print("Looking for top 3 stocks by market cap in each market")
 
-        all_results: Dict[str, List[StockData]] = {}
+        all_results: dict[str, list[StockData]] = {}
 
         for market in selected_markets:
             if market in asia_markets:
@@ -321,7 +317,7 @@ async def regional_market_scan_demo() -> Dict[str, List[StockData]]:
         return {}
 
 
-async def market_by_id_demo() -> List[Dict[str, str]]:
+async def market_by_id_demo() -> list[dict[str, str]]:
     """Demonstrate using market by ID string."""
     print("🔤 Market Scanner - By ID Example")
     print("=" * 50)
@@ -450,16 +446,10 @@ def display_available_markets_info() -> pd.DataFrame:
         for region, region_name in regions.items():
             markets = get_markets_by_region(region)
             total_exchanges = sum(
-                len(
-                    MARKET_INFO.get(
-                        m, type("obj", (object,), {"exchanges": []})
-                    ).exchanges
-                )
+                len(MARKET_INFO.get(m, type("obj", (object,), {"exchanges": []})).exchanges)
                 for m in markets
             )
-            print(
-                f"  {region_name}: {len(markets)} markets, {total_exchanges} total exchanges"
-            )
+            print(f"  {region_name}: {len(markets)} markets, {total_exchanges} total exchanges")
 
         return summary_df
 
@@ -468,7 +458,7 @@ def display_available_markets_info() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-async def run_all_scanner_examples() -> Dict[str, any]:
+async def run_all_scanner_examples() -> dict[str, any]:
     """Run all scanner examples in sequence."""
     print("Multi-Market Scanner Examples - Complete Demo")
     print("=" * 60)
@@ -546,9 +536,7 @@ async def run_all_scanner_examples() -> Dict[str, any]:
         print(f"  • Comprehensive scan: {comp_count} stocks across 4 Asian markets")
         print(f"  • Regional scan: {regional_count} stocks across Asia Pacific")
         print(f"  • ID-based scan: {id_count} results across 5 global markets")
-        print(
-            f"  • Market info: {len(Market)} total markets across {len(MarketRegion)} regions"
-        )
+        print(f"  • Market info: {len(Market)} total markets across {len(MarketRegion)} regions")
 
         print("\n🔗 Key Features Demonstrated:")
         print("  ✅ Multi-market scanning with Market enum")
@@ -581,9 +569,7 @@ async def main() -> None:
     """Main function that runs all scanner examples."""
     print("🚀 Multi-Market Scanner Example Script")
     print("=" * 50)
-    print(
-        f"📊 Available markets: {len(Market)} markets across {len(MarketRegion)} regions"
-    )
+    print(f"📊 Available markets: {len(Market)} markets across {len(MarketRegion)} regions")
     print()
 
     # Display available regions first

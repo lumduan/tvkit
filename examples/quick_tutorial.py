@@ -11,12 +11,13 @@ Run this file to see TVKit in action:
 """
 
 import asyncio
+
 from tvkit import (
-    get_stock_price,
+    MAJOR_CRYPTOS,
+    POPULAR_STOCKS,
     compare_stocks,
     get_crypto_prices,
-    POPULAR_STOCKS,
-    MAJOR_CRYPTOS,
+    get_stock_price,
     run_async,
 )
 
@@ -65,9 +66,7 @@ async def tutorial_2_compare_stocks():
         range_str = f"${metrics['low']:.2f}-${metrics['high']:.2f}"
 
         change_icon = "📈" if change > 0 else "📉"
-        print(
-            f"{stock_name:<15} ${price:<9.2f} {change_icon}{change:+6.2f}% {range_str:<20}"
-        )
+        print(f"{stock_name:<15} ${price:<9.2f} {change_icon}{change:+6.2f}% {range_str:<20}")
 
 
 async def tutorial_3_crypto_prices():
@@ -151,8 +150,7 @@ async def tutorial_5_macro_indicators():
                     # Simple percentile calculation
                     sorted_values = sorted(values)
                     percentile = (
-                        sum(1 for v in sorted_values if v <= current_value)
-                        / len(sorted_values)
+                        sum(1 for v in sorted_values if v <= current_value) / len(sorted_values)
                     ) * 100
 
                     print(

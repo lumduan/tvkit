@@ -12,18 +12,17 @@ Usage:
     python -m tvkit help
 """
 
-import asyncio
 import argparse
-from typing import List
+import asyncio
 
+from tvkit.helpers import create_user_friendly_error, get_help_message
 from tvkit.quickstart import (
-    get_stock_price,
+    MAJOR_CRYPTOS,
+    POPULAR_STOCKS,
     compare_stocks,
     get_crypto_prices,
-    POPULAR_STOCKS,
-    MAJOR_CRYPTOS,
+    get_stock_price,
 )
-from tvkit.helpers import create_user_friendly_error, get_help_message
 
 
 async def cmd_price(symbol: str):
@@ -41,7 +40,7 @@ async def cmd_price(symbol: str):
         print("\n💡 Try: python -m tvkit price NASDAQ:AAPL")
 
 
-async def cmd_compare(symbols: List[str], days: int = 30):
+async def cmd_compare(symbols: list[str], days: int = 30):
     """Compare multiple symbols."""
     try:
         print(f"📊 Comparing {len(symbols)} symbols over {days} days...")

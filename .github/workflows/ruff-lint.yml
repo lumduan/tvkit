@@ -1,0 +1,60 @@
+name: CI
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - "**/*.py"
+      - "pyproject.toml"
+      - "tests/**"
+      - ".github/workflows/ruff-lint.yml"
+  push:
+    branches:
+      - main
+      - "feature/**"
+    paths:
+      - "**/*.py"
+      - "pyproject.toml"
+      - "tests/**"
+      - ".github/workflows/ruff-lint.yml"
+
+jobs:
+  ruff:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - run: uv python install 3.11
+      - run: uv sync --dev
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  quality:
+    name: Type & Tests
+    runs-on: ubuntu-latest
+    needs: ruff
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - run: uv python install 3.11
+      - run: uv sync --dev
+
+      - run: uv run mypy tvkit/
+      - run: uv run pytest -v

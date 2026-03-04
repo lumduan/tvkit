@@ -6,7 +6,8 @@ especially for Python 3.11+ users who want immediate results.
 """
 
 import asyncio
-from typing import Any, Coroutine, Dict, List
+from collections.abc import Coroutine
+from typing import Any
 
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.ohlcv import OHLCV
@@ -14,7 +15,7 @@ from tvkit.api.utils import convert_timestamp_to_iso
 from tvkit.export import DataExporter
 
 
-async def get_stock_price(symbol: str) -> Dict[str, Any]:
+async def get_stock_price(symbol: str) -> dict[str, Any]:
     """
     Get the latest stock price for a symbol.
 
@@ -48,9 +49,7 @@ async def get_stock_price(symbol: str) -> Dict[str, Any]:
         }
 
 
-async def compare_stocks(
-    symbols: List[str], days: int = 30
-) -> Dict[str, Dict[str, Any]]:
+async def compare_stocks(symbols: list[str], days: int = 30) -> dict[str, dict[str, Any]]:
     """
     Compare performance of multiple stocks over a period.
 
@@ -99,7 +98,7 @@ async def compare_stocks(
     return results
 
 
-async def get_crypto_prices(limit: int = 5) -> Dict[str, float]:
+async def get_crypto_prices(limit: int = 5) -> dict[str, float]:
     """
     Get current prices for major cryptocurrencies.
 
@@ -140,7 +139,7 @@ async def get_crypto_prices(limit: int = 5) -> Dict[str, float]:
     return prices
 
 
-def quick_export_to_csv(bars: List[OHLCVBar], filename: str = "stock_data.csv") -> str:
+def quick_export_to_csv(bars: list[OHLCVBar], filename: str = "stock_data.csv") -> str:
     """
     Synchronous wrapper for exporting data to CSV.
 
@@ -165,7 +164,7 @@ def quick_export_to_csv(bars: List[OHLCVBar], filename: str = "stock_data.csv") 
     return str(result)
 
 
-async def get_historical_data(symbol: str, days: int) -> List[OHLCVBar]:
+async def get_historical_data(symbol: str, days: int) -> list[OHLCVBar]:
     """
     Simple function to get historical data.
 

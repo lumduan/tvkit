@@ -6,14 +6,14 @@ including searching for indicators, interactive selection, and metadata fetching
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
 from .models import IndicatorData, InputValue, PineFeatures, ProfileConfig, StudyPayload
 
 
-async def fetch_tradingview_indicators(query: str) -> List[IndicatorData]:
+async def fetch_tradingview_indicators(query: str) -> list[IndicatorData]:
     """
     Fetch TradingView indicators based on a search query asynchronously.
 
@@ -41,10 +41,10 @@ async def fetch_tradingview_indicators(query: str) -> List[IndicatorData]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response: httpx.Response = await client.get(url=url)
             response.raise_for_status()
-            json_data: Dict[str, Any] = response.json()
+            json_data: dict[str, Any] = response.json()
 
-            results: List[Any] = json_data.get("results", [])
-            filtered_results: List[IndicatorData] = []
+            results: list[Any] = json_data.get("results", [])
+            filtered_results: list[IndicatorData] = []
 
             for indicator in results:
                 if (
@@ -71,8 +71,8 @@ async def fetch_tradingview_indicators(query: str) -> List[IndicatorData]:
 
 
 def display_and_select_indicator(
-    indicators: List[IndicatorData],
-) -> Optional[Tuple[Optional[str], Optional[str]]]:
+    indicators: list[IndicatorData],
+) -> tuple[str | None, str | None] | None:
     """
     Display a list of indicators and prompt the user to select one.
 
@@ -110,9 +110,7 @@ def display_and_select_indicator(
 
     if 0 <= selected_index < len(indicators):
         selected_indicator: IndicatorData = indicators[selected_index]
-        print(
-            f"You selected: {selected_indicator.script_name} by {selected_indicator.author}"
-        )
+        print(f"You selected: {selected_indicator.script_name} by {selected_indicator.author}")
         return (
             selected_indicator.script_id_part,
             selected_indicator.version,
@@ -124,7 +122,7 @@ def display_and_select_indicator(
 
 async def fetch_indicator_metadata(
     script_id: str, script_version: str, chart_session: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Fetch metadata for a TradingView indicator based on its script ID and version asynchronously.
 
@@ -149,17 +147,17 @@ async def fetch_indicator_metadata(
         >>> if metadata:
         ...     print("Metadata fetched successfully")
     """
-    url: str = f"https://pine-facade.tradingview.com/pine-facade/translate/{script_id}/{script_version}"
+    url: str = (
+        f"https://pine-facade.tradingview.com/pine-facade/translate/{script_id}/{script_version}"
+    )
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response: httpx.Response = await client.get(url=url)
             response.raise_for_status()
-            json_data: Dict[str, Any] = response.json()
+            json_data: dict[str, Any] = response.json()
 
-            metainfo: Optional[Dict[str, Any]] = json_data.get("result", {}).get(
-                "metaInfo"
-            )
+            metainfo: dict[str, Any] | None = json_data.get("result", {}).get("metaInfo")
             if metainfo:
                 return prepare_indicator_metadata(
                     script_id=script_id, metainfo=metainfo, chart_session=chart_session
@@ -173,8 +171,8 @@ async def fetch_indicator_metadata(
 
 
 def prepare_indicator_metadata(
-    script_id: str, metainfo: Dict[str, Any], chart_session: str
-) -> Dict[str, Any]:
+    script_id: str, metainfo: dict[str, Any], chart_session: str
+) -> dict[str, Any]:
     """
     Prepare indicator metadata into the required payload structure.
 
@@ -203,7 +201,7 @@ def prepare_indicator_metadata(
     profile_config: ProfileConfig = ProfileConfig(v=False, f=True, t="bool")
 
     # Base study configuration
-    study_config: Dict[str, Any] = {
+    study_config: dict[str, Any] = {
         "text": metainfo["inputs"][0]["defval"],
         "pineId": script_id,
         "pineVersion": metainfo.get("pine", {}).get("version", "1.0"),
@@ -212,7 +210,7 @@ def prepare_indicator_metadata(
     }
 
     # Collect additional input values that start with 'in_'
-    input_values: Dict[str, Dict[str, Any]] = {}
+    input_values: dict[str, dict[str, Any]] = {}
     for input_item in metainfo.get("inputs", []):
         if input_item["id"].startswith("in_"):
             input_value: InputValue = InputValue(

@@ -55,3 +55,43 @@ exclude = ["debug*", "tests*", "scripts*", "docs*"]
 
 [tool.setuptools.package-data]
 tvkit = ["py.typed"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    "venv/",
+    ".venv/",
+    "build/",
+    "dist/",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "*.ipynb",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort — import ordering
+    "B",   # flake8-bugbear — bug-prone patterns
+    "UP",  # pyupgrade — modern Python syntax
+]
+ignore = [
+    "E501",  # line too long — handled by formatter
+    "W293",  # whitespace on blank line — handled by ruff format
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tvkit"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"

@@ -5,22 +5,22 @@ This module provides comprehensive tests for all Pydantic models used in
 real-time streaming operations including validation, serialization, and error handling.
 """
 
-import pytest
 from datetime import datetime
 from decimal import Decimal
-from typing import List
+
+import pytest
 
 from tvkit.api.chart.models import (
-    OHLCVData,
-    TradeData,
-    IndicatorData,
-    SymbolInfo,
-    SessionInfo,
-    WebSocketMessage,
     ExportConfig,
+    IndicatorData,
+    OHLCVData,
+    RealtimeStreamData,
+    SessionInfo,
     StreamConfig,
     StreamerResponse,
-    RealtimeStreamData,
+    SymbolInfo,
+    TradeData,
+    WebSocketMessage,
 )
 
 
@@ -533,7 +533,7 @@ class TestRealtimeStreamData:
 
 
 @pytest.fixture
-def sample_ohlcv_data() -> List[OHLCVData]:
+def sample_ohlcv_data() -> list[OHLCVData]:
     """Fixture providing sample OHLCV data for testing."""
     return [
         OHLCVData(
@@ -574,7 +574,7 @@ class TestIntegration:
     """Integration tests for model interactions."""
 
     def test_complete_streaming_workflow(
-        self, sample_stream_config: StreamConfig, sample_ohlcv_data: List[OHLCVData]
+        self, sample_stream_config: StreamConfig, sample_ohlcv_data: list[OHLCVData]
     ):
         """Test complete streaming workflow with all models."""
         # Create session
@@ -635,14 +635,14 @@ class TestIntegration:
         assert latest_ohlcv is not None
         assert len(latest_ohlcv) == 5
 
-    def test_model_serialization(self, sample_ohlcv_data: List[OHLCVData]):
+    def test_model_serialization(self, sample_ohlcv_data: list[OHLCVData]):
         """Test model serialization for JSON export."""
         ohlcv = sample_ohlcv_data[0]
 
         # Test to_dict method
         dict_data = ohlcv.to_dict()
         assert isinstance(dict_data, dict)
-        assert all(isinstance(v, (str, int, float)) for v in dict_data.values())
+        assert all(isinstance(v, str | int | float) for v in dict_data.values())
 
         # Verify data integrity
         assert dict_data["index"] == ohlcv.index
