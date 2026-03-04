@@ -119,6 +119,10 @@ docs/plans/fix-issue-7-historical-ohlcv-timeout/PLAN.md.
 | `series_completed` handler | Changed from `continue` to `break` + info log | Complete |
 | `study_completed` handler | Changed from `continue` to `break` + info log + protocol comment | Complete |
 | Post-loop guard ordering | Empty-check (with warning log) first, then partial-data info log | Complete |
+| `logging.basicConfig()` removal | Replaced with `logger = logging.getLogger(__name__)` — library hygiene | Complete |
+| `asyncio.get_running_loop()` | Replaced deprecated `get_event_loop()` in `get_historical_ohlcv` | Complete |
+| Signal handler removal | Removed `signal.signal(SIGINT)` and `signal_handler` from library module | Complete |
+| `_setup_services()` lifecycle | Close existing connection before creating new — prevents connection leak | Complete |
 
 ### Out of Scope (Future Phases)
 
@@ -395,26 +399,37 @@ termination via `series_completed`.
 
 ### Summary
 
-Phase 1 is fully implemented. The fix consists of three targeted changes to `get_historical_ohlcv`
-in `tvkit/api/chart/ohlcv.py`:
+Phase 1 is fully implemented. Changes to `tvkit/api/chart/ohlcv.py`:
+
+**Core bug fix:**
 
 1. Changed `series_completed` handler from `continue` to `break` (with info log)
 2. Changed `study_completed` handler from `continue` to `break` (with info log + protocol comment)
-3. Reordered post-loop guards: `logging.warning` + `RuntimeError` for zero bars, then partial-data
+3. Reordered post-loop guards: `logger.warning` + `RuntimeError` for zero bars, then partial-data
    info log for `len(result) < bars_count`
 
+**Library hygiene (pre-existing issues fixed in same pass):**
+
+1. Removed `logging.basicConfig()` — replaced with `logger = logging.getLogger(__name__)`
+2. Changed `asyncio.get_event_loop()` → `asyncio.get_running_loop()` in `get_historical_ohlcv`
+3. Removed `signal.signal(SIGINT, signal_handler)` and `signal_handler` function from library
+4. Fixed `_setup_services()` to close any existing connection before creating a new one
+
 No state flag is used. No changes to `ConnectionService`, `MessageService`, data models, or
-streaming methods.
+streaming generator methods.
+
+**Deferred to Phase 2+:** real `asyncio.wait_for` timeout (requires ConnectionService API change),
+session setup deduplication (`_prepare_chart_session` helper), narrow exception handling.
 
 ### Issues Encountered
 
 None. The flag proposed in PLAN.md Change 3 was identified as redundant during plan review and
-eliminated. The post-loop guard ordering was corrected during plan review (before implementation).
-The protocol ordering comment for `study_completed` was added based on production-hardening review.
+eliminated. The post-loop guard ordering and library hygiene issues were identified and corrected
+during iterative production-grade review before committing.
 
 ### Test Results
 
-All existing tests pass. No regressions. Type check and linting pass cleanly.
+76 tests passed. No regressions. Type check (`mypy`) and linting (`ruff`) pass cleanly.
 
 ### Date
 
