@@ -187,5 +187,5 @@ tvkit.code-workspace
 
 # Example outputs and temporary files
 examples/tvkit_exports/
-export/
+/export/
 *.ipynb_checkpoints/

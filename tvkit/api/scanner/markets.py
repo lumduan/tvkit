@@ -5,7 +5,7 @@ This module provides market identifiers and metadata for TradingView's scanner A
 All market identifiers are extracted from TradingView's official market selection dialog.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import NamedTuple
 
 
@@ -17,7 +17,7 @@ class MarketInfo(NamedTuple):
     description: str
 
 
-class Market(str, Enum):
+class Market(StrEnum):
     """
     Available markets for TradingView scanner API.
 
@@ -347,7 +347,7 @@ MARKET_INFO: dict[Market, MarketInfo] = {
 }
 
 
-class MarketRegion(str, Enum):
+class MarketRegion(StrEnum):
     """Market regions for grouping markets."""
 
     GLOBAL = "global"
