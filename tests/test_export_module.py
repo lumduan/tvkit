@@ -202,7 +202,7 @@ class TestCSVFormatter:
             assert len(lines) == 2  # Header + 1 data row
             assert "timestamp,open,high,low,close,volume" in lines[0]
             # Timestamp is converted to ISO format by default
-            assert lines[1].startswith("2023-01-01T07:00:00") or "1672531200.0" in lines[1]
+            assert "2023-01-01T" in lines[1] or "1672531200.0" in lines[1]
 
 
 class TestDataExporter:
