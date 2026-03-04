@@ -175,6 +175,7 @@ cython_debug/
 # Project-specific ignores (tvkit)
 # Development files (keep local only)
 debug/
+docs/plans/
 .claude/
 CLAUDE.md
 .github/
