@@ -7,17 +7,18 @@ formatting options and metadata handling.
 
 import csv
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Union, Sequence, Set, Literal, cast
+from typing import Any, Literal, cast
 
-from .base_formatter import BaseFormatter
 from ..models import (
-    ExportResult,
-    ExportMetadata,
     ExportFormat,
+    ExportMetadata,
+    ExportResult,
     OHLCVExportData,
     ScannerExportData,
 )
+from .base_formatter import BaseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class CSVFormatter(BaseFormatter):
         return format_type.lower() == ExportFormat.CSV.value
 
     async def export_ohlcv(
-        self, data: List[OHLCVExportData], file_path: Union[Path, str, None] = None
+        self, data: list[OHLCVExportData], file_path: Path | str | None = None
     ) -> ExportResult:
         """
         Export OHLCV data to CSV format.
@@ -53,7 +54,7 @@ class CSVFormatter(BaseFormatter):
                 file_path = Path(file_path)
 
             # Define CSV columns
-            columns: List[str] = ["timestamp", "open", "high", "low", "close", "volume"]
+            columns: list[str] = ["timestamp", "open", "high", "low", "close", "volume"]
 
             # Add optional columns if present in data
             if any(item.symbol for item in data):
@@ -62,9 +63,9 @@ class CSVFormatter(BaseFormatter):
                 columns.append("interval")
 
             # Convert data to rows
-            rows: List[Dict[str, Any]] = []
+            rows: list[dict[str, Any]] = []
             for item in data:
-                row: Dict[str, Any] = {
+                row: dict[str, Any] = {
                     "timestamp": self._prepare_timestamp(item.timestamp),
                     "open": float(item.open),
                     "high": float(item.high),
@@ -114,7 +115,7 @@ class CSVFormatter(BaseFormatter):
             return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
     async def export_scanner(
-        self, data: List[ScannerExportData], file_path: Union[Path, str, None] = None
+        self, data: list[ScannerExportData], file_path: Path | str | None = None
     ) -> ExportResult:
         """
         Export scanner data to CSV format.
@@ -136,7 +137,7 @@ class CSVFormatter(BaseFormatter):
                 file_path = Path(file_path)
 
             # Collect all unique columns from scanner data
-            all_columns: Set[str] = {"name"}
+            all_columns: set[str] = {"name"}
             for item in data:
                 all_columns.update(item.data.keys())
 
@@ -145,12 +146,12 @@ class CSVFormatter(BaseFormatter):
                 all_columns.add("export_timestamp")
 
             # Sort columns for consistent output
-            columns: List[str] = sorted(all_columns)
+            columns: list[str] = sorted(all_columns)
 
             # Convert data to rows
-            rows: List[Dict[str, Any]] = []
+            rows: list[dict[str, Any]] = []
             for item in data:
-                row: Dict[str, Any] = {"name": item.name}
+                row: dict[str, Any] = {"name": item.name}
 
                 # Add all data fields
                 for col in columns:
@@ -193,7 +194,7 @@ class CSVFormatter(BaseFormatter):
             return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
     async def _write_csv_file(
-        self, rows: List[Dict[str, Any]], columns: List[str], file_path: Path
+        self, rows: list[dict[str, Any]], columns: list[str], file_path: Path
     ) -> None:
         """
         Write CSV data to file.
@@ -237,7 +238,7 @@ class CSVFormatter(BaseFormatter):
 
     async def _write_metadata_file(
         self,
-        data: Sequence[Union[OHLCVExportData, ScannerExportData]],
+        data: Sequence[OHLCVExportData | ScannerExportData],
         csv_file_path: Path,
         data_type: str,
     ) -> None:
@@ -281,7 +282,7 @@ Column Descriptions:
 - timestamp: Price timestamp ({self.config.timestamp_format} format)
 - open: Opening price
 - high: Highest price in period
-- low: Lowest price in period  
+- low: Lowest price in period
 - close: Closing price
 - volume: Trading volume
 """
@@ -314,7 +315,7 @@ Each row represents one symbol with its associated data fields.
         except Exception as e:
             logger.warning(f"Failed to write metadata file: {e}")
 
-    def get_default_options(self) -> Dict[str, Any]:
+    def get_default_options(self) -> dict[str, Any]:
         """
         Get default CSV formatting options.
 

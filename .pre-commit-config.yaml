@@ -1,0 +1,21 @@
+# NOTE: When upgrading ruff in pyproject.toml,
+# run: uv run pre-commit autoupdate
+# and commit both changes together to keep local-CI parity.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.4
+    hooks:
+      - id: ruff
+        args: ["--fix", "--config=pyproject.toml"]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (project env)
+        entry: uv run mypy
+        args: [tvkit/]
+        language: system
+        types: [python]
+        pass_filenames: false
