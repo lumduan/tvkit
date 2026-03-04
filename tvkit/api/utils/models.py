@@ -5,7 +5,7 @@ This module contains Pydantic data models used across the tvkit.api.utils packag
 TradingView indicator management, Pine script configuration, and study payload structures.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -17,15 +17,13 @@ class IndicatorData(BaseModel):
     image_url: str = Field(..., description="URL of the indicator image")
     author: str = Field(..., description="Author username")
     agree_count: int = Field(..., ge=0, description="Number of agree votes")
-    is_recommended: bool = Field(
-        ..., description="Whether the indicator is recommended"
-    )
+    is_recommended: bool = Field(..., description="Whether the indicator is recommended")
     script_id_part: str = Field(..., description="Script ID part for the indicator")
-    version: Optional[str] = Field(None, description="Version of the indicator script")
+    version: str | None = Field(None, description="Version of the indicator script")
 
     model_config = {"frozen": True}  # Make the model immutable
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation."""
         return {
             "scriptName": self.script_name,
@@ -72,7 +70,7 @@ class StudyPayload(BaseModel):
     """Pydantic model for study creation payload."""
 
     m: str = Field("create_study", description="Method name")
-    p: List[Any] = Field(..., description="Parameters list")
+    p: list[Any] = Field(..., description="Parameters list")
 
     model_config = {"frozen": True}
 
@@ -80,12 +78,8 @@ class StudyPayload(BaseModel):
 class SymbolConversionResult(BaseModel):
     """Pydantic model for symbol format conversion result."""
 
-    original_symbol: str = Field(
-        ..., description="Original symbol in EXCHANGE-SYMBOL format"
-    )
-    converted_symbol: str = Field(
-        ..., description="Converted symbol in EXCHANGE:SYMBOL format"
-    )
+    original_symbol: str = Field(..., description="Original symbol in EXCHANGE-SYMBOL format")
+    converted_symbol: str = Field(..., description="Converted symbol in EXCHANGE:SYMBOL format")
     is_converted: bool = Field(..., description="Whether conversion was performed")
 
     model_config = {"frozen": True}

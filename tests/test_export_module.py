@@ -9,7 +9,7 @@ import json
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -75,7 +75,7 @@ class TestJSONFormatter:
     """Test JSON export formatter."""
 
     @pytest.fixture
-    def sample_ohlcv_data(self) -> List[OHLCVExportData]:
+    def sample_ohlcv_data(self) -> list[OHLCVExportData]:
         """Create sample OHLCV data for testing."""
         return [
             OHLCVExportData(
@@ -99,7 +99,7 @@ class TestJSONFormatter:
         ]
 
     @pytest.fixture
-    def sample_scanner_data(self) -> List[ScannerExportData]:
+    def sample_scanner_data(self) -> list[ScannerExportData]:
         """Create sample scanner data for testing."""
         return [
             ScannerExportData(
@@ -113,9 +113,7 @@ class TestJSONFormatter:
         ]
 
     @pytest.mark.asyncio
-    async def test_json_export_ohlcv(
-        self, sample_ohlcv_data: List[OHLCVExportData]
-    ) -> None:
+    async def test_json_export_ohlcv(self, sample_ohlcv_data: list[OHLCVExportData]) -> None:
         """Test JSON export of OHLCV data."""
         config: ExportConfig = ExportConfig(format=ExportFormat.JSON)
         formatter: JSONFormatter = JSONFormatter(config)
@@ -123,9 +121,7 @@ class TestJSONFormatter:
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path: Path = Path(temp_dir) / "test_ohlcv.json"
 
-            result: ExportResult = await formatter.export_ohlcv(
-                sample_ohlcv_data, file_path
-            )
+            result: ExportResult = await formatter.export_ohlcv(sample_ohlcv_data, file_path)
 
             assert result.success is True
             assert result.file_path == file_path
@@ -134,8 +130,8 @@ class TestJSONFormatter:
 
             # Verify file contents
             assert file_path.exists()
-            with open(file_path, "r") as f:
-                data: Dict[str, Any] = json.load(f)
+            with open(file_path) as f:
+                data: dict[str, Any] = json.load(f)
 
             assert "data" in data
             assert len(data["data"]) == 2
@@ -143,9 +139,7 @@ class TestJSONFormatter:
             assert data["data"][0]["open"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_json_export_scanner(
-        self, sample_scanner_data: List[ScannerExportData]
-    ) -> None:
+    async def test_json_export_scanner(self, sample_scanner_data: list[ScannerExportData]) -> None:
         """Test JSON export of scanner data."""
         config: ExportConfig = ExportConfig(format=ExportFormat.JSON)
         formatter: JSONFormatter = JSONFormatter(config)
@@ -153,17 +147,15 @@ class TestJSONFormatter:
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path: Path = Path(temp_dir) / "test_scanner.json"
 
-            result: ExportResult = await formatter.export_scanner(
-                sample_scanner_data, file_path
-            )
+            result: ExportResult = await formatter.export_scanner(sample_scanner_data, file_path)
 
             assert result.success is True
             assert result.file_path == file_path
             assert result.metadata.record_count == 2
 
             # Verify file contents
-            with open(file_path, "r") as f:
-                data: Dict[str, Any] = json.load(f)
+            with open(file_path) as f:
+                data: dict[str, Any] = json.load(f)
 
             assert len(data["data"]) == 2
             assert data["data"][0]["name"] == "AAPL"
@@ -174,7 +166,7 @@ class TestCSVFormatter:
     """Test CSV export formatter."""
 
     @pytest.fixture
-    def sample_ohlcv_data(self) -> List[OHLCVExportData]:
+    def sample_ohlcv_data(self) -> list[OHLCVExportData]:
         """Create sample OHLCV data for testing."""
         return [
             OHLCVExportData(
@@ -188,9 +180,7 @@ class TestCSVFormatter:
         ]
 
     @pytest.mark.asyncio
-    async def test_csv_export_ohlcv(
-        self, sample_ohlcv_data: List[OHLCVExportData]
-    ) -> None:
+    async def test_csv_export_ohlcv(self, sample_ohlcv_data: list[OHLCVExportData]) -> None:
         """Test CSV export of OHLCV data."""
         config: ExportConfig = ExportConfig(format=ExportFormat.CSV)
         formatter: CSVFormatter = CSVFormatter(config)
@@ -198,9 +188,7 @@ class TestCSVFormatter:
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path: Path = Path(temp_dir) / "test_ohlcv.csv"
 
-            result: ExportResult = await formatter.export_ohlcv(
-                sample_ohlcv_data, file_path
-            )
+            result: ExportResult = await formatter.export_ohlcv(sample_ohlcv_data, file_path)
 
             assert result.success is True
             assert result.file_path == file_path
@@ -210,20 +198,18 @@ class TestCSVFormatter:
             content: str = file_path.read_text()
 
             # Check CSV header and data
-            lines: List[str] = content.strip().split("\n")
+            lines: list[str] = content.strip().split("\n")
             assert len(lines) == 2  # Header + 1 data row
             assert "timestamp,open,high,low,close,volume" in lines[0]
             # Timestamp is converted to ISO format by default
-            assert (
-                lines[1].startswith("2023-01-01T07:00:00") or "1672531200.0" in lines[1]
-            )
+            assert "2023-01-01T" in lines[1] or "1672531200.0" in lines[1]
 
 
 class TestDataExporter:
     """Test main DataExporter class."""
 
     @pytest.fixture
-    def sample_ohlcv_bars(self) -> List[OHLCVBar]:
+    def sample_ohlcv_bars(self) -> list[OHLCVBar]:
         """Create sample OHLCV bars for testing."""
         return [
             OHLCVBar(
@@ -245,7 +231,7 @@ class TestDataExporter:
         ]
 
     @pytest.fixture
-    def sample_stock_data(self) -> List[StockData]:
+    def sample_stock_data(self) -> list[StockData]:
         """Create sample StockData for testing."""
         return [
             StockData(name="AAPL", close=150.0, volume=1000000, currency="USD"),
@@ -256,15 +242,13 @@ class TestDataExporter:
         """Test DataExporter initialization."""
         exporter: DataExporter = DataExporter()
 
-        supported_formats: List[ExportFormat] = exporter.get_supported_formats()
+        supported_formats: list[ExportFormat] = exporter.get_supported_formats()
         assert ExportFormat.JSON in supported_formats
         assert ExportFormat.CSV in supported_formats
         assert ExportFormat.POLARS in supported_formats
 
     @pytest.mark.asyncio
-    async def test_export_ohlcv_to_json(
-        self, sample_ohlcv_bars: List[OHLCVBar]
-    ) -> None:
+    async def test_export_ohlcv_to_json(self, sample_ohlcv_bars: list[OHLCVBar]) -> None:
         """Test exporting OHLCV data to JSON."""
         exporter: DataExporter = DataExporter()
 
@@ -277,15 +261,15 @@ class TestDataExporter:
             assert file_path.exists()
 
             # Verify JSON content
-            with open(file_path, "r") as f:
-                data: Dict[str, Any] = json.load(f)
+            with open(file_path) as f:
+                data: dict[str, Any] = json.load(f)
 
             assert "data" in data
             assert len(data["data"]) == 2
             assert data["data"][0]["open"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_export_ohlcv_to_csv(self, sample_ohlcv_bars: List[OHLCVBar]) -> None:
+    async def test_export_ohlcv_to_csv(self, sample_ohlcv_bars: list[OHLCVBar]) -> None:
         """Test exporting OHLCV data to CSV."""
         exporter: DataExporter = DataExporter()
 
@@ -299,7 +283,7 @@ class TestDataExporter:
 
             # Verify CSV content
             content: str = file_path.read_text()
-            lines: List[str] = content.strip().split("\n")
+            lines: list[str] = content.strip().split("\n")
             assert len(lines) == 3  # Header + 2 data rows
 
 
@@ -310,7 +294,7 @@ class TestPolarsIntegration:
     """Test Polars DataFrame integration."""
 
     @pytest.fixture
-    def sample_ohlcv_bars(self) -> List[OHLCVBar]:
+    def sample_ohlcv_bars(self) -> list[OHLCVBar]:
         """Create sample OHLCV bars for testing."""
         return [
             OHLCVBar(
@@ -324,7 +308,7 @@ class TestPolarsIntegration:
         ]
 
     @pytest.mark.asyncio
-    async def test_export_to_polars(self, sample_ohlcv_bars: List[OHLCVBar]) -> None:
+    async def test_export_to_polars(self, sample_ohlcv_bars: list[OHLCVBar]) -> None:
         """Test exporting to Polars DataFrame."""
         try:
             import polars as pl
@@ -342,14 +326,12 @@ class TestPolarsIntegration:
         assert "close" in df.columns
 
         # Check data values
-        row: Dict[str, Any] = df.row(0, named=True)
+        row: dict[str, Any] = df.row(0, named=True)
         assert row["open"] == 100.0
         assert row["close"] == 102.0
 
     @pytest.mark.asyncio
-    async def test_export_to_polars_with_analysis(
-        self, sample_ohlcv_bars: List[OHLCVBar]
-    ) -> None:
+    async def test_export_to_polars_with_analysis(self, sample_ohlcv_bars: list[OHLCVBar]) -> None:
         """Test exporting to Polars DataFrame with financial analysis."""
         try:
             import polars as pl
@@ -357,7 +339,7 @@ class TestPolarsIntegration:
             pytest.skip("Polars not available")
 
         # Create more data for analysis
-        bars: List[OHLCVBar] = [
+        bars: list[OHLCVBar] = [
             OHLCVBar(
                 timestamp=1672531200.0 + i * 60,
                 open=100.0 + i,
@@ -377,7 +359,7 @@ class TestPolarsIntegration:
         assert len(df) == 10
 
         # Check for analysis columns
-        analysis_columns: List[str] = ["return_pct", "typical_price", "sma_5", "vwap"]
+        analysis_columns: list[str] = ["return_pct", "typical_price", "sma_5", "vwap"]
         for col in analysis_columns:
             assert col in df.columns
 

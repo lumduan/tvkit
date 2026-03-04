@@ -4,7 +4,8 @@ import json
 import logging
 import secrets
 import string
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from websockets import ClientConnection
 from websockets.exceptions import ConnectionClosed, WebSocketException
@@ -37,9 +38,7 @@ class MessageService:
         Returns:
             A session identifier consisting of the prefix and a random string.
         """
-        random_string: str = "".join(
-            secrets.choice(string.ascii_lowercase) for _ in range(12)
-        )
+        random_string: str = "".join(secrets.choice(string.ascii_lowercase) for _ in range(12))
         return prefix + random_string
 
     def prepend_header(self, message: str) -> str:
@@ -95,9 +94,7 @@ class MessageService:
             WebSocketException: If sending fails
         """
         if not self.ws:
-            raise RuntimeError(
-                "WebSocket connection not established. Call _connect() first."
-            )
+            raise RuntimeError("WebSocket connection not established. Call _connect() first.")
 
         message: str = self.create_message(func, args)
         logging.debug("Sending message: %s", message)

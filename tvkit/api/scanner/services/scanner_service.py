@@ -7,7 +7,7 @@ with proper error handling and response validation.
 
 import asyncio
 import json
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 import httpx
 from pydantic import ValidationError
@@ -74,7 +74,7 @@ class ScannerService:
         self.user_agent: str = user_agent
 
         # Default headers for requests
-        self.headers: Dict[str, str] = {
+        self.headers: dict[str, str] = {
             "User-Agent": self.user_agent,
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -120,7 +120,7 @@ class ScannerService:
             >>> response = await service.scan_market(Market.AMERICA, request)
         """
         endpoint: str = f"{self.base_url}/{market.value}/scan"
-        params: Dict[str, str] = {"label-product": label_product}
+        params: dict[str, str] = {"label-product": label_product}
 
         return await self._make_scanner_request(endpoint, request, params)
 
@@ -162,7 +162,7 @@ class ScannerService:
         self,
         endpoint: str,
         request: ScannerRequest,
-        params: Optional[Dict[str, str]] = None,
+        params: dict[str, str] | None = None,
     ) -> ScannerResponse:
         """
         Make a scanner API request with retry logic.
@@ -181,9 +181,9 @@ class ScannerService:
             ScannerValidationError: If response validation fails
         """
         # Convert request to JSON
-        request_data: Dict[str, Any] = request.model_dump(by_alias=True)
+        request_data: dict[str, Any] = request.model_dump(by_alias=True)
 
-        last_exception: Optional[Exception] = None
+        last_exception: Exception | None = None
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -204,17 +204,15 @@ class ScannerService:
 
                     # Parse JSON response
                     try:
-                        response_data: Dict[str, Any] = response.json()
+                        response_data: dict[str, Any] = response.json()
                     except json.JSONDecodeError as e:
-                        raise ScannerAPIError(f"Invalid JSON response: {e}")
+                        raise ScannerAPIError(f"Invalid JSON response: {e}") from e
 
                     # Validate and parse response
                     try:
-                        return ScannerResponse.from_api_response(
-                            response_data, request.columns
-                        )
+                        return ScannerResponse.from_api_response(response_data, request.columns)
                     except ValidationError as e:
-                        raise ScannerValidationError(f"Response validation failed: {e}")
+                        raise ScannerValidationError(f"Response validation failed: {e}") from e
 
             except httpx.TimeoutException as e:
                 last_exception = ScannerConnectionError(f"Request timeout: {e}")

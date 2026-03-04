@@ -10,13 +10,13 @@ Usage:
     python examples/verify_installation.py
 """
 
-import sys
 import asyncio
 import importlib
-from typing import Dict, Any, List
+import sys
+from typing import Any
 
 
-def check_python_version() -> Dict[str, Any]:
+def check_python_version() -> dict[str, Any]:
     """Check Python version compatibility."""
     version_info = sys.version_info
     version_str = f"{version_info.major}.{version_info.minor}.{version_info.micro}"
@@ -34,7 +34,7 @@ def check_python_version() -> Dict[str, Any]:
     }
 
 
-def check_package_imports() -> List[Dict[str, Any]]:
+def check_package_imports() -> list[dict[str, Any]]:
     """Check if all required packages can be imported."""
     packages = [
         ("tvkit", "Core TVKit package"),
@@ -73,7 +73,7 @@ def check_package_imports() -> List[Dict[str, Any]]:
     return results
 
 
-async def check_basic_functionality() -> Dict[str, Any]:
+async def check_basic_functionality() -> dict[str, Any]:
     """Test basic TVKit functionality."""
     try:
         from tvkit import get_stock_price
@@ -118,13 +118,13 @@ async def check_basic_functionality() -> Dict[str, Any]:
         }
 
 
-async def check_advanced_features() -> List[Dict[str, Any]]:
+async def check_advanced_features() -> list[dict[str, Any]]:
     """Test advanced TVKit features."""
     results = []
 
     # Test 1: Quick start functions
     try:
-        from tvkit import compare_stocks, POPULAR_STOCKS
+        from tvkit import POPULAR_STOCKS, compare_stocks
 
         # Test with a small subset
         comparison = await compare_stocks(POPULAR_STOCKS[:2], days=5)
@@ -207,7 +207,7 @@ def print_section(title: str):
     print("=" * 50)
 
 
-def print_result(result: Dict[str, Any]):
+def print_result(result: dict[str, Any]):
     """Print a test result."""
     print(f"{result['status']} {result['test']}")
     if "details" in result:
@@ -264,9 +264,7 @@ async def main():
         print("📚 Next Steps:")
         print("   • Try the quick tutorial: uv run python examples/quick_tutorial.py")
         print("   • Use the CLI: python -m tvkit price NASDAQ:AAPL")
-        print(
-            "   • Explore examples: uv run python examples/historical_and_realtime_data.py"
-        )
+        print("   • Explore examples: uv run python examples/historical_and_realtime_data.py")
     else:
         print("⚠️  Some tests failed. TVKit may not work correctly.")
         print()

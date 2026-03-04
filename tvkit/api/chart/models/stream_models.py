@@ -8,7 +8,7 @@ operations including OHLCV data, trade information, and WebSocket messages.
 import json
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -40,7 +40,7 @@ class OHLCVData(BaseModel):
         """Convert timestamp to datetime object."""
         return datetime.fromtimestamp(self.timestamp)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary with string values for JSON serialization."""
         return {
             "index": self.index,
@@ -71,7 +71,7 @@ class TradeData(BaseModel):
     price: Decimal = Field(..., description="Trade execution price", ge=0)
     volume: Decimal = Field(..., description="Trade volume", ge=0)
     timestamp: int = Field(..., description="Trade timestamp", gt=0)
-    side: Optional[Literal["buy", "sell"]] = Field(None, description="Trade side")
+    side: Literal["buy", "sell"] | None = Field(None, description="Trade side")
 
     @property
     def datetime(self) -> datetime:
@@ -95,8 +95,8 @@ class IndicatorData(BaseModel):
     indicator_id: str = Field(..., description="Unique indicator identifier")
     indicator_version: str = Field(..., description="Indicator version")
     timestamp: int = Field(..., description="Calculation timestamp", gt=0)
-    values: Dict[str, Decimal] = Field(..., description="Indicator output values")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    values: dict[str, Decimal] = Field(..., description="Indicator output values")
+    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
 
     @property
     def datetime(self) -> datetime:
@@ -120,7 +120,7 @@ class SymbolInfo(BaseModel):
     exchange: str = Field(..., description="Exchange name (e.g., BINANCE)")
     symbol: str = Field(..., description="Symbol name (e.g., BTCUSDT)")
     full_symbol: str = Field(..., description="Full symbol (e.g., BINANCE:BTCUSDT)")
-    market: Optional[str] = Field(None, description="Market category")
+    market: str | None = Field(None, description="Market category")
     is_valid: bool = Field(..., description="Symbol validation status")
 
 
@@ -139,10 +139,8 @@ class SessionInfo(BaseModel):
     quote_session: str = Field(..., description="Quote session identifier")
     chart_session: str = Field(..., description="Chart session identifier")
     jwt_token: str = Field(..., description="JWT authentication token")
-    connection_id: Optional[str] = Field(None, description="Connection identifier")
-    created_at: datetime = Field(
-        default_factory=datetime.now, description="Session creation time"
-    )
+    connection_id: str | None = Field(None, description="Connection identifier")
+    created_at: datetime = Field(default_factory=datetime.now, description="Session creation time")
 
 
 class WebSocketMessage(BaseModel):
@@ -158,11 +156,9 @@ class WebSocketMessage(BaseModel):
     )
 
     method: str = Field(..., description="WebSocket method name")
-    params: List[Any] = Field(..., description="Method parameters")
-    message_id: Optional[str] = Field(None, description="Message identifier")
-    timestamp: datetime = Field(
-        default_factory=datetime.now, description="Message timestamp"
-    )
+    params: list[Any] = Field(..., description="Method parameters")
+    message_id: str | None = Field(None, description="Message identifier")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Message timestamp")
 
     def format_message(self) -> str:
         """Format message for WebSocket transmission."""
@@ -186,15 +182,11 @@ class ExportConfig(BaseModel):
     )
 
     enabled: bool = Field(False, description="Whether export is enabled")
-    format: Literal["json", "csv", "parquet"] = Field(
-        "json", description="Export format"
-    )
+    format: Literal["json", "csv", "parquet"] = Field("json", description="Export format")
     directory: str = Field("/export", description="Export directory path")
-    filename_prefix: Optional[str] = Field(None, description="Filename prefix")
+    filename_prefix: str | None = Field(None, description="Filename prefix")
     include_timestamp: bool = Field(True, description="Include timestamp in filename")
-    auto_export_interval: Optional[int] = Field(
-        None, description="Auto-export interval in seconds"
-    )
+    auto_export_interval: int | None = Field(None, description="Auto-export interval in seconds")
 
 
 class StreamConfig(BaseModel):
@@ -209,23 +201,17 @@ class StreamConfig(BaseModel):
         validate_assignment=True,
     )
 
-    symbols: List[str] = Field(
-        ..., description="List of symbols to stream", min_length=1
-    )
+    symbols: list[str] = Field(..., description="List of symbols to stream", min_length=1)
     timeframe: str = Field("1m", description="Data timeframe (e.g., 1m, 5m, 1h)")
-    num_candles: int = Field(
-        10, description="Number of historical candles", ge=1, le=1000
-    )
+    num_candles: int = Field(10, description="Number of historical candles", ge=1, le=1000)
     include_indicators: bool = Field(False, description="Whether to include indicators")
-    indicator_id: Optional[str] = Field(None, description="Indicator ID if enabled")
-    indicator_version: Optional[str] = Field(
-        None, description="Indicator version if enabled"
-    )
-    export_config: Optional[ExportConfig] = Field(None, description="Export settings")
+    indicator_id: str | None = Field(None, description="Indicator ID if enabled")
+    indicator_version: str | None = Field(None, description="Indicator version if enabled")
+    export_config: ExportConfig | None = Field(None, description="Export settings")
 
     @field_validator("symbols")
     @classmethod
-    def validate_symbol_format(cls, v: List[str]) -> List[str]:
+    def validate_symbol_format(cls, v: list[str]) -> list[str]:
         """Validate symbol format for all symbols."""
         for symbol in v:
             if ":" not in symbol:
@@ -242,7 +228,7 @@ class StreamConfig(BaseModel):
     @classmethod
     def validate_timeframe(cls, v: str) -> str:
         """Validate timeframe format."""
-        valid_timeframes: List[str] = [
+        valid_timeframes: list[str] = [
             "1m",
             "5m",
             "15m",
@@ -255,9 +241,7 @@ class StreamConfig(BaseModel):
             "1M",
         ]
         if v not in valid_timeframes:
-            raise ValueError(
-                f"Invalid timeframe '{v}'. Must be one of: {valid_timeframes}"
-            )
+            raise ValueError(f"Invalid timeframe '{v}'. Must be one of: {valid_timeframes}")
         return v
 
 
@@ -274,24 +258,12 @@ class StreamerResponse(BaseModel):
     )
 
     symbol: str = Field(..., description="Source symbol")
-    data_type: Literal["ohlcv", "trade", "indicator"] = Field(
-        ..., description="Type of data"
-    )
-    timestamp: datetime = Field(
-        default_factory=datetime.now, description="Response timestamp"
-    )
-    ohlcv_data: Optional[List[OHLCVData]] = Field(
-        None, description="OHLCV data if applicable"
-    )
-    trade_data: Optional[TradeData] = Field(
-        None, description="Trade data if applicable"
-    )
-    indicator_data: Optional[IndicatorData] = Field(
-        None, description="Indicator data if applicable"
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        None, description="Additional response metadata"
-    )
+    data_type: Literal["ohlcv", "trade", "indicator"] = Field(..., description="Type of data")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    ohlcv_data: list[OHLCVData] | None = Field(None, description="OHLCV data if applicable")
+    trade_data: TradeData | None = Field(None, description="Trade data if applicable")
+    indicator_data: IndicatorData | None = Field(None, description="Indicator data if applicable")
+    metadata: dict[str, Any] | None = Field(None, description="Additional response metadata")
 
 
 class RealtimeStreamData(BaseModel):
@@ -308,27 +280,21 @@ class RealtimeStreamData(BaseModel):
 
     session_info: SessionInfo = Field(..., description="Session information")
     config: StreamConfig = Field(..., description="Stream configuration")
-    responses: List[StreamerResponse] = Field(
-        default_factory=list, description="Stream responses"
-    )
+    responses: list[StreamerResponse] = Field(default_factory=list, description="Stream responses")
     connection_status: Literal["connected", "disconnected", "error"] = Field(
         "disconnected", description="Connection status"
     )
-    error_message: Optional[str] = Field(None, description="Error message if any")
-    last_update: datetime = Field(
-        default_factory=datetime.now, description="Last update timestamp"
-    )
+    error_message: str | None = Field(None, description="Error message if any")
+    last_update: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
 
     def add_response(self, response: StreamerResponse) -> None:
         """Add a new response to the stream data."""
         self.responses.append(response)
         self.last_update = datetime.now()
 
-    def get_latest_ohlcv(
-        self, symbol: Optional[str] = None
-    ) -> Optional[List[OHLCVData]]:
+    def get_latest_ohlcv(self, symbol: str | None = None) -> list[OHLCVData] | None:
         """Get the latest OHLCV data for a symbol or all symbols."""
-        ohlcv_responses: List[StreamerResponse] = [
+        ohlcv_responses: list[StreamerResponse] = [
             r
             for r in self.responses
             if r.data_type == "ohlcv" and (symbol is None or r.symbol == symbol)
@@ -337,23 +303,17 @@ class RealtimeStreamData(BaseModel):
         if not ohlcv_responses:
             return None
 
-        latest_response: StreamerResponse = max(
-            ohlcv_responses, key=lambda x: x.timestamp
-        )
+        latest_response: StreamerResponse = max(ohlcv_responses, key=lambda x: x.timestamp)
         return latest_response.ohlcv_data
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get streaming statistics."""
         return {
             "total_responses": len(self.responses),
             "ohlcv_count": len([r for r in self.responses if r.data_type == "ohlcv"]),
             "trade_count": len([r for r in self.responses if r.data_type == "trade"]),
-            "indicator_count": len(
-                [r for r in self.responses if r.data_type == "indicator"]
-            ),
+            "indicator_count": len([r for r in self.responses if r.data_type == "indicator"]),
             "unique_symbols": len(set(r.symbol for r in self.responses)),
-            "session_duration": (
-                self.last_update - self.session_info.created_at
-            ).total_seconds(),
+            "session_duration": (self.last_update - self.session_info.created_at).total_seconds(),
             "connection_status": self.connection_status,
         }

@@ -8,16 +8,16 @@ formatting and metadata inclusion options.
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any
 
-from .base_formatter import BaseFormatter
 from ..models import (
-    ExportResult,
-    ExportMetadata,
     ExportFormat,
+    ExportMetadata,
+    ExportResult,
     OHLCVExportData,
     ScannerExportData,
 )
+from .base_formatter import BaseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class JSONFormatter(BaseFormatter):
         return format_type.lower() == ExportFormat.JSON.value
 
     async def export_ohlcv(
-        self, data: List[OHLCVExportData], file_path: Union[Path, str, None] = None
+        self, data: list[OHLCVExportData], file_path: Path | str | None = None
     ) -> ExportResult:
         """
         Export OHLCV data to JSON format.
@@ -53,7 +53,7 @@ class JSONFormatter(BaseFormatter):
                 file_path = Path(file_path)
 
             # Convert data to JSON-serializable format
-            json_data: Dict[str, Any] = {
+            json_data: dict[str, Any] = {
                 "data": [self._convert_ohlcv_to_dict(item) for item in data]
             }
 
@@ -98,7 +98,7 @@ class JSONFormatter(BaseFormatter):
             return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
     async def export_scanner(
-        self, data: List[ScannerExportData], file_path: Union[Path, str, None] = None
+        self, data: list[ScannerExportData], file_path: Path | str | None = None
     ) -> ExportResult:
         """
         Export scanner data to JSON format.
@@ -120,7 +120,7 @@ class JSONFormatter(BaseFormatter):
                 file_path = Path(file_path)
 
             # Convert data to JSON-serializable format
-            json_data: Dict[str, Any] = {
+            json_data: dict[str, Any] = {
                 "data": [self._convert_scanner_to_dict(item) for item in data]
             }
 
@@ -159,7 +159,7 @@ class JSONFormatter(BaseFormatter):
 
             return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
-    def _convert_ohlcv_to_dict(self, item: OHLCVExportData) -> Dict[str, Any]:
+    def _convert_ohlcv_to_dict(self, item: OHLCVExportData) -> dict[str, Any]:
         """
         Convert OHLCV data item to dictionary.
 
@@ -169,7 +169,7 @@ class JSONFormatter(BaseFormatter):
         Returns:
             Dictionary representation
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "timestamp": self._prepare_timestamp(item.timestamp),
             "open": float(item.open),
             "high": float(item.high),
@@ -186,7 +186,7 @@ class JSONFormatter(BaseFormatter):
 
         return result
 
-    def _convert_scanner_to_dict(self, item: ScannerExportData) -> Dict[str, Any]:
+    def _convert_scanner_to_dict(self, item: ScannerExportData) -> dict[str, Any]:
         """
         Convert scanner data item to dictionary.
 
@@ -196,7 +196,7 @@ class JSONFormatter(BaseFormatter):
         Returns:
             Dictionary representation
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "name": item.name,
             **item.data,  # Flatten the data dictionary
         }
@@ -207,7 +207,7 @@ class JSONFormatter(BaseFormatter):
 
         return result
 
-    async def _write_json_file(self, data: Dict[str, Any], file_path: Path) -> None:
+    async def _write_json_file(self, data: dict[str, Any], file_path: Path) -> None:
         """
         Write JSON data to file with proper formatting.
 
@@ -222,7 +222,7 @@ class JSONFormatter(BaseFormatter):
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Get formatting options
-        indent: Union[int, None] = self.config.options.get("indent", 2)
+        indent: int | None = self.config.options.get("indent", 2)
         ensure_ascii: bool = self.config.options.get("ensure_ascii", False)
         sort_keys: bool = self.config.options.get("sort_keys", True)
 
@@ -239,7 +239,7 @@ class JSONFormatter(BaseFormatter):
 
         logger.info(f"Successfully exported JSON data to {file_path}")
 
-    def get_default_options(self) -> Dict[str, Any]:
+    def get_default_options(self) -> dict[str, Any]:
         """
         Get default JSON formatting options.
 

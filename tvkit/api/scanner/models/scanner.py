@@ -5,7 +5,7 @@ This module provides Pydantic models for interacting with the TradingView
 scanner API, including request payloads and response parsing.
 """
 
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -36,9 +36,7 @@ class SortConfig(BaseModel):
 class ScannerOptions(BaseModel):
     """Options for scanner request."""
 
-    lang: str = Field(
-        default="en", description="Language code for response localization"
-    )
+    lang: str = Field(default="en", description="Language code for response localization")
 
     @field_validator("lang")
     @classmethod
@@ -59,9 +57,7 @@ class ScannerRequest(BaseModel):
     options: ScannerOptions = Field(
         default_factory=ScannerOptions, description="Additional options for the scanner"
     )
-    range: tuple[int, int] = Field(
-        description="Range of results to return [start, end]"
-    )
+    range: tuple[int, int] = Field(description="Range of results to return [start, end]")
     sort: SortConfig = Field(description="Sorting configuration")
     preset: str = Field(description="Scanner preset (e.g., 'all_stocks', 'crypto')")
 
@@ -227,45 +223,39 @@ class StockData(BaseModel):
     """Model representing a single stock's data from scanner response."""
 
     name: str = Field(description="Stock symbol/ticker")
-    close: Optional[float] = Field(default=None, description="Current/last close price")
-    pricescale: Optional[int] = Field(default=None, description="Price scale factor")
-    minmov: Optional[int] = Field(default=None, description="Minimum price movement")
-    fractional: Optional[Union[str, bool]] = Field(
-        default=None, description="Whether price is fractional"
-    )
-    minmove2: Optional[int] = Field(
-        default=None, description="Secondary minimum movement"
-    )
-    currency: Optional[str] = Field(default=None, description="Currency code")
-    change: Optional[float] = Field(default=None, description="Price change")
-    volume: Optional[int] = Field(default=None, description="Trading volume")
-    relative_volume_10d_calc: Optional[float] = Field(
+    close: float | None = Field(default=None, description="Current/last close price")
+    pricescale: int | None = Field(default=None, description="Price scale factor")
+    minmov: int | None = Field(default=None, description="Minimum price movement")
+    fractional: str | bool | None = Field(default=None, description="Whether price is fractional")
+    minmove2: int | None = Field(default=None, description="Secondary minimum movement")
+    currency: str | None = Field(default=None, description="Currency code")
+    change: float | None = Field(default=None, description="Price change")
+    volume: int | None = Field(default=None, description="Trading volume")
+    relative_volume_10d_calc: float | None = Field(
         default=None, description="Relative volume compared to 10-day average"
     )
-    market_cap_basic: Optional[int] = Field(
-        default=None, description="Basic market capitalization"
-    )
-    fundamental_currency_code: Optional[str] = Field(
+    market_cap_basic: int | None = Field(default=None, description="Basic market capitalization")
+    fundamental_currency_code: str | None = Field(
         default=None, description="Fundamental currency code"
     )
-    price_earnings_ttm: Optional[float] = Field(
+    price_earnings_ttm: float | None = Field(
         default=None, description="Price-to-earnings ratio (trailing twelve months)"
     )
-    earnings_per_share_diluted_ttm: Optional[float] = Field(
+    earnings_per_share_diluted_ttm: float | None = Field(
         default=None, description="Diluted earnings per share (TTM)"
     )
-    earnings_per_share_diluted_yoy_growth_ttm: Optional[float] = Field(
+    earnings_per_share_diluted_yoy_growth_ttm: float | None = Field(
         default=None, description="Year-over-year EPS growth (TTM)"
     )
-    dividends_yield_current: Optional[float] = Field(
+    dividends_yield_current: float | None = Field(
         default=None, description="Current dividend yield"
     )
-    sector_tr: Optional[str] = Field(
+    sector_tr: str | None = Field(
         default=None, alias="sector.tr", description="Sector classification (TR)"
     )
-    market: Optional[str] = Field(default=None, description="Market/exchange")
-    sector: Optional[str] = Field(default=None, description="Sector classification")
-    recommendation_mark: Optional[float] = Field(
+    market: str | None = Field(default=None, description="Market/exchange")
+    sector: str | None = Field(default=None, description="Sector classification")
+    recommendation_mark: float | None = Field(
         default=None, description="Analyst recommendation score"
     )
 
@@ -293,12 +283,11 @@ class StockData(BaseModel):
         """
         if len(row_data) != len(columns):
             raise ValueError(
-                f"Row data length ({len(row_data)}) doesn't match "
-                f"columns length ({len(columns)})"
+                f"Row data length ({len(row_data)}) doesn't match columns length ({len(columns)})"
             )
 
         # Map row data to column names
-        data_dict = dict(zip(columns, row_data))
+        data_dict = dict(zip(columns, row_data, strict=False))
 
         # Handle special column name mappings
         if "sector.tr" in data_dict:
@@ -321,10 +310,8 @@ class ScannerResponse(BaseModel):
     """Response model for TradingView scanner API."""
 
     data: list[StockData] = Field(description="List of stock data")
-    total_count: Optional[int] = Field(
-        default=None, description="Total number of available results"
-    )
-    next_page_token: Optional[str] = Field(
+    total_count: int | None = Field(default=None, description="Total number of available results")
+    next_page_token: str | None = Field(
         default=None, description="Token for retrieving next page of results"
     )
 
@@ -363,17 +350,13 @@ class ScannerResponse(BaseModel):
                             # Use the symbol from "s" field as the name
                             symbol_field: str = str(item["s"])
                             symbol: str = (
-                                symbol_field.split(":")[-1]
-                                if ":" in symbol_field
-                                else symbol_field
+                                symbol_field.split(":")[-1] if ":" in symbol_field else symbol_field
                             )
                             # Replace first element (name) with the extracted symbol
                             row_data = [symbol] + row_data[1:]
                     else:
                         # Handle legacy format: direct array
-                        row_data = (
-                            list(item) if isinstance(item, (list, tuple)) else [item]
-                        )
+                        row_data = list(item) if isinstance(item, list | tuple) else [item]
 
                     stock = StockData.from_scanner_row(row_data, columns)
                     stocks.append(stock)
@@ -448,9 +431,7 @@ class Columns:
     PRICE_EARNINGS_GROWTH_TTM = "price_earnings_growth_ttm"
     PRICE_SALES_CURRENT = "price_sales_current"
     PRICE_BOOK_FQ = "price_book_fq"
-    PRICE_TO_CASH_F_OPERATING_ACTIVITIES_TTM = (
-        "price_to_cash_f_operating_activities_ttm"
-    )
+    PRICE_TO_CASH_F_OPERATING_ACTIVITIES_TTM = "price_to_cash_f_operating_activities_ttm"
     PRICE_FREE_CASH_FLOW_TTM = "price_free_cash_flow_ttm"
     PRICE_TO_CASH_RATIO = "price_to_cash_ratio"
 
@@ -462,9 +443,7 @@ class Columns:
 
     # Earnings
     EARNINGS_PER_SHARE_DILUTED_TTM = "earnings_per_share_diluted_ttm"
-    EARNINGS_PER_SHARE_DILUTED_YOY_GROWTH_TTM = (
-        "earnings_per_share_diluted_yoy_growth_ttm"
-    )
+    EARNINGS_PER_SHARE_DILUTED_YOY_GROWTH_TTM = "earnings_per_share_diluted_yoy_growth_ttm"
 
     # Dividends
     DPS_COMMON_STOCK_PRIM_ISSUE_FY = "dps_common_stock_prim_issue_fy"
@@ -472,9 +451,7 @@ class Columns:
     DIVIDENDS_YIELD_CURRENT = "dividends_yield_current"
     DIVIDENDS_YIELD = "dividends_yield"
     DIVIDEND_PAYOUT_RATIO_TTM = "dividend_payout_ratio_ttm"
-    DPS_COMMON_STOCK_PRIM_ISSUE_YOY_GROWTH_FY = (
-        "dps_common_stock_prim_issue_yoy_growth_fy"
-    )
+    DPS_COMMON_STOCK_PRIM_ISSUE_YOY_GROWTH_FY = "dps_common_stock_prim_issue_yoy_growth_fy"
     CONTINUOUS_DIVIDEND_PAYOUT = "continuous_dividend_payout"
     CONTINUOUS_DIVIDEND_GROWTH = "continuous_dividend_growth"
 
@@ -509,9 +486,7 @@ class Columns:
     CURRENT_RATIO_FQ = "current_ratio_fq"
     QUICK_RATIO_FQ = "quick_ratio_fq"
     DEBT_TO_EQUITY_FQ = "debt_to_equity_fq"
-    CASH_N_SHORT_TERM_INVEST_TO_TOTAL_DEBT_FQ = (
-        "cash_n_short_term_invest_to_total_debt_fq"
-    )
+    CASH_N_SHORT_TERM_INVEST_TO_TOTAL_DEBT_FQ = "cash_n_short_term_invest_to_total_debt_fq"
 
     # Cash Flow
     CASH_F_OPERATING_ACTIVITIES_TTM = "cash_f_operating_activities_ttm"
@@ -813,7 +788,7 @@ class ColumnSets:
 
 
 def create_scanner_request(
-    columns: Optional[list[str]] = None,
+    columns: list[str] | None = None,
     preset: str = ScannerPresets.ALL_STOCKS,
     sort_by: str = "name",
     sort_order: Literal["asc", "desc"] = "asc",

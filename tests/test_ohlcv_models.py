@@ -54,8 +54,8 @@ class TestOHLCVBar:
 
     def test_ohlcv_bar_from_array_invalid_length(self):
         """Test that from_array raises error with invalid array length."""
-        with pytest.raises(ValueError, match="Expected 6 elements"):
-            OHLCVBar.from_array([1, 2, 3, 4, 5])  # Only 5 elements
+        with pytest.raises(ValueError, match="Expected 5 or 6 elements"):
+            OHLCVBar.from_array([1, 2, 3, 4])  # Only 4 elements — 5 or 6 are valid
 
     def test_ohlcv_bar_validation(self) -> None:
         """Test OHLCVBar field validation."""

@@ -5,19 +5,19 @@ This module provides market identifiers and metadata for TradingView's scanner A
 All market identifiers are extracted from TradingView's official market selection dialog.
 """
 
-from enum import Enum
-from typing import Dict, List, NamedTuple
+from enum import StrEnum
+from typing import NamedTuple
 
 
 class MarketInfo(NamedTuple):
     """Market information containing display name and exchanges."""
 
     name: str
-    exchanges: List[str]
+    exchanges: list[str]
     description: str
 
 
-class Market(str, Enum):
+class Market(StrEnum):
     """
     Available markets for TradingView scanner API.
 
@@ -107,7 +107,7 @@ class Market(str, Enum):
 
 
 # Market metadata with exchange information
-MARKET_INFO: Dict[Market, MarketInfo] = {
+MARKET_INFO: dict[Market, MarketInfo] = {
     # Global
     Market.GLOBAL: MarketInfo(
         name="Entire world", exchanges=[], description="Global markets overview"
@@ -163,18 +163,14 @@ MARKET_INFO: Dict[Market, MarketInfo] = {
     Market.ESTONIA: MarketInfo(
         name="Estonia", exchanges=["OMXTSE"], description="Estonian stock market"
     ),
-    Market.SPAIN: MarketInfo(
-        name="Spain", exchanges=["BME"], description="Spanish stock market"
-    ),
+    Market.SPAIN: MarketInfo(name="Spain", exchanges=["BME"], description="Spanish stock market"),
     Market.FINLAND: MarketInfo(
         name="Finland", exchanges=["OMXHEX"], description="Finnish stock market"
     ),
     Market.FRANCE: MarketInfo(
         name="France", exchanges=["EURONEXTPAR"], description="French stock market"
     ),
-    Market.GREECE: MarketInfo(
-        name="Greece", exchanges=["ATHEX"], description="Greek stock market"
-    ),
+    Market.GREECE: MarketInfo(name="Greece", exchanges=["ATHEX"], description="Greek stock market"),
     Market.HUNGARY: MarketInfo(
         name="Hungary", exchanges=["BET"], description="Hungarian stock market"
     ),
@@ -215,9 +211,7 @@ MARKET_INFO: Dict[Market, MarketInfo] = {
     Market.SERBIA: MarketInfo(
         name="Serbia", exchanges=["BELEX"], description="Serbian stock market"
     ),
-    Market.RUSSIA: MarketInfo(
-        name="Russia", exchanges=["RUS"], description="Russian stock market"
-    ),
+    Market.RUSSIA: MarketInfo(name="Russia", exchanges=["RUS"], description="Russian stock market"),
     Market.ROMANIA: MarketInfo(
         name="Romania", exchanges=["BVB"], description="Romanian stock market"
     ),
@@ -244,27 +238,19 @@ MARKET_INFO: Dict[Market, MarketInfo] = {
     Market.BAHRAIN: MarketInfo(
         name="Bahrain", exchanges=["BAHRAIN"], description="Bahrain stock market"
     ),
-    Market.EGYPT: MarketInfo(
-        name="Egypt", exchanges=["EGX"], description="Egyptian stock market"
-    ),
+    Market.EGYPT: MarketInfo(name="Egypt", exchanges=["EGX"], description="Egyptian stock market"),
     Market.ISRAEL: MarketInfo(
         name="Israel", exchanges=["TASE"], description="Israeli stock market"
     ),
-    Market.KENYA: MarketInfo(
-        name="Kenya", exchanges=["NSEKE"], description="Kenyan stock market"
-    ),
-    Market.KUWAIT: MarketInfo(
-        name="Kuwait", exchanges=["KSE"], description="Kuwaiti stock market"
-    ),
+    Market.KENYA: MarketInfo(name="Kenya", exchanges=["NSEKE"], description="Kenyan stock market"),
+    Market.KUWAIT: MarketInfo(name="Kuwait", exchanges=["KSE"], description="Kuwaiti stock market"),
     Market.MOROCCO: MarketInfo(
         name="Morocco", exchanges=["CSEMA"], description="Moroccan stock market"
     ),
     Market.NIGERIA: MarketInfo(
         name="Nigeria", exchanges=["NSENG"], description="Nigerian stock market"
     ),
-    Market.QATAR: MarketInfo(
-        name="Qatar", exchanges=["QSE"], description="Qatari stock market"
-    ),
+    Market.QATAR: MarketInfo(name="Qatar", exchanges=["QSE"], description="Qatari stock market"),
     Market.KSA: MarketInfo(
         name="Saudi Arabia",
         exchanges=["TADAWUL"],
@@ -285,18 +271,14 @@ MARKET_INFO: Dict[Market, MarketInfo] = {
     Market.BRAZIL: MarketInfo(
         name="Brazil", exchanges=["BMFBOVESPA"], description="Brazilian stock market"
     ),
-    Market.CHILE: MarketInfo(
-        name="Chile", exchanges=["BCS"], description="Chilean stock market"
-    ),
+    Market.CHILE: MarketInfo(name="Chile", exchanges=["BCS"], description="Chilean stock market"),
     Market.COLOMBIA: MarketInfo(
         name="Colombia", exchanges=["BVC"], description="Colombian stock market"
     ),
     Market.MEXICO: MarketInfo(
         name="Mexico", exchanges=["BMV", "BIVA"], description="Mexican stock markets"
     ),
-    Market.PERU: MarketInfo(
-        name="Peru", exchanges=["BVL"], description="Peruvian stock market"
-    ),
+    Market.PERU: MarketInfo(name="Peru", exchanges=["BVL"], description="Peruvian stock market"),
     Market.VENEZUELA: MarketInfo(
         name="Venezuela", exchanges=["BVCV"], description="Venezuelan stock market"
     ),
@@ -365,7 +347,7 @@ MARKET_INFO: Dict[Market, MarketInfo] = {
 }
 
 
-class MarketRegion(str, Enum):
+class MarketRegion(StrEnum):
     """Market regions for grouping markets."""
 
     GLOBAL = "global"
@@ -377,7 +359,7 @@ class MarketRegion(str, Enum):
 
 
 # Market groupings by region
-MARKETS_BY_REGION: Dict[MarketRegion, List[Market]] = {
+MARKETS_BY_REGION: dict[MarketRegion, list[Market]] = {
     MarketRegion.GLOBAL: [
         Market.GLOBAL,
     ],
@@ -480,7 +462,7 @@ def get_market_info(market: Market) -> MarketInfo:
     return MARKET_INFO[market]
 
 
-def get_markets_by_region(region: MarketRegion) -> List[Market]:
+def get_markets_by_region(region: MarketRegion) -> list[Market]:
     """
     Get all markets in a specific region.
 
@@ -497,7 +479,7 @@ def get_markets_by_region(region: MarketRegion) -> List[Market]:
     return MARKETS_BY_REGION[region]
 
 
-def get_all_markets() -> List[Market]:
+def get_all_markets() -> list[Market]:
     """
     Get all available markets.
 

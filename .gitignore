@@ -175,14 +175,17 @@ cython_debug/
 # Project-specific ignores (tvkit)
 # Development files (keep local only)
 debug/
+docs/plans/
 .claude/
 CLAUDE.md
-.github/
 scripts/
+.github/instructions/
+.github/prompts/
+.github/copilot-instructions.md
 main.py
 tvkit.code-workspace
 
 # Example outputs and temporary files
 examples/tvkit_exports/
-export/
+/export/
 *.ipynb_checkpoints/

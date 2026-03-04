@@ -57,9 +57,7 @@ def validate_interval(interval: str) -> None:
             if interval.isdigit():
                 # Minutes validation
                 minutes: int = int(interval)
-                if (
-                    minutes <= 0 or minutes > 1440
-                ):  # Max 1 day in minutes (common limit)
+                if minutes <= 0 or minutes > 1440:  # Max 1 day in minutes (common limit)
                     raise ValueError(
                         f"Invalid minute interval: {interval}. Must be between 1 and 1440 minutes"
                     )

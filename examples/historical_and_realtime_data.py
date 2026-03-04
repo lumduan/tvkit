@@ -19,18 +19,18 @@ Usage:
 import asyncio
 import logging
 import warnings
-from typing import List, Dict
+
+from tvkit.api.chart.models.ohlcv import OHLCVBar
 
 # TVKit imports
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.api.chart.models.ohlcv import OHLCVBar
-from tvkit.export import DataExporter, ExportFormat
 from tvkit.api.utils import convert_timestamp_to_iso
+from tvkit.export import DataExporter, ExportFormat
 
 # Optional: Data analysis and visualization
 try:
-    import polars as pl
     import matplotlib.pyplot as plt
+    import polars as pl
     import seaborn as sns
 
     analysis_available = True
@@ -56,7 +56,7 @@ def configure_logging() -> None:
     print("🔇 Debug logging disabled - clean output mode enabled")
 
 
-async def fetch_historical_ohlcv_data() -> List[OHLCVBar]:
+async def fetch_historical_ohlcv_data() -> list[OHLCVBar]:
     """Fetch historical OHLCV data for Apple stock."""
     async with OHLCV() as ohlcv:
         # Fetch last 100 daily bars for Apple
@@ -82,7 +82,7 @@ async def fetch_historical_ohlcv_data() -> List[OHLCVBar]:
     return ohlcv_data
 
 
-async def demonstrate_data_export(apple_data: List[OHLCVBar]):
+async def demonstrate_data_export(apple_data: list[OHLCVBar]):
     """Demonstrate different data export formats."""
     exporter = DataExporter()
 
@@ -118,7 +118,7 @@ async def demonstrate_data_export(apple_data: List[OHLCVBar]):
     return df
 
 
-async def compare_multiple_symbols() -> Dict[str, List[OHLCVBar]]:
+async def compare_multiple_symbols() -> dict[str, list[OHLCVBar]]:
     """Fetch and compare data for multiple symbols."""
     symbols = [
         "NASDAQ:AAPL",  # Apple
@@ -168,7 +168,7 @@ async def compare_multiple_symbols() -> Dict[str, List[OHLCVBar]]:
     return symbol_data
 
 
-async def fetch_crypto_and_forex_data() -> Dict[str, Dict[str, List[OHLCVBar]]]:
+async def fetch_crypto_and_forex_data() -> dict[str, dict[str, list[OHLCVBar]]]:
     """Demonstrate fetching cryptocurrency and forex data."""
 
     # Different asset classes
@@ -206,9 +206,7 @@ async def fetch_crypto_and_forex_data() -> Dict[str, Dict[str, List[OHLCVBar]]]:
 
                     # Show latest price
                     latest = data[-1]
-                    print(
-                        f"    ✅ Latest: ${latest.close:.6f} (Vol: {latest.volume:,.0f})"
-                    )
+                    print(f"    ✅ Latest: ${latest.close:.6f} (Vol: {latest.volume:,.0f})")
 
                 except Exception as e:
                     print(f"    ❌ Failed: {e}")
@@ -231,8 +229,7 @@ async def fetch_crypto_and_forex_data() -> Dict[str, Dict[str, List[OHLCVBar]]]:
 
                 if returns:
                     volatility = (
-                        sum((r - sum(returns) / len(returns)) ** 2 for r in returns)
-                        / len(returns)
+                        sum((r - sum(returns) / len(returns)) ** 2 for r in returns) / len(returns)
                     ) ** 0.5
                     volatility_pct = volatility * 100
 
@@ -282,7 +279,7 @@ async def limited_realtime_demo() -> None:
     print(f"\n✅ Real-time demo completed. Received {bar_count} bars.")
 
 
-async def fetch_macro_liquidity_indicators() -> Dict[str, Dict]:
+async def fetch_macro_liquidity_indicators() -> dict[str, dict]:
     """
     Fetch macro liquidity and market breadth indicators.
 
@@ -364,8 +361,8 @@ async def fetch_macro_liquidity_indicators() -> Dict[str, Dict]:
 
 
 async def analyze_macro_indicators_for_quantitative_models(
-    macro_data: Dict[str, Dict],
-) -> Dict:
+    macro_data: dict[str, dict],
+) -> dict:
     """
     Analyze macro indicators for quantitative trading models.
 
@@ -408,16 +405,12 @@ async def analyze_macro_indicators_for_quantitative_models(
 
             recent_avg = sum(recent_values) / len(recent_values)
             historical_avg = (
-                sum(historical_values) / len(historical_values)
-                if historical_values
-                else recent_avg
+                sum(historical_values) / len(historical_values) if historical_values else recent_avg
             )
 
             # Trend analysis
             trend_change = (
-                ((recent_avg - historical_avg) / historical_avg * 100)
-                if historical_avg != 0
-                else 0
+                ((recent_avg - historical_avg) / historical_avg * 100) if historical_avg != 0 else 0
             )
 
             # Volatility analysis
@@ -545,7 +538,7 @@ async def analyze_macro_indicators_for_quantitative_models(
     return analysis_results
 
 
-async def demonstrate_error_handling(apple_data: List[OHLCVBar]) -> None:
+async def demonstrate_error_handling(apple_data: list[OHLCVBar]) -> None:
     """Show proper error handling techniques with TVKit."""
 
     print("🛡️  Error Handling and Best Practices")
@@ -654,9 +647,7 @@ async def main() -> None:
         print("\n" + "=" * 50)
         print("🎯 Macro Liquidity and Market Breadth Indicators")
         print("=" * 50)
-        print(
-            "⚠️ Note: These indicators are essential for quantitative liquidity models"
-        )
+        print("⚠️ Note: These indicators are essential for quantitative liquidity models")
         macro_data = await fetch_macro_liquidity_indicators()
         if macro_data:
             await analyze_macro_indicators_for_quantitative_models(macro_data)
@@ -681,22 +672,14 @@ async def main() -> None:
         print("This script has demonstrated the comprehensive capabilities of TVKit:")
         print()
         print("### ✅ Completed Examples")
-        print(
-            "- Basic OHLCV Data Fetching - Retrieved historical market data for Apple stock"
-        )
-        print(
-            "- Multi-format Data Export - Exported to Polars DataFrame, JSON, and CSV formats"
-        )
+        print("- Basic OHLCV Data Fetching - Retrieved historical market data for Apple stock")
+        print("- Multi-format Data Export - Exported to Polars DataFrame, JSON, and CSV formats")
         print("- Multi-symbol Operations - Compared performance across multiple stocks")
-        print(
-            "- Cryptocurrency & Forex - Demonstrated support for various asset classes"
-        )
+        print("- Cryptocurrency & Forex - Demonstrated support for various asset classes")
         print(
             "- Macro Liquidity Indicators - Accessed INDEX:NDFI and USI:PCC for quantitative analysis"
         )
-        print(
-            "- Quantitative Integration - Showed integration with systematic trading models"
-        )
+        print("- Quantitative Integration - Showed integration with systematic trading models")
         print("- Real-time Streaming - Limited demo of live data streaming")
         print("- Error Handling - Best practices for robust applications")
         print()
@@ -704,13 +687,9 @@ async def main() -> None:
         print("- Async Architecture - All operations use modern async/await patterns")
         print("- Type Safety - Comprehensive Pydantic models for data validation")
         print("- Multiple Asset Classes - Stocks, crypto, forex, and macro indicators")
-        print(
-            "- Flexible Export System - Support for Polars, JSON, CSV with custom options"
-        )
+        print("- Flexible Export System - Support for Polars, JSON, CSV with custom options")
         print("- Real-time Capabilities - WebSocket streaming for live market data")
-        print(
-            "- Quantitative Analysis - Tools for systematic trading and risk management"
-        )
+        print("- Quantitative Analysis - Tools for systematic trading and risk management")
         print("- Macro Indicators - Access to essential liquidity and breadth metrics")
         print("- Error Resilience - Robust error handling and validation")
         print()

@@ -7,7 +7,7 @@ must implement, ensuring consistent interfaces across different formats.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, List, Union
+from typing import Any
 
 from ..models import ExportConfig, ExportResult, OHLCVExportData, ScannerExportData
 
@@ -26,7 +26,7 @@ class BaseFormatter(ABC):
 
     @abstractmethod
     async def export_ohlcv(
-        self, data: List[OHLCVExportData], file_path: Union[Path, str, None] = None
+        self, data: list[OHLCVExportData], file_path: Path | str | None = None
     ) -> ExportResult:
         """
         Export OHLCV data to the specified format.
@@ -46,7 +46,7 @@ class BaseFormatter(ABC):
 
     @abstractmethod
     async def export_scanner(
-        self, data: List[ScannerExportData], file_path: Union[Path, str, None] = None
+        self, data: list[ScannerExportData], file_path: Path | str | None = None
     ) -> ExportResult:
         """
         Export scanner data to the specified format.
@@ -102,7 +102,7 @@ class BaseFormatter(ABC):
             return export_dir / filename
         return Path(filename)
 
-    def _validate_data(self, data: List[Any]) -> None:
+    def _validate_data(self, data: list[Any]) -> None:
         """
         Validate input data before export.
 
@@ -118,7 +118,7 @@ class BaseFormatter(ABC):
         if not isinstance(data, list):
             raise ValueError("Data must be a list")
 
-    def _prepare_timestamp(self, timestamp: Union[float, str, Any]) -> Any:
+    def _prepare_timestamp(self, timestamp: float | str | Any) -> Any:
         """
         Prepare timestamp based on configuration.
 
@@ -131,7 +131,7 @@ class BaseFormatter(ABC):
         from datetime import datetime
 
         if self.config.timestamp_format == "unix":
-            if isinstance(timestamp, (int, float)):
+            if isinstance(timestamp, int | float):
                 return timestamp
             elif hasattr(timestamp, "timestamp"):
                 return timestamp.timestamp()
@@ -139,7 +139,7 @@ class BaseFormatter(ABC):
                 return float(timestamp)
 
         elif self.config.timestamp_format == "iso":
-            if isinstance(timestamp, (int, float)):
+            if isinstance(timestamp, int | float):
                 return datetime.fromtimestamp(timestamp).isoformat()
             elif hasattr(timestamp, "isoformat"):
                 return timestamp.isoformat()
@@ -147,7 +147,7 @@ class BaseFormatter(ABC):
                 return str(timestamp)
 
         elif self.config.timestamp_format == "datetime":
-            if isinstance(timestamp, (int, float)):
+            if isinstance(timestamp, int | float):
                 return datetime.fromtimestamp(timestamp)
             elif isinstance(timestamp, str):
                 # Try to parse ISO format

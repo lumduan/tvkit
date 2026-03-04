@@ -1,6 +1,7 @@
 """Tests for interval validation utility function."""
 
 import pytest
+
 from tvkit.api.chart.utils import validate_interval
 
 

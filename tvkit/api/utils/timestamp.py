@@ -5,7 +5,7 @@ This module provides functions for converting between Unix timestamps and ISO 86
 specifically designed for handling TradingView's timestamp format.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def convert_timestamp_to_iso(timestamp: float) -> str:
@@ -27,5 +27,5 @@ def convert_timestamp_to_iso(timestamp: float) -> str:
         >>> convert_timestamp_to_iso(1640995200.0)
         '2022-01-01T00:00:00+00:00'
     """
-    dt: datetime = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    dt: datetime = datetime.fromtimestamp(timestamp, tz=UTC)
     return dt.isoformat()
