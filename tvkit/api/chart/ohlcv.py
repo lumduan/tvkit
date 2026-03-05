@@ -350,7 +350,13 @@ class OHLCV:
                     continue
 
             except Exception as e:
-                # Outer guard: skip unparseable messages (e.g. malformed WebSocket frames)
+                # Re-raise intentional ValueErrors (e.g. from series_error handler).
+                # pydantic.ValidationError is a subclass of ValueError in pydantic v2,
+                # so exclude it explicitly — invalid message structures are skipped, not
+                # propagated.  Other ValueErrors (raised deliberately by this method)
+                # must propagate to the caller.
+                if isinstance(e, ValueError) and not isinstance(e, ValidationError):
+                    raise
                 logger.debug(
                     f"Skipping unparseable message in historical fetch: {data} - Error: {e}"
                 )
