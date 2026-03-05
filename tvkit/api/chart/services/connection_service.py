@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
@@ -13,6 +14,19 @@ from tvkit.api.chart.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
 )
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+# Protocol identifier constants for TradingView WebSocket series messages.
+# These values appear in both create_series and modify_series parameter lists.
+# Centralised here to avoid silent regressions if TradingView updates its protocol.
+_SERIES_DATASOURCE_ID: str = "sds_1"
+_SERIES_ID: str = "s1"
+_SYMBOL_REF_ID: str = "sds_sym_1"
+
+# Precompiled patterns for TradingView WebSocket frame parsing.
+_HEARTBEAT_RE: re.Pattern[str] = re.compile(r"~m~\d+~m~~h~\d+$")
+_FRAME_SPLIT_RE: re.Pattern[str] = re.compile(r"~m~\d+~m~")
 
 
 class ConnectionService:
@@ -31,7 +45,7 @@ class ConnectionService:
             ws_url: The WebSocket URL for TradingView data streaming
         """
         self.ws_url: str = ws_url
-        self.ws: ClientConnection
+        self.ws: ClientConnection | None = None
 
     async def connect(self) -> None:
         """
@@ -41,7 +55,7 @@ class ConnectionService:
             WebSocketException: If connection fails
         """
         try:
-            logging.info("Establishing WebSocket connection to %s", self.ws_url)
+            logger.info("Establishing WebSocket connection to %s", self.ws_url)
 
             request_header: ExtraRequestHeader = ExtraRequestHeader(
                 accept_encoding="gzip, deflate, br, zstd",
@@ -63,14 +77,14 @@ class ConnectionService:
 
             self.ws = await connect(**ws_config.model_dump())
 
-            logging.info("WebSocket connection established successfully")
+            logger.info("WebSocket connection established successfully")
         except Exception as e:
-            logging.error("Failed to establish WebSocket connection: %s", e)
+            logger.error("Failed to establish WebSocket connection: %s", e)
             raise
 
     async def close(self) -> None:
         """Close the WebSocket connection."""
-        if hasattr(self, "ws") and self.ws:
+        if self.ws is not None:
             await self.ws.close()
 
     async def initialize_sessions(
@@ -127,6 +141,88 @@ class ConnectionService:
             "rtc",
         ]
 
+    def _create_series_args(
+        self,
+        chart_session: str,
+        timeframe: str,
+        bars_count: int,
+    ) -> list[Any]:
+        """
+        Build the 7-element parameter list for the create_series WebSocket message.
+
+        The parameter order and count are protocol-critical. The trailing empty string
+        must always be present — omitting it silently breaks the TradingView protocol.
+
+        Note: tvkit currently supports a single series per chart session. The series
+        identifiers (_SERIES_ID, _SERIES_DATASOURCE_ID, _SYMBOL_REF_ID) are fixed
+        constants that match this single-series design.
+
+        Args:
+            chart_session: The chart session identifier (e.g. "cs_abcdefghijkl").
+            timeframe: The interval string (e.g. "1D", "60", "1H").
+            bars_count: Number of bars to request. In range mode this is MAX_BARS_REQUEST
+                and is ignored by TradingView once modify_series applies the range.
+
+        Returns:
+            List of 7 elements:
+            [chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars_count, ""]
+
+        Example:
+            >>> svc._create_series_args("cs_abc123", "1D", 100)
+            ["cs_abc123", "sds_1", "s1", "sds_sym_1", "1D", 100, ""]
+        """
+        # tvkit currently supports a single series per chart session.
+        return [
+            chart_session,
+            _SERIES_DATASOURCE_ID,
+            _SERIES_ID,
+            _SYMBOL_REF_ID,
+            timeframe,
+            bars_count,
+            "",
+        ]
+
+    def _modify_series_args(
+        self,
+        chart_session: str,
+        timeframe: str,
+        range_param: str,
+    ) -> list[Any]:
+        """
+        Build the 6-element parameter list for the modify_series WebSocket message.
+
+        modify_series is sent in range mode immediately after create_series to apply
+        the date range constraint. Unlike create_series, it has exactly 6 elements
+        with no trailing empty string.
+
+        The range_param value is transmitted as-is. Callers are responsible for
+        producing a valid "r,<from_unix>:<to_unix>" string (e.g. via
+        tvkit.api.chart.utils.build_range_param()). Malformed strings are not
+        validated here — validation belongs at the OHLCV client layer.
+
+        Args:
+            chart_session: The chart session identifier (e.g. "cs_abcdefghijkl").
+            timeframe: The interval string (e.g. "1D", "60", "1H").
+            range_param: TradingView range string in "r,<from_unix>:<to_unix>" format,
+                as produced by tvkit.api.chart.utils.build_range_param().
+
+        Returns:
+            List of 6 elements:
+            [chart_session, "sds_1", "s1", "sds_sym_1", timeframe, range_param]
+
+        Example:
+            >>> svc._modify_series_args("cs_abc123", "1D", "r,1704067200:1735603200")
+            ["cs_abc123", "sds_1", "s1", "sds_sym_1", "1D", "r,1704067200:1735603200"]
+        """
+        return [
+            chart_session,
+            _SERIES_DATASOURCE_ID,
+            _SERIES_ID,
+            _SYMBOL_REF_ID,
+            timeframe,
+            range_param,
+        ]
+
     async def add_symbol_to_sessions(
         self,
         quote_session: str,
@@ -135,9 +231,23 @@ class ConnectionService:
         timeframe: str,
         bars_count: int,
         send_message_func: Callable[[str, list[Any]], Awaitable[None]],
+        *,
+        range_param: str = "",
     ) -> None:
         """
         Adds the specified symbol to the quote and chart sessions.
+
+        In count mode (range_param omitted or ""), only create_series is sent.
+        In range mode (range_param non-empty), modify_series is sent immediately
+        after create_series to apply the date range constraint before data streams.
+
+        This method is designed to be called once per symbol subscription setup.
+        Calling it twice on the same chart_session creates a duplicate series on
+        the TradingView side — preventing this is a caller responsibility.
+
+        The range_param value is transmitted as-is to the TradingView protocol.
+        Validation of range_param format belongs at the OHLCV client layer, where
+        build_range_param() produces a validated string before passing it here.
 
         Args:
             quote_session: The quote session identifier
@@ -146,16 +256,25 @@ class ConnectionService:
             timeframe: The timeframe for the chart (default is "1")
             bars_count: Number of bars to fetch for the chart
             send_message_func: Function to send messages through the WebSocket
+            range_param: TradingView range string ("r,<from_unix>:<to_unix>") for
+                date-range mode. When non-empty, a modify_series message is sent
+                immediately after create_series to apply the date constraint.
+                Defaults to "" (count mode — modify_series is not sent).
         """
         resolve_symbol: str = json.dumps({"adjustment": "splits", "symbol": exchange_symbol})
         await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
         await send_message_func(
-            "resolve_symbol", [chart_session, "sds_sym_1", f"={resolve_symbol}"]
+            "resolve_symbol", [chart_session, _SYMBOL_REF_ID, f"={resolve_symbol}"]
         )
         await send_message_func(
             "create_series",
-            [chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars_count, ""],
+            self._create_series_args(chart_session, timeframe, bars_count),
         )
+        if range_param:
+            await send_message_func(
+                "modify_series",
+                self._modify_series_args(chart_session, timeframe, range_param),
+            )
         await send_message_func("quote_fast_symbols", [quote_session, exchange_symbol])
         await send_message_func(
             "create_study",
@@ -163,7 +282,7 @@ class ConnectionService:
                 chart_session,
                 "st1",
                 "st1",
-                "sds_1",
+                _SERIES_DATASOURCE_ID,
                 "Volume@tv-basicstudies-246",
                 {"length": 20, "col_prev_close": "false"},
             ],
@@ -208,7 +327,7 @@ class ConnectionService:
         Raises:
             RuntimeError: If WebSocket connection is not established
         """
-        if not self.ws:
+        if self.ws is None:
             raise RuntimeError("WebSocket connection not established")
 
         try:
@@ -223,30 +342,31 @@ class ConnectionService:
                         # Handle memoryview and other buffer types
                         result = bytes(message).decode("utf-8")
 
-                    # Check if the result is a heartbeat or actual data
-                    import re
-
-                    if re.match(r"~m~\d+~m~~h~\d+$", result):
-                        logging.debug(f"Received heartbeat: {result}")
-                        await self.ws.send(result)  # Echo back the heartbeat
+                    if _HEARTBEAT_RE.match(result):
+                        logger.debug("Received heartbeat: %s", result)
+                        try:
+                            await self.ws.send(result)  # Echo back the heartbeat
+                        except ConnectionClosed:
+                            logger.debug("Connection closed while echoing heartbeat")
+                            break
                     else:
-                        split_result: list[str] = [x for x in re.split(r"~m~\d+~m~", result) if x]
+                        split_result: list[str] = [x for x in _FRAME_SPLIT_RE.split(result) if x]
                         for item in split_result:
                             if item:
                                 try:
                                     yield json.loads(item)  # Yield parsed JSON data
                                 except json.JSONDecodeError:
-                                    logging.warning(f"Failed to parse JSON: {item}")
+                                    logger.warning("Failed to parse JSON: %s", item)
                                     continue
 
                 except ConnectionClosed:
-                    logging.error("WebSocket connection closed.")
+                    logger.error("WebSocket connection closed.")
                     break
                 except WebSocketException as e:
-                    logging.error(f"WebSocket error occurred: {e}")
+                    logger.error("WebSocket error occurred: %s", e)
                     break
                 except Exception as e:
-                    logging.error(f"An unexpected error occurred: {e}")
+                    logger.error("An unexpected error occurred: %s", e)
                     break
         finally:
             await self.close()

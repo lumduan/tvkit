@@ -60,6 +60,8 @@ class OHLCV:
             await self.connection_service.close()
         self.connection_service = ConnectionService(self.ws_url)
         await self.connection_service.connect()
+        if self.connection_service.ws is None:
+            raise RuntimeError("WebSocket connection not established after connect()")
         self.message_service = MessageService(self.connection_service.ws)
 
     async def _prepare_chart_session(
