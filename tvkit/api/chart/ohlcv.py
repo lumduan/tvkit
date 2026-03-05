@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
-import signal
 import types
 from collections.abc import AsyncGenerator
 from typing import Any
+
+from pydantic import ValidationError
 
 from tvkit.api.chart.models.ohlcv import (
     OHLCVBar,
@@ -19,8 +20,7 @@ from tvkit.api.chart.services import ConnectionService, MessageService
 from tvkit.api.chart.utils import validate_interval
 from tvkit.api.utils import convert_symbol_format, validate_symbols
 
-# Configure logging
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s")
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class OHLCV:
@@ -55,10 +55,53 @@ class OHLCV:
             await self.connection_service.close()
 
     async def _setup_services(self) -> None:
-        """Initialize and connect the services."""
+        """Initialize and connect the services, closing any existing connection first."""
+        if self.connection_service is not None:
+            await self.connection_service.close()
         self.connection_service = ConnectionService(self.ws_url)
         await self.connection_service.connect()
         self.message_service = MessageService(self.connection_service.ws)
+
+    async def _prepare_chart_session(
+        self,
+        converted_symbol: str,
+        interval: str,
+        bars_count: int,
+    ) -> None:
+        """
+        Set up services and subscribe the chart session to symbol data.
+
+        Calls _setup_services (closes any existing connection first), generates
+        unique session IDs, initializes sessions, and subscribes to symbol data.
+
+        Args:
+            converted_symbol: Symbol in EXCHANGE:SYMBOL format.
+            interval: Chart interval (e.g. "1", "5", "1D").
+            bars_count: Number of bars to request.
+
+        Raises:
+            RuntimeError: If services fail to initialize.
+        """
+        await self._setup_services()
+        if self.connection_service is None or self.message_service is None:
+            raise RuntimeError("Services not properly initialized")
+
+        quote_session: str = self.message_service.generate_session(prefix="qs_")
+        chart_session: str = self.message_service.generate_session(prefix="cs_")
+        logger.debug(f"Sessions: quote={quote_session}, chart={chart_session}")
+
+        send_message_func = self.message_service.get_send_message_callable()
+        await self.connection_service.initialize_sessions(
+            quote_session, chart_session, send_message_func
+        )
+        await self.connection_service.add_symbol_to_sessions(
+            quote_session,
+            chart_session,
+            converted_symbol,
+            interval,
+            bars_count,
+            send_message_func,
+        )
 
     async def get_ohlcv(
         self, exchange_symbol: str, interval: str = "1", bars_count: int = 10
@@ -88,128 +131,84 @@ class OHLCV:
             ...         print(f"Close: ${bar.close}, Volume: {bar.volume}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
         symbol_result = convert_symbol_format(exchange_symbol)
         converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
-        await self._setup_services()
+        await self._prepare_chart_session(converted_symbol, interval, bars_count)
 
-        if not self.connection_service or not self.message_service:
+        if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
 
-        quote_session: str = self.message_service.generate_session(prefix="qs_")
-        chart_session: str = self.message_service.generate_session(prefix="cs_")
-        logging.info(
-            f"Quote session generated: {quote_session}, Chart session generated: {chart_session}"
-        )
-
-        send_message_func = self.message_service.get_send_message_callable()
-        await self.connection_service.initialize_sessions(
-            quote_session, chart_session, send_message_func
-        )
-        await self.connection_service.add_symbol_to_sessions(
-            quote_session,
-            chart_session,
-            converted_symbol,
-            interval,
-            bars_count,
-            send_message_func,
-        )
-
         async for data in self.connection_service.get_data_stream():
-            # Try to parse different message types
             try:
-                # Parse as generic WebSocket message first to check type
                 message: WebSocketMessage = WebSocketMessage.model_validate(data)
                 message_type: str = message.message_type
 
-                logging.debug(f"Received message type: {message_type}")
+                logger.debug(f"Received message type: {message_type}")
 
                 if message_type == "du":
-                    # Try to parse as OHLCV data update
                     try:
                         ohlcv_response: OHLCVResponse = OHLCVResponse.model_validate(data)
-                        # Yield all OHLCV bars from the response
                         for ohlcv_bar in ohlcv_response.ohlcv_bars:
                             yield ohlcv_bar
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'du' message as OHLCV: {e}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'du' message as OHLCV: {e}")
                         continue
 
                 elif message_type == "timescale_update":
-                    # Try to parse as timescale update (historical OHLCV data)
                     try:
                         timescale_response: TimescaleUpdateResponse = (
                             TimescaleUpdateResponse.model_validate(data)
                         )
-                        # Yield all OHLCV bars from the response
-                        logging.info(
+                        logger.info(
                             f"Received {len(timescale_response.ohlcv_bars)} OHLCV bars from timescale update"
                         )
                         for ohlcv_bar in timescale_response.ohlcv_bars:
                             yield ohlcv_bar
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'timescale_update' message as OHLCV: {e}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'timescale_update' message as OHLCV: {e}")
                         continue
 
                 elif message_type == "qsd":
-                    # Quote symbol data - contains current price info
                     try:
                         quote_data: QuoteSymbolData = QuoteSymbolData.model_validate(data)
                         current_price: float | None = quote_data.current_price
                         if current_price is not None:
-                            logging.info(
+                            logger.info(
                                 f"Quote data for {converted_symbol}: Current price = ${current_price}"
                             )
-                        logging.debug(f"Quote symbol data: {quote_data.symbol_info}")
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'qsd' message: {e}")
+                        logger.debug(f"Quote symbol data: {quote_data.symbol_info}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'qsd' message: {e}")
                     continue
 
                 elif message_type == "quote_completed":
-                    # Quote setup completed
                     try:
                         quote_completed: QuoteCompletedMessage = (
                             QuoteCompletedMessage.model_validate(data)
                         )
-                        logging.info(f"Quote setup completed for symbol: {quote_completed.symbol}")
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'quote_completed' message: {e}")
+                        logger.info(f"Quote setup completed for symbol: {quote_completed.symbol}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'quote_completed' message: {e}")
                     continue
 
-                elif message_type == "series_loading":
-                    # Series loading message - continue waiting for data
-                    logging.debug("Series loading for real-time data stream")
+                elif message_type in ("series_loading", "study_loading"):
+                    logger.debug(f"{message_type} for real-time data stream")
                     continue
 
-                elif message_type == "study_loading":
-                    # Study loading message - continue waiting for data
-                    logging.debug("Study loading for real-time data stream")
-                    continue
-
-                elif message_type == "series_completed":
-                    # Series completed message - continue waiting for data
-                    logging.debug("Series completed for real-time data stream")
-                    continue
-
-                elif message_type == "study_completed":
-                    # Study completed message - continue waiting for data
-                    logging.debug("Study completed for real-time data stream")
+                elif message_type in ("series_completed", "study_completed"):
+                    logger.debug(f"{message_type} for real-time data stream")
                     continue
 
                 elif message_type == "series_error":
-                    # Series error - invalid interval or bars count
-                    logging.error("Series error received from TradingView")
-                    logging.error(f"Error details: {data}")
-                    logging.error(
+                    logger.error("Series error received from TradingView")
+                    logger.error(f"Error details: {data}")
+                    logger.error(
                         "Please check the interval - this timeframe may not be supported for the symbol"
                     )
-                    logging.error("Also verify that bars_count is within valid range")
-
-                    # Close connection and raise error
+                    logger.error("Also verify that bars_count is within valid range")
                     if self.connection_service:
                         await self.connection_service.close()
-
                     raise ValueError(
                         "TradingView series error: Invalid interval or bars count. "
                         "Please check that the timeframe is supported for this symbol "
@@ -217,13 +216,12 @@ class OHLCV:
                     )
 
                 else:
-                    # Other message types (heartbeats, etc.)
-                    logging.debug(f"Skipping message type '{message_type}': {data}")
+                    logger.debug(f"Skipping message type '{message_type}': {data}")
                     continue
 
             except Exception as e:
-                # If we can't parse the message at all, skip it
-                logging.debug(f"Skipping unparseable message: {data} - Error: {e}")
+                # Outer guard: skip unparseable messages (e.g. malformed WebSocket frames)
+                logger.debug(f"Skipping unparseable message: {data} - Error: {e}")
                 continue
 
     async def get_historical_ohlcv(
@@ -248,135 +246,99 @@ class OHLCV:
             WebSocketException: If connection or streaming fails
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
         symbol_result = convert_symbol_format(exchange_symbol)
         converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
-        await self._setup_services()
+        await self._prepare_chart_session(converted_symbol, interval, bars_count)
 
-        if not self.connection_service or not self.message_service:
+        if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
-
-        quote_session: str = self.message_service.generate_session(prefix="qs_")
-        chart_session: str = self.message_service.generate_session(prefix="cs_")
-        logging.info(
-            f"Quote session generated: {quote_session}, Chart session generated: {chart_session}"
-        )
-
-        send_message_func = self.message_service.get_send_message_callable()
-        await self.connection_service.initialize_sessions(
-            quote_session, chart_session, send_message_func
-        )
-        await self.connection_service.add_symbol_to_sessions(
-            quote_session,
-            chart_session,
-            converted_symbol,
-            interval,
-            bars_count,
-            send_message_func,
-        )
 
         historical_bars: list[OHLCVBar] = []
         timeout_seconds: int = 30
-        start_time: float = asyncio.get_event_loop().time()
+        loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+        start_time: float = loop.time()
 
         async for data in self.connection_service.get_data_stream():
-            # Check for timeout
-            if asyncio.get_event_loop().time() - start_time > timeout_seconds:
-                logging.warning(f"Historical data fetch timed out after {timeout_seconds} seconds")
+            # Check for timeout between messages (safety net for network stalls)
+            if loop.time() - start_time > timeout_seconds:
+                logger.warning(f"Historical data fetch timed out after {timeout_seconds} seconds")
                 break
 
             try:
-                # Parse as generic WebSocket message first to check type
                 message: WebSocketMessage = WebSocketMessage.model_validate(data)
                 message_type: str = message.message_type
 
-                logging.debug(f"Received message type: {message_type}")
+                logger.debug(f"Received message type: {message_type}")
 
                 if message_type == "timescale_update":
-                    # Parse as timescale update (historical OHLCV data)
                     try:
-                        logging.debug(f"Raw timescale_update data: {data}")
+                        logger.debug(f"Raw timescale_update data: {data}")
                         timescale_response: TimescaleUpdateResponse = (
                             TimescaleUpdateResponse.model_validate(data)
                         )
-                        logging.info(
+                        logger.info(
                             f"Received {len(timescale_response.ohlcv_bars)} historical OHLCV bars"
                         )
-
-                        # Log the bars for debugging
                         for bar in timescale_response.ohlcv_bars:
-                            logging.debug(f"Parsed OHLCV bar: {bar}")
-
+                            logger.debug(f"Parsed OHLCV bar: {bar}")
                         historical_bars.extend(timescale_response.ohlcv_bars)
-
-                        # If we have enough bars or this appears to be the complete dataset, break
                         if len(historical_bars) >= bars_count:
                             break
-                    except Exception as e:
-                        logging.warning(f"Failed to parse 'timescale_update' message: {e}")
-                        logging.debug(f"Raw message that failed to parse: {data}")
+                    except ValidationError as e:
+                        logger.warning(f"Failed to parse 'timescale_update' message: {e}")
+                        logger.debug(f"Raw message that failed to parse: {data}")
                         continue
 
                 elif message_type == "du":
-                    # Parse as OHLCV data update (might contain historical data)
                     try:
                         ohlcv_response: OHLCVResponse = OHLCVResponse.model_validate(data)
                         if ohlcv_response.ohlcv_bars:
-                            logging.info(
+                            logger.info(
                                 f"Received {len(ohlcv_response.ohlcv_bars)} OHLCV bars from data update"
                             )
                             historical_bars.extend(ohlcv_response.ohlcv_bars)
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'du' message as OHLCV: {e}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'du' message as OHLCV: {e}")
                         continue
 
                 elif message_type == "quote_completed":
-                    # Quote setup completed - continue waiting for data
                     try:
                         quote_completed: QuoteCompletedMessage = (
                             QuoteCompletedMessage.model_validate(data)
                         )
-                        logging.info(f"Quote setup completed for symbol: {quote_completed.symbol}")
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'quote_completed' message: {e}")
+                        logger.debug(f"Quote setup completed for symbol: {quote_completed.symbol}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'quote_completed' message: {e}")
                     continue
 
-                elif message_type == "series_loading":
-                    # Series loading message - continue waiting for data
-                    logging.debug("Series loading for historical data fetch")
-                    continue
-
-                elif message_type == "study_loading":
-                    # Study loading message - continue waiting for data
-                    logging.debug("Study loading for historical data fetch")
+                elif message_type in ("series_loading", "study_loading"):
+                    logger.debug(f"{message_type} for historical data fetch")
                     continue
 
                 elif message_type == "series_completed":
-                    # Series completed message - continue waiting for data
-                    logging.debug("Series completed for historical data fetch")
-                    continue
+                    logger.info("Series completed — all available historical bars received")
+                    break
 
                 elif message_type == "study_completed":
-                    # Study completed message - continue waiting for data
-                    logging.debug("Study completed for historical data fetch")
-                    continue
+                    # In TradingView historical flow, `study_completed` is emitted only after
+                    # all `timescale_update` bars have been transmitted. Breaking here is safe.
+                    # In practice, `series_completed` fires first (the branch above exits before
+                    # this is reached), so this serves as a safety net for atypical ordering.
+                    logger.info("Study completed — terminating historical fetch")
+                    break
 
                 elif message_type == "series_error":
-                    # Series error - invalid interval or bars count
-                    logging.error(
+                    logger.error(
                         "Series error received from TradingView during historical data fetch"
                     )
-                    logging.error(f"Error details: {data}")
-                    logging.error(
+                    logger.error(f"Error details: {data}")
+                    logger.error(
                         "Please check the interval - this timeframe may not be supported for the symbol"
                     )
-                    logging.error("Also verify that bars_count is within valid range")
-
-                    # Close connection and raise error
+                    logger.error("Also verify that bars_count is within valid range")
                     if self.connection_service:
                         await self.connection_service.close()
-
                     raise ValueError(
                         "TradingView series error: Invalid interval or bars count. "
                         "Please check that the timeframe is supported for this symbol "
@@ -384,25 +346,38 @@ class OHLCV:
                     )
 
                 else:
-                    # Other message types - continue waiting
-                    logging.debug(
-                        f"Skipping message type '{message_type}' in historical data fetch"
-                    )
+                    logger.debug(f"Skipping message type '{message_type}' in historical data fetch")
                     continue
 
             except Exception as e:
-                logging.debug(
+                # Re-raise intentional ValueErrors (e.g. from series_error handler).
+                # pydantic.ValidationError is a subclass of ValueError in pydantic v2,
+                # so exclude it explicitly — invalid message structures are skipped, not
+                # propagated.  Other ValueErrors (raised deliberately by this method)
+                # must propagate to the caller.
+                if isinstance(e, ValueError) and not isinstance(e, ValidationError):
+                    raise
+                logger.debug(
                     f"Skipping unparseable message in historical fetch: {data} - Error: {e}"
                 )
                 continue
 
-        # Sort bars by timestamp (chronological order)
+        # Sort bars by timestamp for chronological order.
+        # TradingView generally sends bars in order, but this guarantees correctness
+        # if messages arrive out of sequence due to network conditions.
         historical_bars.sort(key=lambda bar: bar.timestamp)
 
         if not historical_bars:
+            logger.warning(f"No historical bars received for symbol {converted_symbol}")
             raise RuntimeError(f"No historical data received for symbol {converted_symbol}")
 
-        logging.info(
+        if len(historical_bars) < bars_count:
+            logger.info(
+                f"Partial data: received {len(historical_bars)} bars "
+                f"(requested {bars_count}) — symbol may have less available history"
+            )
+
+        logger.info(
             f"Successfully fetched {len(historical_bars)} historical OHLCV bars for {converted_symbol}"
         )
         return historical_bars
@@ -435,93 +410,55 @@ class OHLCV:
             ...         print(f"Price: ${quote.current_price}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
         symbol_result = convert_symbol_format(exchange_symbol)
         converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
-        await self._setup_services()
+        await self._prepare_chart_session(converted_symbol, interval, bars_count)
 
-        if not self.connection_service or not self.message_service:
+        if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
-
-        quote_session: str = self.message_service.generate_session(prefix="qs_")
-        chart_session: str = self.message_service.generate_session(prefix="cs_")
-        logging.info(
-            f"Quote session generated: {quote_session}, Chart session generated: {chart_session}"
-        )
-
-        send_message_func = self.message_service.get_send_message_callable()
-        await self.connection_service.initialize_sessions(
-            quote_session, chart_session, send_message_func
-        )
-        await self.connection_service.add_symbol_to_sessions(
-            quote_session,
-            chart_session,
-            converted_symbol,
-            interval,
-            bars_count,
-            send_message_func,
-        )
 
         async for data in self.connection_service.get_data_stream():
             try:
-                # Parse as generic WebSocket message first to check type
                 message: WebSocketMessage = WebSocketMessage.model_validate(data)
                 message_type: str = message.message_type
 
                 if message_type == "qsd":
-                    # Quote symbol data - contains current price info
                     try:
                         quote_data: QuoteSymbolData = QuoteSymbolData.model_validate(data)
                         yield quote_data
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'qsd' message: {e}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'qsd' message: {e}")
                         continue
 
                 elif message_type == "quote_completed":
-                    # Quote setup completed - log but don't yield
                     try:
                         quote_completed: QuoteCompletedMessage = (
                             QuoteCompletedMessage.model_validate(data)
                         )
-                        logging.info(f"Quote setup completed for symbol: {quote_completed.symbol}")
-                    except Exception as e:
-                        logging.debug(f"Failed to parse 'quote_completed' message: {e}")
+                        logger.info(f"Quote setup completed for symbol: {quote_completed.symbol}")
+                    except ValidationError as e:
+                        logger.debug(f"Failed to parse 'quote_completed' message: {e}")
                     continue
 
-                elif message_type == "series_loading":
-                    # Series loading message - continue waiting for data
-                    logging.debug("Series loading for quote data stream")
-                    continue
-
-                elif message_type == "study_loading":
-                    # Study loading message - continue waiting for data
-                    logging.debug("Study loading for quote data stream")
-                    continue
-
-                elif message_type == "series_completed":
-                    # Series completed message - continue waiting for data
-                    logging.debug("Series completed for quote data stream")
-                    continue
-
-                elif message_type == "study_completed":
-                    # Study completed message - continue waiting for data
-                    logging.debug("Study completed for quote data stream")
+                elif message_type in (
+                    "series_loading",
+                    "study_loading",
+                    "series_completed",
+                    "study_completed",
+                ):
+                    logger.debug(f"{message_type} for quote data stream")
                     continue
 
                 elif message_type == "series_error":
-                    # Series error - invalid interval or bars count
-                    logging.error("Series error received from TradingView during quote data stream")
-                    logging.error(f"Error details: {data}")
-                    logging.error(
+                    logger.error("Series error received from TradingView during quote data stream")
+                    logger.error(f"Error details: {data}")
+                    logger.error(
                         "Please check the interval - this timeframe may not be supported for the symbol"
                     )
-                    logging.error("Also verify that bars_count is within valid range")
-
-                    # Close connection and raise error
+                    logger.error("Also verify that bars_count is within valid range")
                     if self.connection_service:
                         await self.connection_service.close()
-
                     raise ValueError(
                         "TradingView series error: Invalid interval or bars count. "
                         "Please check that the timeframe is supported for this symbol "
@@ -529,13 +466,12 @@ class OHLCV:
                     )
 
                 else:
-                    # Other message types - skip
-                    logging.debug(f"Skipping message type '{message_type}' in quote stream")
+                    logger.debug(f"Skipping message type '{message_type}' in quote stream")
                     continue
 
             except Exception as e:
-                # If we can't parse the message at all, skip it
-                logging.debug(f"Skipping unparseable message in quote stream: {data} - Error: {e}")
+                # Outer guard: skip unparseable messages (e.g. malformed WebSocket frames)
+                logger.debug(f"Skipping unparseable message in quote stream: {data} - Error: {e}")
                 continue
 
     async def get_ohlcv_raw(
@@ -566,33 +502,13 @@ class OHLCV:
             ...         print(f"Raw message: {raw_data}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol format from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
         symbol_result = convert_symbol_format(exchange_symbol)
         converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
-        await self._setup_services()
+        await self._prepare_chart_session(converted_symbol, interval, bars_count)
 
-        if not self.connection_service or not self.message_service:
+        if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
-
-        quote_session: str = self.message_service.generate_session(prefix="qs_")
-        chart_session: str = self.message_service.generate_session(prefix="cs_")
-        logging.info(
-            f"Quote session generated: {quote_session}, Chart session generated: {chart_session}"
-        )
-
-        send_message_func = self.message_service.get_send_message_callable()
-        await self.connection_service.initialize_sessions(
-            quote_session, chart_session, send_message_func
-        )
-        await self.connection_service.add_symbol_to_sessions(
-            quote_session,
-            chart_session,
-            converted_symbol,
-            interval,
-            bars_count,
-            send_message_func,
-        )
 
         async for data in self.connection_service.get_data_stream():
             yield data
@@ -625,9 +541,7 @@ class OHLCV:
             ...         print(f"Trade info: {trade_info}")
         """
         await validate_symbols(exchange_symbol)
-        # Convert symbol formats from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL if needed
         symbol_results = convert_symbol_format(exchange_symbol)
-        # Since exchange_symbol is List[str], symbol_results is List[SymbolConversionResult]
         converted_symbols = [result.converted_symbol for result in symbol_results]  # type: ignore
         await self._setup_services()
 
@@ -636,9 +550,7 @@ class OHLCV:
 
         quote_session: str = self.message_service.generate_session(prefix="qs_")
         chart_session: str = self.message_service.generate_session(prefix="cs_")
-        logging.info(
-            f"Session generated: {quote_session}, Chart session generated: {chart_session}"
-        )
+        logger.debug(f"Sessions: quote={quote_session}, chart={chart_session}")
 
         send_message_func = self.message_service.get_send_message_callable()
         await self.connection_service.initialize_sessions(
@@ -650,20 +562,3 @@ class OHLCV:
 
         async for data in self.connection_service.get_data_stream():
             yield data
-
-
-# Signal handler for keyboard interrupt
-def signal_handler(sig: int, frame: types.FrameType | None) -> None:
-    """
-    Handles keyboard interrupt signals to gracefully close the WebSocket connection.
-
-    Args:
-        sig: The signal number.
-        frame: The current stack frame.
-    """
-    logging.info("Keyboard interrupt received. Exiting...")
-    exit(0)
-
-
-# Register the signal handler
-signal.signal(signal.SIGINT, signal_handler)

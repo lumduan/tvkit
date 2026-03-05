@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-05
+
+### 🐛 Bug Fixes
+
+#### `get_historical_ohlcv` Early Termination (Issue #7)
+
+- **Fixed freeze on data exhaustion**: `get_historical_ohlcv` now returns immediately when the
+  TradingView server signals all available data has been sent (`series_completed`), instead of
+  waiting for the full 30-second timeout. Symbols with fewer bars than `bars_count` requested
+  now return in ~1–2 seconds.
+- **Fixed `series_error` propagation**: `ValueError` raised by the `series_error` handler was
+  being swallowed by the outer `except Exception` guard (because `pydantic.ValidationError`
+  is a `ValueError` subclass in Pydantic v2). The outer guard now correctly distinguishes
+  intentional `ValueError` from parsing-level `ValidationError` and re-raises appropriately.
+- **Fixed connection leak in `_setup_services()`**: Opening a new `ConnectionService` now
+  closes any existing connection first, preventing WebSocket handle leaks in multi-call scenarios.
+- **Fixed `study_completed` handling**: Added unconditional `break` on `study_completed` as a
+  protocol-ordering safety net for atypical TradingView message sequences.
+
+### 🔧 Library Hygiene
+
+- **Removed `logging.basicConfig()`**: Replaced with `logger = logging.getLogger(__name__)` —
+  library code must not configure root logging (overrides application-level settings).
+- **Removed `signal.signal(SIGINT, ...)`**: Library code must not register global signal
+  handlers; this is the host application's responsibility.
+- **Replaced `asyncio.get_event_loop()`** with `asyncio.get_running_loop()` (Python 3.10+
+  preferred API, avoids DeprecationWarning in Python 3.12+).
+
+### ♻️ Refactoring
+
+- **Extracted `_prepare_chart_session()` helper**: Eliminated 4× duplicated session-setup
+  boilerplate across `get_ohlcv`, `get_historical_ohlcv`, `get_quote_data`, `get_ohlcv_raw`.
+- **Narrowed exception handling**: Inner parsing blocks now catch `ValidationError` instead
+  of bare `Exception`, making unintended swallowing of control-flow exceptions impossible.
+- **Downgraded session ID logs** from `info` to `debug` to reduce log noise in production.
+
+### 🧪 Testing
+
+- **New `tests/test_historical_ohlcv.py`**: 32 unit tests across 6 classes providing full
+  behavioral coverage of `get_historical_ohlcv` with zero real network calls:
+  - `TestSeriesCompletedSignal` (6) — Phase 1 regression + `bars_count` threshold tests
+  - `TestStudyCompletedSignal` (3) — fallback signal and protocol ordering tests
+  - `TestPartialDataScenarios` (6) — partial data, sort order, `du` messages, duplicates
+  - `TestErrorHandling` (9) — `series_error`, input validation, malformed frames, edge cases
+  - `TestTimeoutBehavior` (4) — timeout safety net with deterministic time mocking
+  - `TestSessionLifecycle` (4) — session setup, argument passing, close-on-error contract
+
+---
+
 ## [0.2.0] - 2025-09-27
 
 ### 🎯 Major Feature: Universal TradingView Indicators Access
