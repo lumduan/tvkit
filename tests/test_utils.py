@@ -1,9 +1,13 @@
 """
-Tests for the utils module, specifically for timestamp conversion functionality.
+Tests for the utils module, specifically for timestamp conversion functionality
+and chart utility functions (to_unix_timestamp, build_range_param, validate_interval).
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
+import pytest
+
+from tvkit.api.chart.utils import build_range_param, to_unix_timestamp
 from tvkit.api.utils import convert_timestamp_to_iso
 
 
@@ -93,3 +97,98 @@ class TestTimestampConversion:
 
         # Results should be the same
         assert result_int == result_float
+
+
+class TestToUnixTimestamp:
+    """Tests for to_unix_timestamp() in tvkit.api.chart.utils."""
+
+    def test_datetime_utc(self) -> None:
+        """Timezone-aware UTC datetime converts to correct Unix timestamp."""
+        dt: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        assert to_unix_timestamp(dt) == 1704067200
+
+    def test_naive_datetime_treated_as_utc_no_raise(self) -> None:
+        """Naive datetime is assigned UTC without raising; result matches explicit UTC."""
+        naive: datetime = datetime(2024, 1, 1)
+        aware: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        assert to_unix_timestamp(naive) == to_unix_timestamp(aware)
+
+    def test_iso_string_date_only(self) -> None:
+        """Date-only ISO string parses to midnight UTC."""
+        assert to_unix_timestamp("2024-01-01") == 1704067200
+
+    def test_iso_string_with_time_and_tz(self) -> None:
+        """Full ISO 8601 string with explicit timezone converts correctly."""
+        assert to_unix_timestamp("2024-01-01T00:00:00+00:00") == 1704067200
+
+    def test_iso_string_z_suffix(self) -> None:
+        """ISO string ending in 'Z' is normalized and parsed correctly."""
+        assert to_unix_timestamp("2024-01-01T00:00:00Z") == 1704067200
+
+    def test_microsecond_truncation(self) -> None:
+        """Microseconds are truncated (not rounded) to integer seconds."""
+        dt_no_us: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        dt_with_us: datetime = datetime(2024, 1, 1, 0, 0, 0, 999999, tzinfo=UTC)
+        assert to_unix_timestamp(dt_no_us) == to_unix_timestamp(dt_with_us)
+
+    def test_invalid_string_raises_value_error(self) -> None:
+        """Non-ISO string raises ValueError from fromisoformat."""
+        with pytest.raises(ValueError):
+            to_unix_timestamp("not-a-date")
+
+    def test_invalid_type_raises_type_error(self) -> None:
+        """Non-datetime/str input raises TypeError with informative message."""
+        with pytest.raises(TypeError, match="got 'int'"):
+            to_unix_timestamp(1704067200)  # type: ignore[arg-type]
+
+    def test_iso_string_with_time_no_tz_treated_as_utc(self) -> None:
+        """ISO string with time component but no tz is treated as UTC (no raise)."""
+        # "2024-01-01T06:00:00" has no tz — assigned UTC same as naive datetime
+        result: int = to_unix_timestamp("2024-01-01T06:00:00")
+        expected: int = to_unix_timestamp(datetime(2024, 1, 1, 6, 0, 0, tzinfo=UTC))
+        assert result == expected
+
+
+class TestBuildRangeParam:
+    """Tests for build_range_param() in tvkit.api.chart.utils."""
+
+    def test_valid_string_inputs_returns_r_prefix(self) -> None:
+        """Valid start/end strings produce correct 'r,<from>:<to>' format."""
+        result: str = build_range_param("2024-01-01", "2024-12-31")
+        assert result.startswith("r,")
+        from_ts, to_ts = result[2:].split(":")
+        assert int(from_ts) == 1704067200
+        assert int(to_ts) == 1735603200
+
+    def test_same_day_is_valid(self) -> None:
+        """start == end is valid (single-day intraday fetch)."""
+        result: str = build_range_param("2024-06-15", "2024-06-15")
+        parts: list[str] = result[2:].split(":")
+        assert parts[0] == parts[1]
+
+    def test_start_after_end_raises_value_error(self) -> None:
+        """start > end raises ValueError before any WebSocket call."""
+        with pytest.raises(ValueError, match="must not be after"):
+            build_range_param("2024-12-31", "2024-01-01")
+
+    def test_datetime_inputs(self) -> None:
+        """datetime objects are accepted directly."""
+        start: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        end: datetime = datetime(2024, 12, 31, tzinfo=UTC)
+        result: str = build_range_param(start, end)
+        assert result == "r,1704067200:1735603200"
+
+    def test_mixed_datetime_and_string_inputs(self) -> None:
+        """Mix of datetime and str inputs is accepted."""
+        start: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        result: str = build_range_param(start, "2024-12-31")
+        assert result.startswith("r,1704067200:")
+
+    def test_naive_datetime_and_aware_datetime_mix(self) -> None:
+        """Naive datetime in range param is assigned UTC without raising."""
+        naive_start: datetime = datetime(2024, 1, 1)  # no tz
+        aware_end: datetime = datetime(2024, 12, 31, tzinfo=UTC)
+        result: str = build_range_param(naive_start, aware_end)
+        # naive is assigned UTC — same result as explicit UTC
+        expected: str = build_range_param(datetime(2024, 1, 1, tzinfo=UTC), aware_end)
+        assert result == expected

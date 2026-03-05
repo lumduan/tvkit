@@ -113,3 +113,10 @@ class TestIntervalValidation:
         # Test whitespace handling
         validate_interval(" 5 ")  # Should be trimmed and valid
         validate_interval("\t1H\t")  # Should be trimmed and valid
+
+    def test_non_string_raises_type_error(self) -> None:
+        """Non-string input raises TypeError (not AttributeError)."""
+        with pytest.raises(TypeError, match="got 'int'"):
+            validate_interval(5)  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="got 'NoneType'"):
+            validate_interval(None)  # type: ignore[arg-type]
