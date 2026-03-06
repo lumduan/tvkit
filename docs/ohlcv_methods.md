@@ -96,34 +96,57 @@ Timestamp: 1704067320
 
 ```python
 async def get_historical_ohlcv(
-    self, 
-    exchange_symbol: str, 
-    interval: str = "1", 
-    bars_count: int = 10
+    self,
+    exchange_symbol: str,
+    interval: str = "1",
+    bars_count: int | None = None,
+    *,
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
 ) -> list[OHLCVBar]
 ```
 
-Returns a list of historical OHLCV data for a specified symbol. This method fetches historical OHLCV data from TradingView and returns it as a list of OHLCVBar objects.
+Returns a list of historical OHLCV data for a specified symbol. Supports two mutually exclusive modes:
+
+- **Count mode**: provide `bars_count` to fetch the most recent N bars
+- **Range mode**: provide `start` and `end` to fetch bars within a date window
 
 #### Parameters
 - `exchange_symbol` (str): The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'BINANCE:BTCUSDT')
-- `interval` (str, optional): The interval for the chart (default is "1" for 1 minute)
-- `bars_count` (int, optional): The number of bars to fetch (default is 10)
+- `interval` (str, optional): The interval for the chart (default is `"1"` for 1 minute)
+- `bars_count` (int | None): Number of bars to fetch (count mode). Mutually exclusive with `start`/`end`.
+- `start` (datetime | str | None): Range start, inclusive. ISO 8601 strings accepted (e.g., `"2024-01-01"`). Keyword-only.
+- `end` (datetime | str | None): Range end, inclusive. Same types as `start`. Keyword-only.
 
 #### Returns
 - `list[OHLCVBar]`: A list of OHLCVBar objects containing historical OHLCV data
 
 #### Raises
-- `ValueError`: If the symbol format is invalid
+- `ValueError`: If neither mode is specified, both modes are specified, only one of `start`/`end` is given, `bars_count <= 0`, `start > end`, or an invalid ISO string is provided
 - `WebSocketException`: If connection or streaming fails
 - `RuntimeError`: If no historical data is received
 
-#### Example
+#### Example — count mode
 ```python
 async with OHLCV() as client:
-    bars = await client.get_historical_ohlcv("BINANCE:BTCUSDT", "1D", 5)
+    bars = await client.get_historical_ohlcv(
+        "BINANCE:BTCUSDT", interval="1D", bars_count=5
+    )
     for bar in bars:
         print(f"Date: {bar.timestamp}, Close: ${bar.close}")
+```
+
+#### Example — range mode
+```python
+async with OHLCV() as client:
+    # Full-year daily bars
+    bars = await client.get_historical_ohlcv(
+        "NASDAQ:AAPL", interval="1D", start="2024-01-01", end="2024-12-31"
+    )
+    # Single-day 5-minute bars (start == end is valid)
+    bars = await client.get_historical_ohlcv(
+        "NASDAQ:AAPL", interval="5", start="2024-06-15", end="2024-06-15"
+    )
 ```
 
 #### Example Output
@@ -258,15 +281,15 @@ async with OHLCV() as client:
 
 ```python
 async def get_latest_trade_info(
-    self, 
-    exchange_symbol: List[str]
+    self,
+    exchange_symbol: list[str],
 ) -> AsyncGenerator[dict[str, Any], None]
 ```
 
 Returns summary information about multiple symbols including last changes, change percentage, and last trade time. This method allows you to monitor multiple symbols simultaneously.
 
 #### Parameters
-- `exchange_symbol` (List[str]): A list of symbols in the format 'EXCHANGE:SYMBOL'
+- `exchange_symbol` (list[str]): A list of symbols in the format 'EXCHANGE:SYMBOL'
 
 #### Returns
 - `AsyncGenerator[dict[str, Any], None]`: An async generator yielding summary information as JSON dictionary objects
@@ -341,7 +364,7 @@ The OHLCV client supports async context managers for automatic connection manage
 ```python
 async with OHLCV() as client:
     # WebSocket connection automatically managed
-    data = await client.get_historical_ohlcv("BINANCE:BTCUSDT")
+    data = await client.get_historical_ohlcv("BINANCE:BTCUSDT", bars_count=10)
     # Connection automatically closed when exiting context
 ```
 
@@ -364,9 +387,9 @@ async def fetch_with_error_handling():
     try:
         async with OHLCV() as client:
             bars = await client.get_historical_ohlcv(
-                "BINANCE:BTCUSDT", 
-                interval="1D", 
-                bars_count=10
+                "BINANCE:BTCUSDT",
+                interval="1D",
+                bars_count=10,
             )
             print(f"Successfully fetched {len(bars)} bars")
             return bars

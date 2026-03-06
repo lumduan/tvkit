@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-06
+
+### Breaking Changes
+
+- **`get_historical_ohlcv()`**: `bars_count` default changed from `10` to `None`.
+  Callers that relied on the implicit default now receive `ValueError` and must pass
+  `bars_count` explicitly or switch to the new `start`/`end` range mode.
+
+  **Migration:**
+
+  ```python
+  # Before (v0.2.x):
+  bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D")  # fetched 10 bars implicitly
+
+  # After (v0.3.0):
+  bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", bars_count=10)
+  ```
+
+### Added
+
+- **Date-range mode for `get_historical_ohlcv()`**: New `start` and `end` keyword-only
+  parameters (`datetime | str`) for fetching historical bars by explicit date range.
+  Both ISO 8601 strings and timezone-aware/naive `datetime` objects are accepted.
+  Naive datetimes are treated as UTC.
+
+  ```python
+  # Full-year daily bars
+  bars = await client.get_historical_ohlcv(
+      "NASDAQ:AAPL", "1D", start="2024-01-01", end="2024-12-31"
+  )
+
+  # Single-day intraday bars (start == end is valid)
+  bars = await client.get_historical_ohlcv(
+      "NASDAQ:AAPL", "5", start="2024-06-15", end="2024-06-15"
+  )
+  ```
+
+- **`tvkit.api.chart.utils.to_unix_timestamp(ts)`** — convert a `datetime` or ISO 8601
+  string to a UTC Unix timestamp (integer seconds).
+- **`tvkit.api.chart.utils.build_range_param(start, end)`** — build a TradingView
+  `r,<from>:<to>` range string from start and end timestamps.
+- **`tvkit.api.chart.utils.MAX_BARS_REQUEST`** — sentinel constant (`5000`) passed to
+  `create_series` in range mode (TradingView ignores it when `modify_series` is active).
+
+### Changed
+
+- Historical fetch timeout extended from 30s to **180s** in range mode. Count mode
+  remains 30s. Range queries may span years of intraday data and require more time.
+- **`ConnectionService.add_symbol_to_sessions()`** now accepts an optional `range_param`
+  keyword argument (`str = ""`). When non-empty, a `modify_series` message is sent
+  immediately after `create_series` to apply the date range constraint.
+- **`ConnectionService._create_series_args()`** extracted as a private testable helper
+  that returns the strict 7-element `create_series` parameter list (trailing `""` always
+  present in count mode).
+- **`ConnectionService._modify_series_args()`** extracted as a private testable helper
+  that returns the 6-element `modify_series` parameter list with `range_param` last.
+
+---
+
 ## [0.2.1] - 2026-03-05
 
 ### 🐛 Bug Fixes

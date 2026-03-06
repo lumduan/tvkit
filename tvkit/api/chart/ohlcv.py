@@ -4,6 +4,7 @@ import asyncio
 import logging
 import types
 from collections.abc import AsyncGenerator
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -17,10 +18,21 @@ from tvkit.api.chart.models.ohlcv import (
     WebSocketMessage,
 )
 from tvkit.api.chart.services import ConnectionService, MessageService
-from tvkit.api.chart.utils import validate_interval
+from tvkit.api.chart.utils import (
+    MAX_BARS_REQUEST,
+    build_range_param,
+    end_of_day_timestamp,
+    to_unix_timestamp,
+    validate_interval,
+)
 from tvkit.api.utils import convert_symbol_format, validate_symbols
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+# Timeout constants for get_historical_ohlcv().
+# Range mode uses a longer timeout — multi-year intraday streams can be slow.
+_HISTORICAL_TIMEOUT_SECONDS: int = 30
+_HISTORICAL_RANGE_TIMEOUT_SECONDS: int = 180
 
 
 class OHLCV:
@@ -60,6 +72,8 @@ class OHLCV:
             await self.connection_service.close()
         self.connection_service = ConnectionService(self.ws_url)
         await self.connection_service.connect()
+        if self.connection_service.ws is None:
+            raise RuntimeError("WebSocket connection not established after connect()")
         self.message_service = MessageService(self.connection_service.ws)
 
     async def _prepare_chart_session(
@@ -67,6 +81,8 @@ class OHLCV:
         converted_symbol: str,
         interval: str,
         bars_count: int,
+        *,
+        range_param: str = "",
     ) -> None:
         """
         Set up services and subscribe the chart session to symbol data.
@@ -78,6 +94,9 @@ class OHLCV:
             converted_symbol: Symbol in EXCHANGE:SYMBOL format.
             interval: Chart interval (e.g. "1", "5", "1D").
             bars_count: Number of bars to request.
+            range_param: TradingView range string (e.g. "r,<from>:<to>"). If non-empty,
+                a modify_series message is sent immediately after create_series to apply
+                the date range constraint. Empty string means count mode (default).
 
         Raises:
             RuntimeError: If services fail to initialize.
@@ -101,6 +120,7 @@ class OHLCV:
             interval,
             bars_count,
             send_message_func,
+            range_param=range_param,
         )
 
     async def get_ohlcv(
@@ -225,44 +245,105 @@ class OHLCV:
                 continue
 
     async def get_historical_ohlcv(
-        self, exchange_symbol: str, interval: str = "1", bars_count: int = 10
+        self,
+        exchange_symbol: str,
+        interval: str = "1",
+        bars_count: int | None = None,
+        *,
+        start: datetime | str | None = None,
+        end: datetime | str | None = None,
     ) -> list[OHLCVBar]:
         """
         Returns a list of historical OHLCV data for a specified symbol.
 
-        This method fetches historical OHLCV data from TradingView and returns it as a list of OHLCVBar objects.
+        Supports two mutually exclusive modes:
+
+        **Count mode** — fetch the most recent N bars:
+
+            bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", bars_count=100)
+
+        **Range mode** — fetch all bars within an explicit date window:
+
+            bars = await client.get_historical_ohlcv(
+                "NASDAQ:AAPL", "1D", start="2024-01-01", end="2024-12-31"
+            )
+
         Symbols are automatically converted from EXCHANGE-SYMBOL to EXCHANGE:SYMBOL format.
 
         Args:
-            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' or 'EXCHANGE-SYMBOL' format (e.g., 'BINANCE:BTCUSDT' or 'USI-PCC').
-            interval: The interval for the chart (default is "1" for 1 minute).
-            bars_count: The number of bars to fetch (default is 10).
+            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' or 'EXCHANGE-SYMBOL' format
+                (e.g., 'BINANCE:BTCUSDT' or 'USI-PCC').
+            interval: The chart interval (default "1" for 1 minute).
+            bars_count: Number of most-recent bars to fetch. Mutually exclusive with
+                start/end. Must be a positive integer. No default — must be provided
+                explicitly when using count mode.
+            start: Start of the date range (inclusive). Accepts a timezone-aware datetime,
+                naive datetime (assigned UTC), or ISO 8601 string. Keyword-only.
+                Must be provided together with end.
+            end: End of the date range (inclusive). Same accepted types as start.
+                Keyword-only. Must be provided together with start.
 
         Returns:
-            A list of OHLCVBar objects containing historical OHLCV data.
+            A list of OHLCVBar objects sorted by timestamp in ascending order.
 
         Raises:
-            ValueError: If the symbol format is invalid
-            WebSocketException: If connection or streaming fails
+            ValueError: If neither bars_count nor start/end is provided; if both are
+                provided; if only one of start/end is provided; if bars_count <= 0;
+                if start > end; or if the symbol/interval is invalid.
+            RuntimeError: If no bars are received from TradingView.
         """
+        # --- Mode dispatch (fail fast before WebSocket) ---
+        has_range: bool = start is not None or end is not None
+        has_count: bool = bars_count is not None
+
+        if has_range and has_count:
+            raise ValueError(
+                "Cannot specify both bars_count and start/end. "
+                "Use bars_count for count-based queries or start/end for range-based queries."
+            )
+
+        if has_count:
+            assert bars_count is not None  # mypy narrowing — has_count guarantees non-None
+            if bars_count <= 0:
+                raise ValueError("bars_count must be a positive integer.")
+
+        is_range_mode: bool = has_range
+
+        if is_range_mode:
+            if start is None or end is None:
+                raise ValueError("Both start and end must be provided for range-based queries.")
+            range_param: str = build_range_param(start, end)
+            effective_bars_count: int = MAX_BARS_REQUEST
+        elif has_count:
+            assert bars_count is not None  # mypy narrowing
+            range_param = ""
+            effective_bars_count = bars_count
+        else:
+            raise ValueError("Either bars_count or both start and end must be provided.")
+
         await validate_symbols(exchange_symbol)
         symbol_result = convert_symbol_format(exchange_symbol)
         converted_symbol: str = symbol_result.converted_symbol  # type: ignore
         validate_interval(interval)
-        await self._prepare_chart_session(converted_symbol, interval, bars_count)
+        await self._prepare_chart_session(
+            converted_symbol, interval, effective_bars_count, range_param=range_param
+        )
 
         if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
 
         historical_bars: list[OHLCVBar] = []
-        timeout_seconds: int = 30
+        timeout_seconds: int = (
+            _HISTORICAL_RANGE_TIMEOUT_SECONDS if is_range_mode else _HISTORICAL_TIMEOUT_SECONDS
+        )
         loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         start_time: float = loop.time()
+        series_completed_received: bool = False
 
         async for data in self.connection_service.get_data_stream():
             # Check for timeout between messages (safety net for network stalls)
             if loop.time() - start_time > timeout_seconds:
-                logger.warning(f"Historical data fetch timed out after {timeout_seconds} seconds")
+                logger.warning("Historical data fetch timed out after %d seconds", timeout_seconds)
                 break
 
             try:
@@ -278,12 +359,15 @@ class OHLCV:
                             TimescaleUpdateResponse.model_validate(data)
                         )
                         logger.info(
-                            f"Received {len(timescale_response.ohlcv_bars)} historical OHLCV bars"
+                            "Received %d historical OHLCV bars",
+                            len(timescale_response.ohlcv_bars),
                         )
                         for bar in timescale_response.ohlcv_bars:
                             logger.debug(f"Parsed OHLCV bar: {bar}")
                         historical_bars.extend(timescale_response.ohlcv_bars)
-                        if len(historical_bars) >= bars_count:
+                        # In range mode, termination is controlled by series_completed.
+                        # In count mode, break early once enough bars are accumulated.
+                        if not is_range_mode and len(historical_bars) >= effective_bars_count:
                             break
                     except ValidationError as e:
                         logger.warning(f"Failed to parse 'timescale_update' message: {e}")
@@ -295,7 +379,8 @@ class OHLCV:
                         ohlcv_response: OHLCVResponse = OHLCVResponse.model_validate(data)
                         if ohlcv_response.ohlcv_bars:
                             logger.info(
-                                f"Received {len(ohlcv_response.ohlcv_bars)} OHLCV bars from data update"
+                                "Received %d OHLCV bars from data update",
+                                len(ohlcv_response.ohlcv_bars),
                             )
                             historical_bars.extend(ohlcv_response.ohlcv_bars)
                     except ValidationError as e:
@@ -317,7 +402,10 @@ class OHLCV:
                     continue
 
                 elif message_type == "series_completed":
-                    logger.info("Series completed — all available historical bars received")
+                    series_completed_received = True
+                    logger.info(
+                        "Series completed — received %d historical bars", len(historical_bars)
+                    )
                     break
 
                 elif message_type == "study_completed":
@@ -362,23 +450,59 @@ class OHLCV:
                 )
                 continue
 
+        if not series_completed_received:
+            logger.warning(
+                "Stream ended without series_completed for %s (%s) — "
+                "data may be incomplete. Received %d bars.",
+                converted_symbol,
+                interval,
+                len(historical_bars),
+            )
+
         # Sort bars by timestamp for chronological order.
         # TradingView generally sends bars in order, but this guarantees correctness
         # if messages arrive out of sequence due to network conditions.
         historical_bars.sort(key=lambda bar: bar.timestamp)
 
+        # Client-side range filter: TradingView's modify_series range constraint is
+        # applied server-side but does not guarantee strict boundary adherence — bars
+        # beyond the requested end date (e.g., the live/current period) may bleed
+        # through. This filter removes any such out-of-range bars.
+        if is_range_mode:
+            assert start is not None and end is not None  # mypy narrowing
+            from_ts: int = to_unix_timestamp(start)
+            to_ts_inclusive: int = end_of_day_timestamp(end)
+            pre_filter_count: int = len(historical_bars)
+            historical_bars = [
+                bar for bar in historical_bars if from_ts <= bar.timestamp <= to_ts_inclusive
+            ]
+            removed: int = pre_filter_count - len(historical_bars)
+            if removed > 0:
+                logger.debug(
+                    "Range post-filter removed %d out-of-range bar(s) "
+                    "(from_ts=%d, to_ts=%d, remaining=%d)",
+                    removed,
+                    from_ts,
+                    to_ts_inclusive,
+                    len(historical_bars),
+                )
+
         if not historical_bars:
             logger.warning(f"No historical bars received for symbol {converted_symbol}")
             raise RuntimeError(f"No historical data received for symbol {converted_symbol}")
 
-        if len(historical_bars) < bars_count:
+        if not is_range_mode and len(historical_bars) < effective_bars_count:
             logger.info(
-                f"Partial data: received {len(historical_bars)} bars "
-                f"(requested {bars_count}) — symbol may have less available history"
+                "Partial data: received %d bars (requested %d) — "
+                "symbol may have less available history",
+                len(historical_bars),
+                effective_bars_count,
             )
 
         logger.info(
-            f"Successfully fetched {len(historical_bars)} historical OHLCV bars for {converted_symbol}"
+            "Successfully fetched %d historical OHLCV bars for %s",
+            len(historical_bars),
+            converted_symbol,
         )
         return historical_bars
 

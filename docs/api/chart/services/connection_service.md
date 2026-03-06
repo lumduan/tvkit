@@ -4,6 +4,8 @@
 
 The `ConnectionService` is a core component of tvkit's real-time chart API that manages WebSocket connections and TradingView sessions for streaming financial data. This service handles low-level WebSocket connection management, session initialization, and symbol subscription for TradingView data streams.
 
+> **Note**: `ConnectionService` is a low-level internal component. Most users should interact with higher-level clients such as [`OHLCV`](../ohlcv.md) instead of using this service directly.
+
 **Module Path**: `tvkit.api.chart.services.connection_service`
 
 ## Architecture
@@ -63,13 +65,7 @@ async def connect(self) -> None
 - Uses Pydantic models for type-safe configuration
 - Implements comprehensive error handling and logging
 
-**Configuration**:
-- **Accept-Encoding**: `gzip, deflate, br, zstd`
-- **Origin**: `https://www.tradingview.com`
-- **User-Agent**: Chrome browser simulation
-- **Compression**: `deflate`
-- **Ping Interval**: 20 seconds
-- **Ping/Close Timeout**: 10 seconds each
+**Configuration**: The connection is configured with browser-like headers, deflate compression enabled, and automatic ping/pong keepalive (20-second interval).
 
 **Raises**:
 - `WebSocketException`: If connection establishment fails
@@ -142,7 +138,7 @@ await service.initialize_sessions("quote_1", "chart_1", send_message)
 def _get_quote_fields(self) -> list[str]
 ```
 
-**Description**: Returns the comprehensive list of fields for the quote session.
+**Description**: Internal method used during session initialization. Returns the comprehensive list of fields for the quote session.
 
 **Returns**: List of 28+ quote field identifiers including:
 
@@ -293,11 +289,72 @@ async def get_data_stream(self) -> AsyncGenerator[dict[str, Any], None]
 **Usage Example**:
 ```python
 async for data in service.get_data_stream():
-    if "m" in data:  # Market data message
-        print(f"Received market data: {data}")
-    elif "p" in data:  # Price update
-        print(f"Price update: {data}")
+    if data.get("m") == "timescale_update":
+        print(f"OHLCV bar update: {data}")
+    elif data.get("m") == "series_completed":
+        print("Historical data complete")
+        break
 ```
+
+## Range Mode Protocol
+
+When `get_historical_ohlcv()` is called with `start`/`end` parameters, `add_symbol_to_sessions()` sends two consecutive messages before the data loop begins — `create_series` followed immediately by `modify_series`. This two-message sequence is required by TradingView's WebSocket protocol.
+
+### Why Two Messages Are Required
+
+`create_series` initialises the server-side series subscription. It requires a `bars_count` value in its parameter list, but in range mode this slot is filled with `MAX_BARS_REQUEST (5000)` as a sentinel — the server ignores it once a `modify_series` range constraint arrives. `modify_series` applies the date-range constraint and instructs the server to stream only bars within the specified window.
+
+### Message Flow
+
+```text
+Count Mode (existing — no change):
+
+  Client                TradingView
+  ------                -----------
+  create_series  ------->   (bars_count = N, range_param = "")
+                 <------- series_loading
+                 <------- timescale_update  (× N bars)
+                 <------- series_completed
+
+Range Mode (new):
+
+  Client                TradingView
+  ------                -----------
+  create_series  ------->   (bars_count = MAX_BARS_REQUEST, range_param = "")
+  modify_series  ------->   (range_param = "r,<from_unix>:<to_unix>")
+                 <------- series_loading
+                 <------- timescale_update  (× N bars within window)
+                 <------- series_completed
+```
+
+`modify_series` is sent before the data-receive loop starts. TradingView then streams only bars within the requested window. Count mode never sends `modify_series` — its absence tells the server to use count-based behaviour.
+
+### Parameter Structures
+
+```python
+# create_series — always 7 elements; trailing "" required even in range mode
+create_series_args = [
+    chart_session,   # str  — chart session ID
+    "sds_1",         # str  — series data source ID
+    "s1",            # str  — series ID
+    "sds_sym_1",     # str  — symbol reference ID
+    timeframe,       # str  — interval (e.g. "1D", "60")
+    bars_count,      # int  — MAX_BARS_REQUEST in range mode; N in count mode
+    "",              # str  — trailing empty string, always present
+]
+
+# modify_series — always 6 elements; no trailing empty string
+modify_series_args = [
+    chart_session,   # str  — same chart session ID
+    "sds_1",         # str  — same data source ID
+    "s1",            # str  — same series ID
+    "sds_sym_1",     # str  — same symbol reference ID
+    timeframe,       # str  — same interval string
+    range_param,     # str  — "r,<from_unix>:<to_unix>"
+]
+```
+
+Parameter positions are strict — swapping any element breaks the protocol.
 
 ## Integration Points
 
@@ -556,7 +613,7 @@ asyncio.run(robust_streaming_with_reconnection())
 
 ### Session Methods
 - `initialize_sessions(quote_session, chart_session, send_message_func)`: Initialize TradingView sessions
-- `_get_quote_fields()`: Get quote field configuration
+- `_get_quote_fields()`: *(internal)* Get quote field configuration
 
 ### Symbol Methods
 - `add_symbol_to_sessions(quote_session, chart_session, exchange_symbol, timeframe, bars_count, send_message_func)`: Add single symbol
@@ -567,4 +624,4 @@ asyncio.run(robust_streaming_with_reconnection())
 
 ---
 
-**Note**: This documentation reflects tvkit v0.1.4. The ConnectionService is a low-level component typically used through higher-level clients like the OHLCV class. For typical usage, see the main tvkit documentation and examples.
+**Note**: This documentation reflects tvkit v0.1.5 (unreleased). The ConnectionService is a low-level component typically used through higher-level clients like the OHLCV class. For typical usage, see the main tvkit documentation and examples.
