@@ -493,47 +493,32 @@ class TestErrorHandling:
                 )
 
     @pytest.mark.asyncio
-    async def test_zero_bars_count_requested_documents_behaviour(self) -> None:
-        """bars_count=0 documents evaluation order: extend runs before the count check.
+    async def test_zero_bars_count_raises_value_error(self) -> None:
+        """bars_count=0 raises ValueError before opening the WebSocket."""
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = AsyncMock()  # type: ignore[method-assign]
 
-        Since extend runs before 'if len >= bars_count: break', the first timescale_update
-        batch is always added before the count check fires (5 >= 0 is True). Changing
-        evaluation order would break this test — making the refactoring visible.
-        """
-        messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=5),
-            SERIES_COMPLETED_MSG,
-        ]
-        client: OHLCV = _make_client(messages)
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError, match="bars_count must be a positive integer"),
+        ):
+            await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=0)
 
-        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
-            result = await client.get_historical_ohlcv(
-                exchange_symbol=SYMBOL, interval="1D", bars_count=0
-            )
-
-        # extend fires first, then 5 >= 0 → break
-        assert len(result) == 5
+        client._prepare_chart_session.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
-    async def test_negative_bars_count_documents_behaviour(self) -> None:
-        """bars_count=-1 documents the same extend-before-check order as bars_count=0.
+    async def test_negative_bars_count_raises_value_error(self) -> None:
+        """bars_count=-1 raises ValueError before opening the WebSocket."""
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = AsyncMock()  # type: ignore[method-assign]
 
-        len(bars) >= -1 is always True. The first timescale_update batch is added,
-        then the count check fires. Negative bars_count is not validated at the method
-        boundary; this test pins the current observable result.
-        """
-        messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=5),
-            SERIES_COMPLETED_MSG,
-        ]
-        client: OHLCV = _make_client(messages)
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError, match="bars_count must be a positive integer"),
+        ):
+            await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=-1)
 
-        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
-            result = await client.get_historical_ohlcv(
-                exchange_symbol=SYMBOL, interval="1D", bars_count=-1
-            )
-
-        assert len(result) == 5
+        client._prepare_chart_session.assert_not_called()  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_unexpected_exception_in_stream_propagates(self) -> None:
@@ -676,7 +661,7 @@ class TestSessionLifecycle:
             await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=5)
 
         client._prepare_chart_session.assert_called_once_with(  # type: ignore[union-attr]
-            SYMBOL, "1D", 5
+            SYMBOL, "1D", 5, range_param=""
         )
 
     @pytest.mark.asyncio
@@ -733,3 +718,333 @@ class TestSessionLifecycle:
             await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=100)
 
         client.connection_service.close.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Class 7: Range mode — start/end date range queries
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRangeMode:
+    """Tests for get_historical_ohlcv() range mode (start/end parameters)."""
+
+    @pytest.mark.asyncio
+    async def test_range_mode_returns_all_bars_until_series_completed(self) -> None:
+        """Range mode collects all bars and terminates on series_completed."""
+        messages: list[dict[str, Any]] = [
+            SERIES_LOADING_MSG,
+            make_timescale_update(bars_count=10),
+            make_timescale_update(bars_count=5),
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        assert len(result) == 15
+
+    @pytest.mark.asyncio
+    async def test_range_mode_passes_range_param_to_prepare_chart_session(self) -> None:
+        """Range mode passes a non-empty range_param to _prepare_chart_session."""
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=3),
+            SERIES_COMPLETED_MSG,
+        ]
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+        client.connection_service = MagicMock()
+        client.connection_service.get_data_stream = lambda: fake_stream(messages)
+        client.connection_service.close = AsyncMock()
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        call_kwargs = prepare_mock.call_args
+        assert call_kwargs is not None
+        range_param_value: str = call_kwargs.kwargs["range_param"]
+        assert range_param_value.startswith("r,")
+        assert ":" in range_param_value
+
+    @pytest.mark.asyncio
+    async def test_range_mode_uses_max_bars_request_for_create_series(self) -> None:
+        """Range mode passes MAX_BARS_REQUEST as bars_count to _prepare_chart_session."""
+        from tvkit.api.chart.utils import MAX_BARS_REQUEST
+
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=3),
+            SERIES_COMPLETED_MSG,
+        ]
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+        client.connection_service = MagicMock()
+        client.connection_service.get_data_stream = lambda: fake_stream(messages)
+        client.connection_service.close = AsyncMock()
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        call_args = prepare_mock.call_args
+        assert call_args is not None
+        effective_bars_count: int = call_args.args[2]
+        assert effective_bars_count == MAX_BARS_REQUEST
+
+    @pytest.mark.asyncio
+    async def test_range_mode_does_not_break_early_on_bar_count(self) -> None:
+        """Range mode does not break early when bar count exceeds MAX_BARS_REQUEST.
+
+        Even if more bars arrive than MAX_BARS_REQUEST, range mode must wait
+        for series_completed — the count-based early exit must not fire.
+        """
+        from tvkit.api.chart.utils import MAX_BARS_REQUEST
+
+        # Produce more bars than MAX_BARS_REQUEST in a single batch
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=MAX_BARS_REQUEST + 1),
+            make_timescale_update(bars_count=2),
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        # All bars from both batches should be returned
+        assert len(result) == MAX_BARS_REQUEST + 3
+
+    @pytest.mark.asyncio
+    async def test_range_mode_start_after_end_raises_value_error(self) -> None:
+        """start > end raises ValueError before the WebSocket is opened."""
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError),
+        ):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-12-31", end="2024-01-01"
+            )
+
+        prepare_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_range_mode_only_start_raises_value_error(self) -> None:
+        """Providing only start (without end) raises ValueError before the WebSocket."""
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError, match="Both start and end must be provided"),
+        ):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01"
+            )
+
+        prepare_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_range_mode_only_end_raises_value_error(self) -> None:
+        """Providing only end (without start) raises ValueError before the WebSocket."""
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError, match="Both start and end must be provided"),
+        ):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", end="2024-12-31"
+            )
+
+        prepare_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_range_and_bars_count_together_raises_value_error(self) -> None:
+        """Specifying both bars_count and start/end raises ValueError."""
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError, match="Cannot specify both bars_count and start/end"),
+        ):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL,
+                interval="1D",
+                bars_count=100,
+                start="2024-01-01",
+                end="2024-12-31",
+            )
+
+        prepare_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_params_raises_value_error(self) -> None:
+        """Providing neither bars_count nor start/end raises ValueError."""
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(ValueError, match="Either bars_count or both start and end"),
+        ):
+            await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D")
+
+        prepare_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_range_mode_partial_bars_is_not_an_error(self) -> None:
+        """Range mode with fewer bars than the window spans is not an error (weekends, holidays).
+
+        Unlike count mode, range mode does not log a partial-data warning when fewer bars
+        are returned than the window could theoretically contain.
+        """
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=2),
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_range_mode_zero_bars_raises_runtime_error(self) -> None:
+        """Range mode with no bars returned raises RuntimeError (same as count mode)."""
+        messages: list[dict[str, Any]] = [SERIES_COMPLETED_MSG]
+        client: OHLCV = _make_client(messages)
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(RuntimeError, match="No historical data received"),
+        ):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+    @pytest.mark.asyncio
+    async def test_range_mode_does_not_timeout_at_31s(self) -> None:
+        """Range mode (180s) is NOT terminated at 31s — count mode (30s) would have fired here."""
+        from tvkit.api.chart.ohlcv import _HISTORICAL_RANGE_TIMEOUT_SECONDS
+
+        assert _HISTORICAL_RANGE_TIMEOUT_SECONDS == 180
+
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=3),
+            SERIES_LOADING_MSG,  # 2nd iteration: time check → 31.0 s (no timeout)
+            SERIES_COMPLETED_MSG,  # 3rd iteration: clean exit via series_completed
+        ]
+        client: OHLCV = _make_client(messages)
+
+        mock_loop: MagicMock = MagicMock()
+        # start=0.0, check at msg-1=31.0 (31>180? NO), check at msg-2=32.0 (32>180? NO),
+        # check at msg-3=33.0 → series_completed breaks before timeout fires.
+        # Extra value pads against StopIteration if a future impl adds a loop.time() call.
+        mock_loop.time.side_effect = [0.0, 31.0, 32.0, 33.0, 34.0]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            patch("asyncio.get_running_loop", return_value=mock_loop),
+        ):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_range_mode_timeout_triggers_at_181s(self) -> None:
+        """Range mode (180s) IS terminated at 181s; collected bars are returned without error."""
+        from tvkit.api.chart.ohlcv import _HISTORICAL_RANGE_TIMEOUT_SECONDS
+
+        assert _HISTORICAL_RANGE_TIMEOUT_SECONDS == 180
+
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=3),
+            SERIES_LOADING_MSG,  # 2nd: 31.0 s — no timeout
+            SERIES_LOADING_MSG,  # 3rd: 100.0 s — no timeout
+            SERIES_LOADING_MSG,  # 4th: 181.0 s — TIMEOUT fires; loop breaks
+        ]
+        client: OHLCV = _make_client(messages)
+
+        mock_loop: MagicMock = MagicMock()
+        # start=0.0, check-1=31.0 (NO), check-2=100.0 (NO), check-3=181.0 (YES → break).
+        # Extra value pads against StopIteration if a future impl adds a loop.time() call.
+        mock_loop.time.side_effect = [0.0, 31.0, 100.0, 181.0, 182.0]
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            patch("asyncio.get_running_loop", return_value=mock_loop),
+        ):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        # Bars collected before timeout are returned without raising
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_stream_ends_without_series_completed_emits_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When range-mode stream ends without series_completed, a WARNING is logged."""
+        import logging
+
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=5),
+            # No series_completed — stream ends naturally
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            caplog.at_level(logging.WARNING, logger="tvkit.api.chart.ohlcv"),
+        ):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        assert len(result) == 5
+        assert any(
+            r.levelname == "WARNING" and "series_completed" in r.getMessage()
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_range_mode_empty_stream_raises_runtime_error(self) -> None:
+        """Range mode with an empty stream (no messages at all) raises RuntimeError.
+
+        Unlike zero-bars-after-series_completed, an empty stream never enters the loop.
+        The incomplete-stream warning is also emitted (no series_completed received).
+        """
+        messages: list[dict[str, Any]] = []
+        client: OHLCV = _make_client(messages)
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            pytest.raises(RuntimeError, match="No historical data received"),
+        ):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
+            )
