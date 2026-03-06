@@ -9,6 +9,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 __all__ = [
     "MAX_BARS_REQUEST",
     "to_unix_timestamp",
+    "end_of_day_timestamp",
     "build_range_param",
     "validate_interval",
 ]
@@ -93,6 +94,38 @@ def to_unix_timestamp(ts: datetime | str) -> int:
         dt = dt.replace(tzinfo=UTC)
 
     return int(dt.timestamp())
+
+
+def end_of_day_timestamp(ts: datetime | str) -> int:
+    """
+    Return the unix timestamp for the end-of-day (23:59:59 UTC) when ts is a date-only
+    value, or the exact unix timestamp when ts already includes a time component.
+
+    This is used for client-side range filtering to ensure that intraday bars on the
+    last requested day are not incorrectly excluded by a midnight boundary.
+
+    Args:
+        ts: A timezone-aware datetime, a naive datetime (assigned UTC without conversion),
+            or an ISO 8601 string. A string is treated as date-only when it contains no
+            space (``" "``) and no ``"T"`` separator. A datetime object is treated as
+            date-only when hour, minute, second, and microsecond are all zero.
+
+    Returns:
+        Unix timestamp as integer seconds. For date-only inputs, 86399 seconds (23h 59m 59s)
+        are added to the midnight base timestamp so the entire calendar day is included.
+
+    Example:
+        >>> end_of_day_timestamp("2025-12-31")
+        1767225599   # 2025-12-31 23:59:59 UTC
+        >>> end_of_day_timestamp("2025-12-31 16:00")
+        1767196800   # unchanged — time component present
+    """
+    base: int = to_unix_timestamp(ts)
+    if isinstance(ts, str):
+        is_date_only: bool = " " not in ts and "T" not in ts
+    else:
+        is_date_only = ts.hour == 0 and ts.minute == 0 and ts.second == 0 and ts.microsecond == 0
+    return base + 86399 if is_date_only else base
 
 
 def build_range_param(start: datetime | str, end: datetime | str) -> str:

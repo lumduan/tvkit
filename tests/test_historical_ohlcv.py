@@ -35,6 +35,16 @@ SERIES_ERROR_MSG: dict[str, Any] = {
 }
 
 
+# Base timestamp for 2024-01-01 00:00:00 UTC — used by range-mode tests so that
+# bars land within the [2024-01-01, 2024-12-31] window declared in those tests.
+_TS_2024_JAN_01: float = 1_704_067_200.0
+
+
+def make_range_timescale_update(bars_count: int) -> dict[str, Any]:
+    """Build a fake timescale_update with bars stamped inside the 2024 test window."""
+    return make_timescale_update(bars_count=bars_count, base_ts=_TS_2024_JAN_01)
+
+
 def make_timescale_update(
     bars_count: int,
     base_ts: float = 1_000_000.0,
@@ -733,8 +743,8 @@ class TestRangeMode:
         """Range mode collects all bars and terminates on series_completed."""
         messages: list[dict[str, Any]] = [
             SERIES_LOADING_MSG,
-            make_timescale_update(bars_count=10),
-            make_timescale_update(bars_count=5),
+            make_range_timescale_update(bars_count=10),
+            make_range_timescale_update(bars_count=5),
             SERIES_COMPLETED_MSG,
         ]
         client: OHLCV = _make_client(messages)
@@ -750,7 +760,7 @@ class TestRangeMode:
     async def test_range_mode_passes_range_param_to_prepare_chart_session(self) -> None:
         """Range mode passes a non-empty range_param to _prepare_chart_session."""
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=3),
+            make_range_timescale_update(bars_count=3),
             SERIES_COMPLETED_MSG,
         ]
         prepare_mock: AsyncMock = AsyncMock()
@@ -777,7 +787,7 @@ class TestRangeMode:
         from tvkit.api.chart.utils import MAX_BARS_REQUEST
 
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=3),
+            make_range_timescale_update(bars_count=3),
             SERIES_COMPLETED_MSG,
         ]
         prepare_mock: AsyncMock = AsyncMock()
@@ -808,8 +818,8 @@ class TestRangeMode:
 
         # Produce more bars than MAX_BARS_REQUEST in a single batch
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=MAX_BARS_REQUEST + 1),
-            make_timescale_update(bars_count=2),
+            make_range_timescale_update(bars_count=MAX_BARS_REQUEST + 1),
+            make_range_timescale_update(bars_count=2),
             SERIES_COMPLETED_MSG,
         ]
         client: OHLCV = _make_client(messages)
@@ -917,7 +927,7 @@ class TestRangeMode:
         are returned than the window could theoretically contain.
         """
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=2),
+            make_range_timescale_update(bars_count=2),
             SERIES_COMPLETED_MSG,
         ]
         client: OHLCV = _make_client(messages)
@@ -951,7 +961,7 @@ class TestRangeMode:
         assert _HISTORICAL_RANGE_TIMEOUT_SECONDS == 180
 
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=3),
+            make_range_timescale_update(bars_count=3),
             SERIES_LOADING_MSG,  # 2nd iteration: time check → 31.0 s (no timeout)
             SERIES_COMPLETED_MSG,  # 3rd iteration: clean exit via series_completed
         ]
@@ -981,7 +991,7 @@ class TestRangeMode:
         assert _HISTORICAL_RANGE_TIMEOUT_SECONDS == 180
 
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=3),
+            make_range_timescale_update(bars_count=3),
             SERIES_LOADING_MSG,  # 2nd: 31.0 s — no timeout
             SERIES_LOADING_MSG,  # 3rd: 100.0 s — no timeout
             SERIES_LOADING_MSG,  # 4th: 181.0 s — TIMEOUT fires; loop breaks
@@ -1012,7 +1022,7 @@ class TestRangeMode:
         import logging
 
         messages: list[dict[str, Any]] = [
-            make_timescale_update(bars_count=5),
+            make_range_timescale_update(bars_count=5),
             # No series_completed — stream ends naturally
         ]
         client: OHLCV = _make_client(messages)

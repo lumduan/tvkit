@@ -18,7 +18,13 @@ from tvkit.api.chart.models.ohlcv import (
     WebSocketMessage,
 )
 from tvkit.api.chart.services import ConnectionService, MessageService
-from tvkit.api.chart.utils import MAX_BARS_REQUEST, build_range_param, validate_interval
+from tvkit.api.chart.utils import (
+    MAX_BARS_REQUEST,
+    build_range_param,
+    end_of_day_timestamp,
+    to_unix_timestamp,
+    validate_interval,
+)
 from tvkit.api.utils import convert_symbol_format, validate_symbols
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -457,6 +463,29 @@ class OHLCV:
         # TradingView generally sends bars in order, but this guarantees correctness
         # if messages arrive out of sequence due to network conditions.
         historical_bars.sort(key=lambda bar: bar.timestamp)
+
+        # Client-side range filter: TradingView's modify_series range constraint is
+        # applied server-side but does not guarantee strict boundary adherence — bars
+        # beyond the requested end date (e.g., the live/current period) may bleed
+        # through. This filter removes any such out-of-range bars.
+        if is_range_mode:
+            assert start is not None and end is not None  # mypy narrowing
+            from_ts: int = to_unix_timestamp(start)
+            to_ts_inclusive: int = end_of_day_timestamp(end)
+            pre_filter_count: int = len(historical_bars)
+            historical_bars = [
+                bar for bar in historical_bars if from_ts <= bar.timestamp <= to_ts_inclusive
+            ]
+            removed: int = pre_filter_count - len(historical_bars)
+            if removed > 0:
+                logger.debug(
+                    "Range post-filter removed %d out-of-range bar(s) "
+                    "(from_ts=%d, to_ts=%d, remaining=%d)",
+                    removed,
+                    from_ts,
+                    to_ts_inclusive,
+                    len(historical_bars),
+                )
 
         if not historical_bars:
             logger.warning(f"No historical bars received for symbol {converted_symbol}")
