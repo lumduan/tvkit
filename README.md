@@ -136,6 +136,8 @@ Bar 5: BTC $43,267.50 | Volume: 145,600
 
 ### Historical Data & Export
 
+- Fetch historical OHLCV data by **bar count** or **explicit date range** (`start`/`end`)
+
 ```python
 import asyncio
 from tvkit.api.chart.ohlcv import OHLCV

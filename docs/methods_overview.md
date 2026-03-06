@@ -90,7 +90,7 @@ All tvkit services support async context managers for automatic resource cleanup
 ```python
 async with OHLCV() as client:
     # WebSocket connections automatically managed
-    data = await client.get_historical_ohlcv("NASDAQ:AAPL")
+    data = await client.get_historical_ohlcv("NASDAQ:AAPL", bars_count=10)
 
 async with ScannerService() as service:
     # HTTP client resources automatically managed
@@ -182,7 +182,7 @@ Combine multiple modules for comprehensive analysis:
 async def comprehensive_analysis(symbol: str):
     # 1. Get historical price data
     async with OHLCV() as client:
-        bars = await client.get_historical_ohlcv(symbol, "1D", 100)
+        bars = await client.get_historical_ohlcv(symbol, interval="1D", bars_count=100)
     
     # 2. Get fundamental data via scanner
     service = ScannerService()
@@ -204,7 +204,7 @@ Best practices for high-performance applications:
 ```python
 # Batch operations
 symbols = ["AAPL", "GOOGL", "MSFT", "AMZN"]
-tasks = [client.get_historical_ohlcv(f"NASDAQ:{s}") for s in symbols]
+tasks = [client.get_historical_ohlcv(f"NASDAQ:{s}", bars_count=100) for s in symbols]
 results = await asyncio.gather(*tasks)
 
 # Efficient export configurations

@@ -17,6 +17,21 @@ The OHLCV client serves as the main entry point for tvkit's real-time data strea
 - **Error Handling**: Comprehensive validation and error recovery patterns
 - **Type Safety**: Full Pydantic model integration for type-safe data structures
 
+```text
+User Code
+    │
+    ▼
+OHLCV Client  (tvkit.api.chart.ohlcv)
+    │
+    ├──────────────────┐
+    ▼                  ▼
+ConnectionService  MessageService
+(WebSocket mgmt)   (Protocol msgs)
+    │
+    ▼
+TradingView WebSocket
+```
+
 ## Class Definition
 
 ### OHLCV
@@ -40,19 +55,21 @@ def __init__(self) -> None
 **Description**: Initializes the OHLCV client with default WebSocket connection parameters for TradingView data streaming.
 
 **Default Configuration**:
+
 - **WebSocket URL**: `wss://data.tradingview.com/socket.io/websocket?from=screener%2F`
 - **Connection Service**: Initialized on first use
 - **Message Service**: Initialized on first use
 - **Logging Level**: WARNING (configurable)
 
 **Attributes**:
+
 - `ws_url` (str): WebSocket URL for TradingView connection
 - `connection_service` (Optional[ConnectionService]): WebSocket connection management
 - `message_service` (Optional[MessageService]): Message protocol handling
 
 ### Context Manager Support
 
-#### __aenter__() and __aexit__()
+#### **aenter**() and **aexit**()
 
 ```python
 async def __aenter__(self) -> "OHLCV"
@@ -62,11 +79,13 @@ async def __aexit__(self, exc_type, exc_val, exc_tb) -> None
 **Description**: Provides async context manager support for automatic resource management.
 
 **Resource Management**:
+
 - **Entry**: Returns the OHLCV instance ready for use
 - **Exit**: Automatically closes WebSocket connections and cleans up resources
 - **Exception Safety**: Ensures cleanup even when exceptions occur
 
 **Usage Pattern**:
+
 ```python
 async with OHLCV() as client:
     # Use client methods here
@@ -90,14 +109,16 @@ async def get_ohlcv(
 ) -> AsyncGenerator[OHLCVBar, None]
 ```
 
-**Description**: Returns an async generator that yields structured OHLCV data for a specified symbol in real-time.
+**Description**: Returns an async generator that first yields historical OHLCV bars (from `bars_count`) and then yields real-time updates as new bars form.
 
 **Parameters**:
+
 - `exchange_symbol` (str): Symbol in 'EXCHANGE:SYMBOL' format (e.g., 'BINANCE:BTCUSDT')
 - `interval` (str): Time interval for bars (default: "1" for 1 minute)
 - `bars_count` (int): Number of historical bars to fetch initially (default: 10)
 
 **Returns**: AsyncGenerator yielding `OHLCVBar` objects with:
+
 - `timestamp` (int): Unix timestamp in seconds
 - `open` (float): Opening price
 - `high` (float): Highest price in interval
@@ -106,30 +127,35 @@ async def get_ohlcv(
 - `volume` (int): Trading volume
 
 **Supported Intervals**:
+
 - **Minutes**: "1", "5", "15", "30"
 - **Hours**: "60", "120", "240"
 - **Days**: "1D"
 - **Weeks**: "1W"
 - **Months**: "1M"
 
-**Supported Exchanges**:
+**Examples of supported exchanges** (TradingView supports many more):
+
 - **Crypto**: BINANCE, COINBASE, KRAKEN, BITFINEX
 - **Stocks**: NASDAQ, NYSE, LSE, TSE
 - **Forex**: FOREX, OANDA, FX_IDC
 - **Commodities**: COMEX, NYMEX
 
 **Message Processing**:
+
 - **Real-time Updates** (`du`): Live price updates as new bars form
 - **Historical Data** (`timescale_update`): Initial historical bars
 - **Quote Data** (`qsd`): Current price information
 - **Status Messages** (`quote_completed`): Setup confirmation
 
 **Error Handling**:
+
 - `ValueError`: Invalid symbol format or interval
 - `WebSocketException`: Connection or streaming errors
 - `RuntimeError`: Service initialization failures
 
 **Usage Example**:
+
 ```python
 async with OHLCV() as client:
     count = 0
@@ -152,47 +178,161 @@ async def get_historical_ohlcv(
     self,
     exchange_symbol: str,
     interval: str = "1",
-    bars_count: int = 10
+    bars_count: int | None = None,
+    *,
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
 ) -> list[OHLCVBar]
 ```
 
-**Description**: Fetches a complete list of historical OHLCV data for analysis and backtesting.
+**Description**: Fetches a complete list of historical OHLCV data for analysis and backtesting. Supports two mutually exclusive query modes: **count mode** (fetch a fixed number of bars) and **range mode** (fetch all bars within a date range).
+
+> **Breaking change from v0.1.4**: `bars_count` default changed from `10` to `None`. Callers must now explicitly provide either `bars_count` or `start`/`end`. Passing neither raises `ValueError` immediately.
+
+#### Mode Selection
+
+| Goal | Use |
+|------|-----|
+| Fetch the most recent N bars | Count mode — pass `bars_count` |
+| Fetch a specific historical period (backtesting, full-year export) | Range mode — pass `start` and `end` |
+
+#### Count Mode
+
+Fetch the most recent N bars by providing `bars_count` explicitly.
 
 **Parameters**:
+
 - `exchange_symbol` (str): Symbol in 'EXCHANGE:SYMBOL' format
 - `interval` (str): Time interval (default: "1")
-- `bars_count` (int): Number of historical bars to fetch (default: 10)
+- `bars_count` (int): Number of bars to fetch — must be > 0
 
-**Returns**: List of `OHLCVBar` objects sorted chronologically (oldest first)
+**Timeout**: 30 seconds
 
-**Implementation Details**:
-- **Timeout Protection**: 30-second timeout to prevent indefinite waiting
-- **Data Aggregation**: Collects bars from multiple message types
-- **Sorting**: Results sorted by timestamp for chronological analysis
-- **Validation**: Ensures at least one bar is received before returning
+**Example**:
 
-**Error Handling**:
-- `RuntimeError`: No historical data received within timeout period
-- `ValueError`: Invalid symbol format or interval
-- `WebSocketException`: Connection failures
-
-**Usage Example**:
 ```python
 async with OHLCV() as client:
-    # Fetch 30 days of Apple stock data
+    # Explicit bars_count required — no default
     bars = await client.get_historical_ohlcv(
         "NASDAQ:AAPL",
         interval="1D",
-        bars_count=30
+        bars_count=30,
     )
-
     print(f"Fetched {len(bars)} daily bars")
-    print(f"Date range: {convert_timestamp_to_iso(bars[0].timestamp)[:10]} to {convert_timestamp_to_iso(bars[-1].timestamp)[:10]}")
-
-    # Calculate price change
     price_change = ((bars[-1].close - bars[0].close) / bars[0].close) * 100
     print(f"30-day price change: {price_change:.2f}%")
 ```
+
+#### Range Mode
+
+Fetch all bars within a start/end date range. Both `start` and `end` are keyword-only and must always be provided together.
+
+**Parameters**:
+
+- `exchange_symbol` (str): Symbol in 'EXCHANGE:SYMBOL' format
+- `interval` (str): Time interval (default: "1")
+- `start` (datetime | str): Start of the range, inclusive. Accepts timezone-aware datetime, naive datetime (treated as UTC), or ISO 8601 string (`"2024-01-01"`, `"2024-01-01T00:00:00Z"`)
+- `end` (datetime | str): End of the range, inclusive. Same accepted types as `start`
+
+**Timezone behaviour**: Naive `datetime` objects are assumed to be UTC. A `logger.debug()` message is emitted — no exception is raised.
+
+**Inclusive semantics**: Both endpoints are included in the results. `start == end` is valid and fetches all bars within that calendar day for the specified interval — for example, `"5"` (5-minute) returns approximately 78 bars for a US market session; `"1"` (1-minute) returns approximately 390 bars.
+
+**Timeout**: 180 seconds. The longer timeout allows TradingView to stream multiple `timescale_update` batches when the range spans large periods. Count mode uses 30 seconds.
+
+**TradingView limit**: Responses are typically capped at around 5000 bars per request, though this may vary depending on account tier and symbol history depth. This limit applies per request and cannot be bypassed by the client. Very long intraday ranges (e.g., years of 1-minute data) may be truncated at this limit. For such cases, fetch in multiple date-range chunks.
+
+**Large range warning**: Wide date ranges may yield thousands of bars and significant memory usage. Consider exporting results incrementally using `DataExporter` rather than holding all bars in memory.
+
+**Examples**:
+
+```python
+import asyncio
+from datetime import datetime, timezone
+from tvkit.api.chart.ohlcv import OHLCV
+
+# Full-year range — daily bars
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "NASDAQ:AAPL",
+        interval="1D",
+        start="2024-01-01",
+        end="2024-12-31",
+    )
+    print(f"Fetched {len(bars)} daily bars for 2024")
+
+# Single-day intraday — 5-minute bars for one trading session
+# start == end fetches all bars within that calendar day (~78 bars for US market)
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "NASDAQ:AAPL",
+        interval="5",
+        start="2024-06-15",
+        end="2024-06-15",
+    )
+    print(f"Fetched {len(bars)} 5-minute bars for 2024-06-15")
+
+# Timezone-aware string inputs (UTC via "Z" suffix)
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "BINANCE:BTCUSDT",
+        interval="60",
+        start="2024-01-01T00:00:00Z",
+        end="2024-01-31T23:59:59Z",
+    )
+
+# datetime objects (timezone-aware)
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "NASDAQ:AAPL",
+        interval="1D",
+        start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        end=datetime(2024, 12, 31, tzinfo=timezone.utc),
+    )
+
+# Export to CSV via DataExporter
+from tvkit.export import DataExporter
+
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "NASDAQ:AAPL",
+        interval="1D",
+        start="2024-01-01",
+        end="2024-12-31",
+    )
+
+exporter = DataExporter()
+df = await exporter.to_polars(bars, add_analysis=True)
+csv_path = await exporter.to_csv(bars, "./export/aapl_2024.csv")
+print(f"Exported {len(bars)} bars to {csv_path}")
+```
+
+#### Validation Rules
+
+All validation occurs before the WebSocket connection is opened (fail-fast).
+
+| Condition | Behaviour |
+|-----------|-----------|
+| Only `bars_count` provided | Count mode |
+| Both `start` and `end` provided | Range mode |
+| Only `start` OR only `end` provided | `ValueError` immediately |
+| Both `bars_count` AND `start`/`end` provided | `ValueError` immediately |
+| Neither `bars_count` nor `start`/`end` provided | `ValueError` immediately |
+| `bars_count <= 0` | `ValueError` immediately |
+| `start > end` | `ValueError` from `build_range_param()` |
+| `start == end` | Valid — fetches all intraday bars for that calendar day |
+| Naive `datetime` input | Treated as UTC; `logger.debug()` emitted |
+| Invalid ISO 8601 string | `ValueError` with descriptive message |
+
+#### Returns
+
+List of `OHLCVBar` objects sorted chronologically (oldest first). In range mode, TradingView may return fewer bars than the range implies (weekends, holidays, limited history depth). This is expected and not an error.
+
+#### Error Handling
+
+- `RuntimeError`: No bars received within timeout period
+- `ValueError`: Invalid parameters, conflicting modes, or `start > end`
+- `WebSocketException`: Connection failures
 
 ### Quote Data Streaming
 
@@ -210,11 +350,13 @@ async def get_quote_data(
 **Description**: Streams real-time quote data including current price, volume, and market information.
 
 **Parameters**:
+
 - `exchange_symbol` (str): Symbol in 'EXCHANGE:SYMBOL' format
 - `interval` (str): Time interval (default: "1")
 - `bars_count` (int): Historical bar count for context (default: 10)
 
 **Returns**: AsyncGenerator yielding `QuoteSymbolData` objects with:
+
 - `current_price` (Optional[float]): Current market price
 - `symbol_info` (dict): Symbol metadata and market information
 - `volume` (Optional[int]): Current trading volume
@@ -222,12 +364,14 @@ async def get_quote_data(
 - `change_percent` (Optional[float]): Percentage change
 
 **Use Cases**:
+
 - **Real-time Price Monitoring**: Track current prices without full OHLCV data
 - **Market Scanning**: Monitor multiple symbols for price alerts
 - **Quote-Only Assets**: Assets that provide quotes but not full chart data
 - **High-Frequency Updates**: More frequent updates than OHLCV bars
 
 **Usage Example**:
+
 ```python
 async with OHLCV() as client:
     async for quote in client.get_quote_data("NASDAQ:AAPL", interval="1"):
@@ -253,6 +397,7 @@ async def get_ohlcv_raw(
 **Description**: Provides access to raw JSON messages from TradingView for debugging and custom parsing.
 
 **Parameters**:
+
 - `exchange_symbol` (str): Symbol in 'EXCHANGE:SYMBOL' format
 - `interval` (str): Time interval (default: "1")
 - `bars_count` (int): Historical bar count (default: 10)
@@ -260,12 +405,14 @@ async def get_ohlcv_raw(
 **Returns**: AsyncGenerator yielding raw JSON dictionary objects
 
 **Use Cases**:
+
 - **Protocol Debugging**: Inspect raw WebSocket messages
 - **Custom Parsing**: Implement specialized data extraction
 - **Format Analysis**: Understand TradingView message structures
 - **Integration Development**: Build custom message handlers
 
 **Message Types Yielded**:
+
 - **Data Updates** (`du`): Real-time OHLCV updates
 - **Timescale Updates** (`timescale_update`): Historical data batches
 - **Quote Symbol Data** (`qsd`): Price and volume updates
@@ -273,6 +420,7 @@ async def get_ohlcv_raw(
 - **Heartbeats**: Connection keep-alive messages
 
 **Usage Example**:
+
 ```python
 async with OHLCV() as client:
     message_count = 0
@@ -295,34 +443,39 @@ async with OHLCV() as client:
 ```python
 async def get_latest_trade_info(
     self,
-    exchange_symbol: List[str]
+    exchange_symbol: list[str]
 ) -> AsyncGenerator[dict[str, Any], None]
 ```
 
 **Description**: Monitors multiple symbols simultaneously for comprehensive portfolio tracking.
 
 **Parameters**:
-- `exchange_symbol` (List[str]): List of symbols in 'EXCHANGE:SYMBOL' format
+
+- `exchange_symbol` (list[str]): List of symbols in 'EXCHANGE:SYMBOL' format
 
 **Returns**: AsyncGenerator yielding trade information dictionaries with:
+
 - **Symbol Data**: Current prices, changes, volumes
 - **Market Information**: Exchange details, trading status
 - **Timestamp Data**: Last trade times and updates
 - **Metadata**: Symbol descriptions and currency information
 
 **Use Cases**:
+
 - **Portfolio Monitoring**: Track multiple investments simultaneously
 - **Market Scanning**: Monitor sector or theme-based symbol groups
 - **Arbitrage Detection**: Compare prices across different exchanges
 - **Risk Management**: Real-time monitoring of position values
 
 **Supported Symbol Types**:
+
 - **Mixed Assets**: Combine stocks, crypto, forex, commodities
 - **Cross-Exchange**: Monitor same asset on different exchanges
 - **Currency Pairs**: Multiple forex pairs simultaneously
 - **Sector Groups**: Industry-specific symbol collections
 
 **Usage Example**:
+
 ```python
 # Define a diverse portfolio
 portfolio_symbols = [
@@ -360,12 +513,14 @@ async def _setup_services(self) -> None
 **Description**: Initializes and connects the underlying WebSocket services.
 
 **Process Flow**:
+
 1. **ConnectionService Creation**: Initializes WebSocket connection management
 2. **Connection Establishment**: Connects to TradingView WebSocket endpoint
 3. **MessageService Creation**: Sets up message protocol handler
 4. **Service Linking**: Links message service to active WebSocket connection
 
 **Error Handling**:
+
 - Ensures services are only initialized once per client instance
 - Propagates connection errors to calling methods
 - Provides consistent service state across all client methods
@@ -377,6 +532,7 @@ The OHLCV client integrates with several Pydantic models for type-safe data hand
 ### Core Data Models
 
 **OHLCVBar**: Structured OHLCV data
+
 ```python
 class OHLCVBar(BaseModel):
     timestamp: int          # Unix timestamp (seconds)
@@ -388,16 +544,18 @@ class OHLCVBar(BaseModel):
 ```
 
 **QuoteSymbolData**: Real-time quote information
+
 ```python
 class QuoteSymbolData(BaseModel):
     current_price: Optional[float]     # Current market price
-    symbol_info: dict                  # Symbol metadata
+    symbol_info: dict[str, Any]        # Symbol metadata
     volume: Optional[int]              # Trading volume
     change: Optional[float]            # Price change
     change_percent: Optional[float]    # Percentage change
 ```
 
 **WebSocketMessage**: Generic message wrapper
+
 ```python
 class WebSocketMessage(BaseModel):
     message_type: str      # Message type identifier ('du', 'qsd', etc.)
@@ -417,10 +575,12 @@ class WebSocketMessage(BaseModel):
 All methods accept symbols in both `EXCHANGE:SYMBOL` and `EXCHANGE-SYMBOL` formats, with automatic conversion:
 
 **Accepted Formats**:
+
 - `EXCHANGE:SYMBOL` (preferred TradingView format)
 - `EXCHANGE-SYMBOL` (automatically converted to colon format)
 
 **Stock Examples** (both formats supported):
+
 ```python
 # Preferred format (no conversion needed)
 "NASDAQ:AAPL"     # Apple Inc.
@@ -437,6 +597,7 @@ All methods accept symbols in both `EXCHANGE:SYMBOL` and `EXCHANGE-SYMBOL` forma
 ```
 
 **Cryptocurrency Examples**:
+
 ```python
 "BINANCE:BTCUSDT"     # Bitcoin/USDT on Binance
 "COINBASE:ETHUSD"     # Ethereum/USD on Coinbase
@@ -445,6 +606,7 @@ All methods accept symbols in both `EXCHANGE:SYMBOL` and `EXCHANGE-SYMBOL` forma
 ```
 
 **Forex Examples**:
+
 ```python
 "FOREX:EURUSD"        # Euro/US Dollar
 "OANDA:GBPJPY"        # British Pound/Japanese Yen
@@ -453,6 +615,7 @@ All methods accept symbols in both `EXCHANGE:SYMBOL` and `EXCHANGE-SYMBOL` forma
 ```
 
 **Commodities Examples**:
+
 ```python
 "COMEX:GC1!"          # Gold futures
 "NYMEX:CL1!"          # Crude oil futures
@@ -465,12 +628,14 @@ All methods accept symbols in both `EXCHANGE:SYMBOL` and `EXCHANGE-SYMBOL` forma
 The client automatically validates symbol formats and converts them using the `validate_symbols()` and `convert_symbol_format()` utilities:
 
 **Symbol Format Conversion**:
+
 - **Automatic Conversion**: Converts "EXCHANGE-SYMBOL" to "EXCHANGE:SYMBOL" format
 - **Format Detection**: Automatically detects symbol format and converts when needed
 - **Backward Compatibility**: Symbols already in "EXCHANGE:SYMBOL" format are unchanged
 - **Type Safety**: Returns `SymbolConversionResult` with conversion status
 
 **Symbol Validation**:
+
 - **Format Check**: Ensures valid symbol format after conversion
 - **Exchange Validation**: Verifies exchange is supported
 - **Symbol Verification**: Confirms symbol exists on specified exchange
@@ -530,7 +695,11 @@ async def fetch_with_timeout():
         try:
             # Set overall timeout for the operation
             bars = await asyncio.wait_for(
-                client.get_historical_ohlcv("NASDAQ:AAPL", "1D", 30),
+                client.get_historical_ohlcv(
+                    "NASDAQ:AAPL",
+                    interval="1D",
+                    bars_count=30,
+                ),
                 timeout=60.0  # 60-second timeout
             )
             print(f"Fetched {len(bars)} bars successfully")
@@ -563,32 +732,37 @@ async def optimized_multi_symbol_monitoring():
 
 ### Memory-Efficient Historical Data
 
-```python
-async def process_large_historical_dataset():
-    async with OHLCV() as client:
-        # Fetch data in chunks to manage memory
-        chunk_size = 100
-        total_bars_needed = 1000
-        all_bars = []
+Fetch large datasets in monthly chunks using range mode to avoid hitting the ~5000-bar limit and to manage memory usage.
 
-        for i in range(0, total_bars_needed, chunk_size):
+```python
+from datetime import datetime, timezone
+
+async def process_large_historical_dataset():
+    # Define the full date range to cover (e.g., 2023 full year)
+    year_months = [
+        ("2023-01-01", "2023-01-31"),
+        ("2023-02-01", "2023-02-28"),
+        ("2023-03-01", "2023-03-31"),
+        # ... add remaining months
+    ]
+
+    all_bars = []
+    async with OHLCV() as client:
+        for start_date, end_date in year_months:
             bars = await client.get_historical_ohlcv(
                 "NASDAQ:AAPL",
-                "1D",
-                min(chunk_size, total_bars_needed - i)
+                interval="1D",
+                start=start_date,
+                end=end_date,
             )
-
-            # Process immediately to reduce memory usage
+            # Process each chunk immediately to reduce peak memory usage
             processed_data = [
                 {"date": convert_timestamp_to_iso(bar.timestamp)[:10], "close": bar.close}
                 for bar in bars
             ]
             all_bars.extend(processed_data)
 
-            # Small delay to avoid overwhelming the server
-            await asyncio.sleep(0.1)
-
-        print(f"Processed {len(all_bars)} bars efficiently")
+    print(f"Processed {len(all_bars)} bars across {len(year_months)} monthly chunks")
 ```
 
 ### Connection Reuse Patterns
@@ -607,13 +781,15 @@ class EfficientDataCollector:
         if self.client:
             await self.client.__aexit__(exc_type, exc_val, exc_tb)
 
-    async def collect_multiple_symbols(self, symbols: List[str]):
+    async def collect_multiple_symbols(self, symbols: list[str]):
         """Reuse single connection for multiple operations"""
         results = {}
 
         for symbol in symbols:
             try:
-                bars = await self.client.get_historical_ohlcv(symbol, "1D", 10)
+                bars = await self.client.get_historical_ohlcv(
+                    symbol, interval="1D", bars_count=10
+                )
                 results[symbol] = bars
             except Exception as e:
                 logging.error(f"Failed to fetch {symbol}: {e}")
@@ -643,7 +819,9 @@ from tvkit.export import DataExporter
 async def fetch_and_export_data():
     async with OHLCV() as client:
         # Fetch historical data
-        bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", 30)
+        bars = await client.get_historical_ohlcv(
+            "NASDAQ:AAPL", interval="1D", bars_count=30
+        )
 
         # Export to multiple formats
         exporter = DataExporter()
@@ -700,7 +878,10 @@ async def track_portfolio_value():
         "BINANCE:BTCUSDT": 0.5  # 0.5 Bitcoin
     }
 
+    latest_prices: dict[str, float] = {}
+
     async with OHLCV() as client:
+        update_count = 0
         async for trade_info in client.get_latest_trade_info(list(portfolio.keys())):
             if trade_info.get('m') == 'qsd':
                 data = trade_info.get('p', [{}])[1]
@@ -708,18 +889,20 @@ async def track_portfolio_value():
                 price = data.get('lp')
 
                 if symbol in portfolio and price:
+                    latest_prices[symbol] = price
                     shares = portfolio[symbol]
                     position_value = shares * price
-
                     print(f"{symbol}: {shares} × ${price} = ${position_value:,.2f}")
 
-        # Calculate total portfolio value periodically
-        total_value = 0
-        for symbol, shares in portfolio.items():
-            # Get latest price (implementation would cache recent prices)
-            total_value += shares * 100  # Placeholder calculation
+            update_count += 1
+            if update_count >= 20:  # Demo: stop after 20 updates
+                break
 
-        print(f"Total Portfolio Value: ${total_value:,.2f}")
+    # Calculate total portfolio value from collected prices
+    total_value = sum(
+        portfolio[sym] * price for sym, price in latest_prices.items()
+    )
+    print(f"Total Portfolio Value: ${total_value:,.2f}")
 ```
 
 ## Usage Examples
@@ -763,7 +946,11 @@ async def analyze_historical_data():
         symbol = "NASDAQ:AAPL"
         print(f"Fetching 90 days of {symbol} data...")
 
-        bars = await client.get_historical_ohlcv(symbol, "1D", 90)
+        bars = await client.get_historical_ohlcv(
+            symbol,
+            interval="1D",
+            bars_count=90,
+        )
 
         # Calculate basic statistics
         prices = [bar.close for bar in bars]
@@ -906,11 +1093,13 @@ if __name__ == "__main__":
 ## API Reference Summary
 
 ### Constructor and Context Management
+
 - `__init__()`: Initialize OHLCV client
 - `__aenter__()`: Async context manager entry
 - `__aexit__()`: Async context manager exit with cleanup
 
 ### Core Streaming Methods
+
 - `get_ohlcv()`: Real-time OHLCV bar streaming
 - `get_historical_ohlcv()`: Historical OHLCV data retrieval
 - `get_quote_data()`: Real-time quote data streaming
@@ -918,20 +1107,24 @@ if __name__ == "__main__":
 - `get_latest_trade_info()`: Multi-symbol trade information
 
 ### Internal Methods
+
 - `_setup_services()`: Initialize WebSocket services
 
 ### Signal Handling
+
 - `signal_handler()`: Graceful shutdown on keyboard interrupt
 
 ## Related Components
 
 **Core Dependencies**:
+
 - `tvkit.api.chart.services.ConnectionService`: WebSocket connection management
 - `tvkit.api.chart.services.MessageService`: Protocol message handling
 - `tvkit.api.chart.models.ohlcv`: Data model definitions
 - `tvkit.api.chart.utils`: Validation and utility functions
 
 **Integration Points**:
+
 - **DataExporter**: Export OHLCV data to various formats
 - **Scanner API**: Combine with market scanning for comprehensive analysis
 - **Real-time Models**: Type-safe data structures for all responses
@@ -939,20 +1132,23 @@ if __name__ == "__main__":
 ## Performance Notes
 
 **Connection Efficiency**:
+
 - Single WebSocket connection per client instance
 - Connection reuse across multiple method calls within context
 - Automatic connection management and cleanup
 
 **Memory Management**:
+
 - Streaming generators for memory-efficient real-time processing
-- Configurable historical data chunk sizes
+- Range-mode queries allow manual chunking of large date ranges
 - Automatic resource cleanup on context exit
 
 **Network Optimization**:
+
 - Efficient multi-symbol subscriptions
 - Protocol-level message compression
 - Automatic heartbeat handling
 
 ---
 
-**Note**: This documentation reflects tvkit v0.1.4. The OHLCV class is the primary interface for most users. For lower-level control, see ConnectionService and MessageService documentation.
+**Note**: This documentation reflects tvkit v0.1.5 (unreleased). The OHLCV class is the primary interface for most users. For lower-level control, see ConnectionService and MessageService documentation.
