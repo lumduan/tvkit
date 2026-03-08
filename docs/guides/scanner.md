@@ -1,5 +1,7 @@
 # Scanner Guide
 
+[Home](../index.md) > Guides > Scanner
+
 The scanner API lets you screen stocks across **69 global markets** using **100+ financial metrics**. It returns a ranked list of stocks matching your criteria as a structured response object (`response.data`) — no WebSocket connection required.
 
 ## Prerequisites

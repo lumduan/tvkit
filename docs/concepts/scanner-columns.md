@@ -1,5 +1,7 @@
 # Scanner Column Sets
 
+[Home](../index.md) > Concepts > Scanner Column Sets
+
 The scanner API exposes **over 100 financial columns** per stock. To avoid fetching unnecessary data, tvkit provides predefined **column sets** that group related metrics together. Column sets can also be combined if you need metrics from multiple categories.
 
 ## Available Column Sets

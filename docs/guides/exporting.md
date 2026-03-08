@@ -1,5 +1,7 @@
 # Exporting Data
 
+[Home](../index.md) > Guides > Exporting Data
+
 `DataExporter` converts tvkit data — OHLCV bars or scanner results — into multiple output formats for analysis, storage, and data sharing. All export methods are async and return either a file path (for file exports) or a DataFrame (for in-memory exports).
 
 ## Prerequisites

@@ -1,5 +1,7 @@
 # Real-time Streaming Guide
 
+[Home](../index.md) > Guides > Real-time Streaming
+
 `get_ohlcv()` streams live OHLCV bars over a persistent WebSocket connection. Each bar is yielded as it closes on TradingView. The connection remains open until you break the loop or exit the context manager.
 
 ## Prerequisites

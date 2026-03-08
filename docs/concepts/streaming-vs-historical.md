@@ -1,5 +1,7 @@
 # Streaming vs Historical Data
 
+[Home](../index.md) > Concepts > Streaming vs Historical Data
+
 tvkit provides two ways to access market data:
 
 - **Historical queries** — fetch a fixed set of past bars in one call

@@ -1,5 +1,7 @@
 # Macro Indicators
 
+[Home](../index.md) > Guides > Macro Indicators
+
 tvkit can access TradingView macro and sentiment indicators — `INDEX:NDFI` and `USI:PCC` — using the same `get_historical_ohlcv()` and `get_ohlcv()` methods used for equities or crypto symbols. No special configuration is required.
 
 ## Prerequisites

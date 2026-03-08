@@ -1,5 +1,7 @@
 # Historical Data Guide
 
+[Home](../index.md) > Guides > Historical Data
+
 `get_historical_ohlcv()` fetches a fixed set of past OHLCV bars for any symbol and interval supported by TradingView. It opens a WebSocket connection, retrieves the bars, and closes the connection — returning a `list[OHLCV]`.
 
 ## Prerequisites
