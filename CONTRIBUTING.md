@@ -90,6 +90,21 @@ from pydantic import BaseModel
 from tvkit.api.chart.models import OHLCVBar
 ```
 
+## Maintenance Scripts
+
+The repository includes helper scripts for validating documentation and examples.
+
+| Script | Purpose | Command |
+|--------|---------|---------|
+| `scripts/check-docs.sh` | Check all `docs/` markdown files for broken internal links | `./scripts/check-docs.sh` |
+| `scripts/check_docs.py` | Python version of the link checker (supports `--tool` flag) | `uv run python scripts/check_docs.py` |
+| `scripts/validate_examples.py` | Syntax-check all example scripts | `uv run python scripts/validate_examples.py --dry-run` |
+
+Run the docs checker after renaming or moving any file in `docs/`.
+Run the example validator before committing changes to `examples/`.
+
+See [`scripts/README.md`](scripts/README.md) for full usage documentation.
+
 ## Testing
 
 - Add tests for every new public function or model
