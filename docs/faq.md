@@ -114,7 +114,7 @@ Polars DataFrames, CSV files, and JSON files. Parquet export is possible via Pol
 
 ### Can I export scanner results?
 
-Yes. Pass a `list[ScannerStock]` to `DataExporter`. See [Exporting Data](guides/exporting.md#exporting-scanner-results).
+Yes. Pass a `list[ScannerStock]` to `DataExporter`. See [Exporting Data](guides/exporting.md#scanner-results-export).
 
 ---
 
@@ -138,7 +138,7 @@ results = await asyncio.gather(fetch("NASDAQ:AAPL"), fetch("NASDAQ:MSFT"))
 
 ### I'm getting a `ConnectionClosed` error. What do I do?
 
-The WebSocket connection was dropped by the server. This can happen due to network instability, rate limiting, or the server closing idle connections. Implement retry logic with exponential backoff. See [Real-Time Streaming — Error Handling](guides/realtime-streaming.md#error-handling).
+The WebSocket connection was dropped by the server. This can happen due to network instability, rate limiting, or the server closing idle connections. Implement retry logic with exponential backoff. See [Real-Time Streaming — Error Handling](guides/realtime-streaming.md#error-handling-and-retry).
 
 ### tvkit raises `symbol_error`. What does that mean?
 
