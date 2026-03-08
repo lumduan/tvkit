@@ -178,7 +178,9 @@ debug/
 docs/plans/
 .claude/
 CLAUDE.md
-scripts/
+scripts/tvkit/
+scripts/publish.sh
+scripts/quick_network_test.py
 .github/instructions/
 .github/prompts/
 .github/copilot-instructions.md

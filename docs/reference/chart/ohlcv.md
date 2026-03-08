@@ -1,0 +1,370 @@
+# OHLCV Client Reference
+
+**Module:** `tvkit.api.chart.ohlcv`
+**Available since:** v0.1.0
+
+Async WebSocket client for streaming real-time and historical OHLCV data from TradingView. All methods validate symbols and intervals before opening a connection.
+
+---
+
+## Import
+
+```python
+from tvkit.api.chart.ohlcv import OHLCV
+```
+
+---
+
+## `OHLCV`
+
+Async context manager that manages a TradingView WebSocket connection. Each method call opens a fresh connection and closes it on completion (or on context manager exit).
+
+### Signature
+
+```python
+class OHLCV:
+    def __init__(self) -> None: ...
+```
+
+### Context Manager Usage
+
+```python
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", bars_count=10)
+```
+
+`OHLCV` implements `__aenter__` and `__aexit__`. The `__aexit__` method closes any active WebSocket connection. It is safe to call multiple methods on the same client instance sequentially — each method call re-establishes the connection.
+
+---
+
+## Methods
+
+### `get_historical_ohlcv()`
+
+Fetch a list of historical OHLCV bars. Supports two mutually exclusive modes: **count mode** (most recent N bars) and **range mode** (all bars within a date window).
+
+```python
+async def get_historical_ohlcv(
+    self,
+    exchange_symbol: str,
+    interval: str = "1",
+    bars_count: int | None = None,
+    *,
+    start: datetime | str | None = None,
+    end: datetime | str | None = None,
+) -> list[OHLCVBar]: ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exchange_symbol` | `str` | required | Symbol in `EXCHANGE:SYMBOL` or `EXCHANGE-SYMBOL` format. Dash format is auto-converted. |
+| `interval` | `str` | `"1"` | TradingView interval string. See [Intervals](../../concepts/intervals.md) for valid values. |
+| `bars_count` | `int \| None` | `None` | Count mode: number of most-recent bars to fetch. Mutually exclusive with `start`/`end`. Must be a positive integer. No implicit default — must be provided explicitly in count mode. |
+| `start` | `datetime \| str \| None` | `None` | Range mode: start of date window (inclusive). Keyword-only. Accepts timezone-aware datetime, naive datetime (assigned UTC), or ISO 8601 string. Must be used together with `end`. |
+| `end` | `datetime \| str \| None` | `None` | Range mode: end of date window (inclusive). Keyword-only. Same accepted types as `start`. Must be used together with `start`. |
+
+#### Mode Selection
+
+| Provided | Mode |
+|----------|------|
+| `bars_count` only | Count mode — fetches N most recent bars |
+| `start` + `end` only | Range mode — fetches all bars in the date window |
+| Neither | Raises `ValueError` |
+| Both | Raises `ValueError` |
+| Only `start` or only `end` | Raises `ValueError` |
+
+#### Timeouts
+
+| Mode | Timeout |
+|------|---------|
+| Count mode | 30 seconds |
+| Range mode | 180 seconds |
+
+Range mode uses a longer timeout because multi-year intraday streams can be slow to transmit.
+
+#### Returns
+
+`list[OHLCVBar]` — Bars sorted by timestamp in ascending order. Returns are never empty; `RuntimeError` is raised if no bars are received.
+
+#### Raises
+
+| Exception | When |
+|-----------|------|
+| `ValueError` | Neither `bars_count` nor `start`/`end` provided |
+| `ValueError` | Both `bars_count` and `start`/`end` provided |
+| `ValueError` | Only one of `start`/`end` provided |
+| `ValueError` | `bars_count <= 0` |
+| `ValueError` | `start > end` |
+| `ValueError` | Symbol format is invalid (from `validate_symbols`) |
+| `ValueError` | Interval format is invalid (from `validate_interval`) |
+| `ValueError` | TradingView returns a `series_error` (invalid symbol/interval for the requested timeframe) |
+| `RuntimeError` | No bars received from TradingView |
+
+#### Examples
+
+**Count mode:**
+
+```python
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", bars_count=100)
+print(f"Received {len(bars)} bars. Last close: {bars[-1].close}")
+```
+
+**Range mode:**
+
+```python
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "BINANCE:BTCUSDT",
+        "60",
+        start="2024-01-01",
+        end="2024-03-31",
+    )
+print(f"Q1 2024: {len(bars)} 1H bars")
+```
+
+**With datetime objects:**
+
+```python
+from datetime import datetime, UTC
+
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "INDEX:NDFI",
+        "1D",
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=datetime(2024, 12, 31, tzinfo=UTC),
+    )
+```
+
+---
+
+### `get_ohlcv()`
+
+Stream real-time OHLCV bars as an async generator. Yields bars continuously as TradingView pushes updates. The generator runs indefinitely until the caller breaks or the connection drops.
+
+```python
+async def get_ohlcv(
+    self,
+    exchange_symbol: str,
+    interval: str = "1",
+    bars_count: int = 10,
+) -> AsyncGenerator[OHLCVBar, None]: ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exchange_symbol` | `str` | required | Symbol in `EXCHANGE:SYMBOL` or `EXCHANGE-SYMBOL` format. |
+| `interval` | `str` | `"1"` | TradingView interval string (default: 1 minute). |
+| `bars_count` | `int` | `10` | Number of historical bars to seed the session with before streaming begins. |
+
+#### Returns
+
+`AsyncGenerator[OHLCVBar, None]` — Yields `OHLCVBar` objects continuously.
+
+#### Raises
+
+| Exception | When |
+|-----------|------|
+| `ValueError` | Symbol or interval is invalid |
+| `ValueError` | TradingView returns a `series_error` |
+
+#### Example
+
+```python
+async with OHLCV() as client:
+    async for bar in client.get_ohlcv("BINANCE:BTCUSDT", interval="5", bars_count=50):
+        print(f"{bar.timestamp}: close={bar.close} volume={bar.volume}")
+        if some_exit_condition:
+            break
+```
+
+---
+
+### `get_quote_data()`
+
+Stream real-time quote data (current price, status, etc.) as an async generator. Useful for symbols that provide quote data but may not have OHLCV chart data.
+
+```python
+async def get_quote_data(
+    self,
+    exchange_symbol: str,
+    interval: str = "1",
+    bars_count: int = 10,
+) -> AsyncGenerator[QuoteSymbolData, None]: ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exchange_symbol` | `str` | required | Symbol in `EXCHANGE:SYMBOL` or `EXCHANGE-SYMBOL` format. |
+| `interval` | `str` | `"1"` | Chart interval for session setup. |
+| `bars_count` | `int` | `10` | Number of seed bars for the session. |
+
+#### Returns
+
+`AsyncGenerator[QuoteSymbolData, None]` — Yields `QuoteSymbolData` objects.
+
+#### Raises
+
+| Exception | When |
+|-----------|------|
+| `ValueError` | Symbol or interval is invalid |
+| `ValueError` | TradingView returns a `series_error` |
+
+#### Example
+
+```python
+async with OHLCV() as client:
+    async for quote in client.get_quote_data("NASDAQ:AAPL", interval="1"):
+        if quote.current_price is not None:
+            print(f"Current price: {quote.current_price}")
+        break
+```
+
+---
+
+### `get_ohlcv_raw()`
+
+Stream raw TradingView WebSocket message dictionaries. Use this for debugging or implementing custom message parsing.
+
+```python
+async def get_ohlcv_raw(
+    self,
+    exchange_symbol: str,
+    interval: str = "1",
+    bars_count: int = 10,
+) -> AsyncGenerator[dict[str, Any], None]: ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exchange_symbol` | `str` | required | Symbol in `EXCHANGE:SYMBOL` or `EXCHANGE-SYMBOL` format. |
+| `interval` | `str` | `"1"` | Chart interval. |
+| `bars_count` | `int` | `10` | Number of seed bars. |
+
+#### Returns
+
+`AsyncGenerator[dict[str, Any], None]` — Yields raw parsed JSON dictionaries from TradingView.
+
+#### Raises
+
+| Exception | When |
+|-----------|------|
+| `ValueError` | Symbol or interval is invalid |
+
+#### Example
+
+```python
+async with OHLCV() as client:
+    async for raw in client.get_ohlcv_raw("NASDAQ:AAPL", interval="1D"):
+        print(raw)  # Raw TradingView message dict
+        break
+```
+
+---
+
+### `get_latest_trade_info()`
+
+Monitor multiple symbols simultaneously and stream raw trade info messages. Returns raw protocol dicts — parse `"qsd"` messages for price updates.
+
+```python
+async def get_latest_trade_info(
+    self,
+    exchange_symbol: list[str],
+) -> AsyncGenerator[dict[str, Any], None]: ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `exchange_symbol` | `list[str]` | required | List of symbols in `EXCHANGE:SYMBOL` or `EXCHANGE-SYMBOL` format. |
+
+#### Returns
+
+`AsyncGenerator[dict[str, Any], None]` — Yields raw TradingView protocol message dicts. Messages of type `"qsd"` contain per-symbol price updates.
+
+#### Raises
+
+| Exception | When |
+|-----------|------|
+| `ValueError` | Any symbol in the list is invalid |
+| `RuntimeError` | Services fail to initialize |
+
+#### Example
+
+```python
+symbols = ["NASDAQ:AAPL", "BINANCE:BTCUSDT", "USI:PCC"]
+
+async with OHLCV() as client:
+    async for msg in client.get_latest_trade_info(symbols):
+        if msg.get("m") == "qsd":
+            payload = msg.get("p", [])
+            if len(payload) >= 2:
+                symbol_data = payload[1]
+                print(f"Update: {symbol_data}")
+        break
+```
+
+---
+
+## Type Definitions
+
+### `OHLCVBar`
+
+```python
+from tvkit.api.chart.models.ohlcv import OHLCVBar
+```
+
+Represents one OHLCV candlestick bar.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | `float` | Unix timestamp (seconds) for the bar open time |
+| `open` | `float` | Opening price |
+| `high` | `float` | Highest price during the period |
+| `low` | `float` | Lowest price during the period |
+| `close` | `float` | Closing price |
+| `volume` | `float` | Total volume traded |
+
+### `QuoteSymbolData`
+
+Returned by `get_quote_data()`. Contains real-time quote fields. The `current_price` field is the most commonly accessed attribute.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `current_price` | `float \| None` | Current market price, if available |
+| `symbol_info` | `dict` | Raw symbol metadata from TradingView |
+
+---
+
+## Symbol Format
+
+All methods accept symbols in two formats:
+
+| Format | Example | Notes |
+|--------|---------|-------|
+| `EXCHANGE:SYMBOL` | `NASDAQ:AAPL` | Preferred format |
+| `EXCHANGE-SYMBOL` | `USI-PCC` | Auto-converted to colon format |
+
+Symbols are validated asynchronously via `validate_symbols()` before each request. An invalid symbol raises `ValueError: Invalid exchange or symbol or index`.
+
+---
+
+## See Also
+
+- [Historical Data Guide](../../guides/historical-data.md)
+- [Real-time Streaming Guide](../../guides/realtime-streaming.md)
+- [Macro Indicators Guide](../../guides/macro-indicators.md)
+- [Concepts: Symbols](../../concepts/symbols.md)
+- [Concepts: Intervals](../../concepts/intervals.md)
+- [Concepts: Streaming vs Historical](../../concepts/streaming-vs-historical.md)
+- [Chart Utilities Reference](utils.md)

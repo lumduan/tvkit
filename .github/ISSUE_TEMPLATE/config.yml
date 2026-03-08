@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/lumduan/tvkit/tree/main/docs
+    about: Read the documentation first — installation, quickstart guides, and the full API reference.
+
+  - name: 🚀 Getting Started
+    url: https://github.com/lumduan/tvkit/tree/main/docs/getting-started
+    about: New to tvkit? Start here — working examples in under 5 minutes.
+
+  - name: ❓ FAQ
+    url: https://github.com/lumduan/tvkit/blob/main/docs/faq.md
+    about: Common issues and questions before opening a bug report (symbol format, bar limits, async requirements, WebSocket disconnects, etc).
+
+  - name: 💬 Discussions
+    url: https://github.com/lumduan/tvkit/discussions
+    about: Ask questions, share ideas, or get help. If you're unsure whether it's a bug, start a discussion first.
