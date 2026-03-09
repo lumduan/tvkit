@@ -15,6 +15,12 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ---
 
+## In Progress
+
+- **Documentation refactor** — Restructuring docs into a layered hierarchy (concepts, guides, reference, architecture, internals)
+
+---
+
 ## Planned
 
 These are confirmed improvements that will transform tvkit from a simple data client into a **robust, reliable data infrastructure layer**.
