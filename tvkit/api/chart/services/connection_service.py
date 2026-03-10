@@ -1,19 +1,24 @@
 """Connection service for managing WebSocket connections and sessions."""
 
+import asyncio
 import json
 import logging
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from enum import Enum
 from typing import Any
 
 from websockets import ClientConnection
 from websockets.asyncio.client import connect
+from websockets.connection import State as WebSocketState
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from tvkit.api.chart.exceptions import StreamConnectionError
 from tvkit.api.chart.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
 )
+from tvkit.api.utils.retry import calculate_backoff_delay
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -29,63 +34,361 @@ _HEARTBEAT_RE: re.Pattern[str] = re.compile(r"~m~\d+~m~~h~\d+$")
 _FRAME_SPLIT_RE: re.Pattern[str] = re.compile(r"~m~\d+~m~")
 
 
+class ConnectionState(Enum):
+    """Connection state machine states for ConnectionService."""
+
+    IDLE = "idle"
+    CONNECTING = "connecting"
+    STREAMING = "streaming"
+    RECONNECTING = "reconnecting"
+    FAILED = "failed"
+
+
 class ConnectionService:
     """
     Service for managing WebSocket connections and TradingView sessions.
 
-    This service handles the low-level WebSocket connection management,
-    session initialization, and symbol subscription for TradingView data streams.
+    Manages the low-level WebSocket connection lifecycle including automatic
+    reconnection with exponential backoff. A background reader task feeds raw
+    messages into an internal queue; ``get_data_stream()`` consumes from the
+    queue and handles reconnection transparently.
+
+    Args:
+        ws_url: WebSocket URL for TradingView data streaming.
+        max_attempts: Total connection attempts before raising ``StreamConnectionError``.
+        base_backoff: Base retry delay in seconds (doubles each attempt).
+        max_backoff: Maximum retry delay cap in seconds.
+        jitter_range: Additive jitter range in seconds (0 = disabled).
+        connect_timeout: Seconds to wait for a single ``connect()`` call.
+        on_reconnect: Optional async callback invoked after each successful reconnect.
+            Use this to restore subscription state (e.g. re-send chart session messages).
     """
 
-    def __init__(self, ws_url: str) -> None:
-        """
-        Initialize the connection service.
-
-        Args:
-            ws_url: The WebSocket URL for TradingView data streaming
-        """
+    def __init__(
+        self,
+        ws_url: str,
+        max_attempts: int = 5,
+        base_backoff: float = 1.0,
+        max_backoff: float = 30.0,
+        jitter_range: float = 0.0,
+        connect_timeout: float = 10.0,
+        on_reconnect: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self.ws_url: str = ws_url
-        self.ws: ClientConnection | None = None
+        self._ws: ClientConnection | None = None
+        self._state: ConnectionState = ConnectionState.IDLE
+        self._closing: bool = False
+        self._max_attempts: int = max_attempts
+        self._base_backoff: float = base_backoff
+        self._max_backoff: float = max_backoff
+        self._jitter_range: float = jitter_range
+        self._connect_timeout: float = connect_timeout
+        self._on_reconnect: Callable[[], Awaitable[None]] | None = on_reconnect
+        self._reader_task: asyncio.Task[None] | None = None
+        # maxsize=1000 bounds memory when consumer lags; put() blocks on full (backpressure).
+        self._message_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=1000)
+        # Lock held for the ENTIRE retry loop to block concurrent reconnect callers.
+        self._reconnect_lock: asyncio.Lock = asyncio.Lock()
+
+    @property
+    def ws(self) -> ClientConnection | None:
+        """WebSocket connection (read-only, backward-compatible accessor)."""
+        return self._ws
+
+    # ------------------------------------------------------------------
+    # Public connection lifecycle
+    # ------------------------------------------------------------------
 
     async def connect(self) -> None:
         """
-        Establishes the WebSocket connection to TradingView.
+        Establish the WebSocket connection and start the background reader task.
 
         Raises:
-            WebSocketException: If connection fails
+            WebSocketException: If the initial connection fails.
+            asyncio.TimeoutError: If the connection exceeds ``connect_timeout``.
         """
+        self._state = ConnectionState.CONNECTING
+        self._closing = False
         try:
             logger.info("Establishing WebSocket connection to %s", self.ws_url)
-
-            request_header: ExtraRequestHeader = ExtraRequestHeader(
-                accept_encoding="gzip, deflate, br, zstd",
-                accept_language="en-US,en;q=0.9,fa;q=0.8",
-                cache_control="no-cache",
-                origin="https://www.tradingview.com",
-                pragma="no-cache",
-                user_agent="Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
-            )
-
-            ws_config: WebSocketConnection = WebSocketConnection(
-                uri=self.ws_url,
-                additional_headers=request_header,
-                compression="deflate",
-                ping_interval=20,
-                ping_timeout=10,
-                close_timeout=10,
-            )
-
-            self.ws = await connect(**ws_config.model_dump())
-
+            await self._connect()
+            self._state = ConnectionState.STREAMING
+            self._reader_task = asyncio.create_task(self._read_raw_loop(), name="tvkit-ws-reader")
             logger.info("WebSocket connection established successfully")
-        except Exception as e:
-            logger.error("Failed to establish WebSocket connection: %s", e)
+        except Exception as exc:
+            logger.error("Failed to establish WebSocket connection: %s", exc)
+            self._state = ConnectionState.IDLE
             raise
 
     async def close(self) -> None:
-        """Close the WebSocket connection."""
-        if self.ws is not None:
-            await self.ws.close()
+        """Close the WebSocket connection and cancel the reader task."""
+        self._closing = True
+        if self._ws is not None:
+            await self._ws.close()
+        if self._reader_task and not self._reader_task.done():
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+        self._state = ConnectionState.IDLE
+
+    # ------------------------------------------------------------------
+    # Internal connection helpers
+    # ------------------------------------------------------------------
+
+    async def _open_websocket(self) -> None:
+        """Open the raw WebSocket connection and assign to ``self._ws``."""
+        request_header: ExtraRequestHeader = ExtraRequestHeader(
+            accept_encoding="gzip, deflate, br, zstd",
+            accept_language="en-US,en;q=0.9,fa;q=0.8",
+            cache_control="no-cache",
+            origin="https://www.tradingview.com",
+            pragma="no-cache",
+            user_agent="Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36",
+        )
+        ws_config: WebSocketConnection = WebSocketConnection(
+            uri=self.ws_url,
+            additional_headers=request_header,
+            compression="deflate",
+            ping_interval=20,
+            ping_timeout=10,
+            close_timeout=10,
+        )
+        self._ws = await connect(**ws_config.model_dump())
+
+    async def _connect(self) -> None:
+        """Open WebSocket with a configurable timeout.
+
+        Wraps ``_open_websocket()`` with ``asyncio.wait_for`` so a hung TCP/TLS
+        handshake does not freeze the retry loop indefinitely.
+
+        Raises:
+            asyncio.TimeoutError: If the connection exceeds ``_connect_timeout``.
+            WebSocketException: If the WebSocket handshake fails.
+            OSError: If a network-level error occurs.
+        """
+        await asyncio.wait_for(self._open_websocket(), timeout=self._connect_timeout)
+
+    def _drain_queue(self) -> None:
+        """Discard all pending items in the message queue.
+
+        Called inside ``_reset_connection()`` to remove stale data frames and
+        any sentinel written by the previous reader task before it was cancelled.
+        """
+        while not self._message_queue.empty():
+            try:
+                self._message_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+    async def _reset_connection(self) -> None:
+        """Tear down the current connection state before reconnecting.
+
+        Must be called AFTER ``self._state`` is set to ``RECONNECTING`` so the
+        sentinel guard in ``_read_raw_loop()`` fires correctly when the reader is
+        cancelled.
+
+        Steps (in order):
+            1. Cancel and await the reader task (suppress ``CancelledError``).
+            2. Close ``self._ws`` if not already closed (suppress all exceptions).
+            3. Reset both references to ``None``.
+            4. Drain the message queue to remove stale messages and leftover sentinels.
+        """
+        if self._reader_task and not self._reader_task.done():
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+        self._reader_task = None
+
+        if self._ws and self._ws.state is WebSocketState.OPEN:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+        self._ws = None
+
+        self._drain_queue()
+
+    # ------------------------------------------------------------------
+    # Background reader
+    # ------------------------------------------------------------------
+
+    async def _read_raw_loop(self) -> None:
+        """Read raw messages from WebSocket, echo heartbeats, feed data frames to queue.
+
+        Runs as a background task (``_reader_task``). Puts raw message strings into
+        ``_message_queue``. The consumer (``get_data_stream``) handles JSON parsing and
+        frame splitting.
+
+        The ``None`` sentinel placed in the ``finally`` block signals the consumer that
+        the stream has ended. It is suppressed (not placed) when ``_state`` is
+        ``RECONNECTING`` to prevent a cancelled reader from injecting a false reconnect
+        signal into the queue after ``_drain_queue()`` has already cleared it.
+
+        ``put_nowait`` is used for the sentinel to avoid blocking during shutdown when
+        the queue is at capacity. A ``QueueFull`` exception is silently suppressed —
+        ``close()`` handles teardown regardless of whether the sentinel is delivered.
+        """
+        if self._ws is None:
+            return
+        try:
+            async for message in self._ws:
+                raw: str
+                if isinstance(message, str):
+                    raw = message
+                elif isinstance(message, bytes):
+                    raw = message.decode("utf-8")
+                else:
+                    raw = bytes(message).decode("utf-8")
+
+                if _HEARTBEAT_RE.match(raw):
+                    logger.debug("Received heartbeat: %s", raw)
+                    try:
+                        await self._ws.send(raw)
+                    except ConnectionClosed:
+                        logger.debug("Connection closed while echoing heartbeat")
+                        break
+                else:
+                    # Blocks when queue is full — provides backpressure to the reader.
+                    await self._message_queue.put(raw)
+
+        except ConnectionClosed as exc:
+            if not self._closing:
+                logger.warning(
+                    "WebSocket closed unexpectedly.",
+                    extra={"code": exc.rcvd.code if exc.rcvd else None},
+                )
+        finally:
+            # Sentinel signals end-of-stream to the consumer.
+            # Suppressed when _state == RECONNECTING: _reset_connection() has already
+            # set state before cancelling this task, so the cancelled reader must not
+            # inject a false sentinel into the (now drained) queue.
+            if self._state != ConnectionState.RECONNECTING:
+                try:
+                    self._message_queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
+
+    # ------------------------------------------------------------------
+    # Reconnect loop
+    # ------------------------------------------------------------------
+
+    async def _reconnect_with_backoff(self) -> None:
+        """Retry WebSocket connection using exponential backoff.
+
+        The reconnect lock is held for the entire retry loop. A second concurrent
+        caller blocks at the lock boundary until this loop completes (success or
+        exhaustion). This prevents a second caller from returning immediately and
+        then waiting indefinitely in ``queue.get()`` if reconnect ultimately fails.
+
+        State is set to ``RECONNECTING`` inside the lock before ``_reset_connection()``
+        is called. This ordering is required: the sentinel guard in ``_read_raw_loop()``
+        checks ``_state`` on task cancellation, so the state must reflect the new context
+        before the reader is cancelled.
+
+        Raises:
+            StreamConnectionError: After all ``_max_attempts`` are exhausted.
+        """
+        async with self._reconnect_lock:
+            if self._state == ConnectionState.RECONNECTING:
+                logger.debug("Reconnect already in progress. Ignoring duplicate trigger.")
+                return
+            self._state = ConnectionState.RECONNECTING
+
+            last_error: Exception | None = None
+            for attempt in range(1, self._max_attempts + 1):
+                await self._reset_connection()
+                delay: float = calculate_backoff_delay(
+                    attempt, self._base_backoff, self._max_backoff, self._jitter_range
+                )
+                logger.warning(
+                    "WebSocket connection lost. Retrying.",
+                    extra={
+                        "attempt": attempt,
+                        "max_attempts": self._max_attempts,
+                        "delay_s": delay,
+                    },
+                )
+                await asyncio.sleep(delay)
+                try:
+                    await self._connect()
+                    self._state = ConnectionState.STREAMING
+                    self._reader_task = asyncio.create_task(
+                        self._read_raw_loop(), name="tvkit-ws-reader"
+                    )
+                    logger.info(
+                        "WebSocket reconnected successfully.",
+                        extra={"attempt": attempt},
+                    )
+                    if self._on_reconnect:
+                        await self._on_reconnect()
+                    return
+                except (TimeoutError, OSError, WebSocketException) as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Reconnect attempt failed.",
+                        extra={"attempt": attempt, "error": str(exc)},
+                    )
+
+            self._state = ConnectionState.FAILED
+            raise StreamConnectionError(
+                f"WebSocket reconnection failed after {self._max_attempts} attempts.",
+                attempts=self._max_attempts,
+                last_error=last_error,
+            )
+
+    # ------------------------------------------------------------------
+    # Data stream (consumer)
+    # ------------------------------------------------------------------
+
+    async def get_data_stream(self) -> AsyncGenerator[dict[str, Any], None]:
+        """
+        Yield parsed TradingView WebSocket frames.
+
+        Reads from the internal message queue fed by the background reader task.
+        Reconnects automatically on unexpected disconnections using exponential
+        backoff. Yields parsed JSON dicts; skips malformed frames with a warning.
+
+        Yields:
+            Parsed JSON data received from TradingView.
+
+        Raises:
+            RuntimeError: If the WebSocket connection is not established.
+            StreamConnectionError: If reconnection is exhausted after all attempts.
+        """
+        if self._ws is None:
+            raise RuntimeError("WebSocket connection not established")
+
+        try:
+            while True:
+                raw: str | None = await self._message_queue.get()
+
+                if raw is None:
+                    if self._closing:
+                        break
+                    # Unexpected disconnect — attempt reconnect.
+                    try:
+                        await self._reconnect_with_backoff()
+                    except StreamConnectionError:
+                        raise
+                    continue  # new reader is running; resume consuming from queue
+
+                split_result: list[str] = [x for x in _FRAME_SPLIT_RE.split(raw) if x]
+                for item in split_result:
+                    if item:
+                        try:
+                            yield json.loads(item)
+                        except json.JSONDecodeError:
+                            logger.warning("Failed to parse JSON: %s", item)
+        finally:
+            await self.close()
+
+    # ------------------------------------------------------------------
+    # Session management (unchanged from original)
+    # ------------------------------------------------------------------
 
     async def initialize_sessions(
         self,
@@ -171,7 +474,6 @@ class ConnectionService:
             >>> svc._create_series_args("cs_abc123", "1D", 100)
             ["cs_abc123", "sds_1", "s1", "sds_sym_1", "1D", 100, ""]
         """
-        # tvkit currently supports a single series per chart session.
         return [
             chart_session,
             _SERIES_DATASOURCE_ID,
@@ -316,57 +618,3 @@ class ConnectionService:
 
         await send_message_func("quote_add_symbols", [quote_session] + exchange_symbols)
         await send_message_func("quote_fast_symbols", [quote_session] + exchange_symbols)
-
-    async def get_data_stream(self) -> AsyncGenerator[dict[str, Any], None]:
-        """
-        Continuously receives data from the TradingView server via the WebSocket connection.
-
-        Yields:
-            Parsed JSON data received from the server.
-
-        Raises:
-            RuntimeError: If WebSocket connection is not established
-        """
-        if self.ws is None:
-            raise RuntimeError("WebSocket connection not established")
-
-        try:
-            async for message in self.ws:
-                try:
-                    # Convert message to string - WebSocket messages can be str, bytes, or memoryview
-                    if isinstance(message, str):
-                        result: str = message
-                    elif isinstance(message, bytes):
-                        result = message.decode("utf-8")
-                    else:
-                        # Handle memoryview and other buffer types
-                        result = bytes(message).decode("utf-8")
-
-                    if _HEARTBEAT_RE.match(result):
-                        logger.debug("Received heartbeat: %s", result)
-                        try:
-                            await self.ws.send(result)  # Echo back the heartbeat
-                        except ConnectionClosed:
-                            logger.debug("Connection closed while echoing heartbeat")
-                            break
-                    else:
-                        split_result: list[str] = [x for x in _FRAME_SPLIT_RE.split(result) if x]
-                        for item in split_result:
-                            if item:
-                                try:
-                                    yield json.loads(item)  # Yield parsed JSON data
-                                except json.JSONDecodeError:
-                                    logger.warning("Failed to parse JSON: %s", item)
-                                    continue
-
-                except ConnectionClosed:
-                    logger.error("WebSocket connection closed.")
-                    break
-                except WebSocketException as e:
-                    logger.error("WebSocket error occurred: %s", e)
-                    break
-                except Exception as e:
-                    logger.error("An unexpected error occurred: %s", e)
-                    break
-        finally:
-            await self.close()
