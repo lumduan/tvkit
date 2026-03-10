@@ -14,6 +14,7 @@ Designed for quantitative research, trading tools, and data pipelines.
 ## Features
 
 - Real-time OHLCV streaming via WebSocket with async generators
+- **Automatic reconnection** with exponential backoff — transient disconnects recovered transparently
 - Historical data retrieval by bar count or explicit date range
 - Multi-market scanner: 69 global markets, 101+ financial metrics
 - Multi-format data export: Polars DataFrames, JSON, CSV
@@ -53,6 +54,30 @@ asyncio.run(main())
 ```
 
 See more working examples in [examples/](examples/).
+
+## Automatic Reconnection
+
+Reconnection is on by default — no changes needed to existing call sites:
+
+```python
+async with OHLCV() as client:
+    # Transient disconnects are recovered automatically (5 attempts, 1s–30s backoff).
+    async for bar in client.get_ohlcv("NASDAQ:AAPL", "1D"):
+        print(bar.close)
+```
+
+Tune it for long-running pipelines:
+
+```python
+from tvkit.api.chart import OHLCV, StreamConnectionError
+
+async with OHLCV(max_attempts=10, base_backoff=2.0, max_backoff=60.0) as client:
+    try:
+        async for bar in client.get_ohlcv("NASDAQ:AAPL", "1D"):
+            print(bar.close)
+    except StreamConnectionError:
+        print("Stream permanently lost after all attempts")
+```
 
 ## Symbol Format Reference
 
