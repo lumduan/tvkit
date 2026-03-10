@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-10
+
+### Added
+
+- **Automatic WebSocket reconnection** for OHLCV streaming with exponential backoff ([#14](https://github.com/lumduan/tvkit/issues/14)). Transient disconnects are recovered automatically with no changes required to existing call sites.
+- **`max_attempts`, `base_backoff`, `max_backoff`** optional constructor parameters on `OHLCV` for tuning retry behaviour. Defaults: `max_attempts=5`, `base_backoff=1.0s`, `max_backoff=30.0s`.
+- **`StreamConnectionError`** exception raised when all reconnect attempts are exhausted. Importable from `tvkit.api.chart`. Carries `attempts` (int) and `last_error` (Exception | None) attributes.
+- **`ConnectionState` enum** (`IDLE`, `CONNECTING`, `STREAMING`, `RECONNECTING`, `FAILED`) in `tvkit.api.chart.services.connection_service`. Useful for asserting connection state in tests.
+- **`calculate_backoff_delay`** pure utility function in `tvkit.api.utils.retry`. Supports base delay, max cap, and optional additive jitter (clamped to `max_backoff`).
+- **Structured logging** for every reconnect attempt, outcome, and session restore event.
+
+### Changed
+
+- `ConnectionService` now manages transport reconnect internally via a configurable retry loop and explicit state machine. The public `connect()` / `close()` interface is unchanged.
+- `OHLCV._setup_services()` forwards retry config and `on_reconnect=self._restore_session` to `ConnectionService`.
+
 ## [0.3.0] - 2026-03-06
 
 ### Breaking Changes

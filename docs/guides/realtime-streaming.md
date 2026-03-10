@@ -111,32 +111,74 @@ Do not share a single `OHLCV` instance across multiple concurrent tasks. Each ta
 
 ---
 
-## Error Handling and Retry
+## Automatic Reconnection
 
-Network errors raise exceptions that propagate from the `async for` loop. Wrap the loop in a retry mechanism with exponential backoff:
+`OHLCV` reconnects automatically when the WebSocket closes unexpectedly. No changes to existing call sites are required — reconnection is on by default.
 
 ```python
 import asyncio
 from tvkit.api.chart.ohlcv import OHLCV
 
-async def stream_with_retry(symbol: str, interval: str, max_retries: int = 5) -> None:
-    delay = 1.0
-    for attempt in range(max_retries):
-        try:
-            async with OHLCV() as client:
-                async for bar in client.get_ohlcv(symbol, interval=interval):
-                    print(f"bar: {bar.close}")
-            return  # clean exit
-        except Exception as exc:  # network errors, connection resets, WebSocket closes
-            print(f"Attempt {attempt + 1} failed: {exc}. Retrying in {delay:.0f}s...")
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, 60.0)
-    raise RuntimeError(f"Failed to stream {symbol} after {max_retries} attempts")
+async def main() -> None:
+    async with OHLCV() as client:
+        # Reconnection is automatic with default settings (5 attempts, 1s–30s backoff).
+        # Transient network disruptions are handled transparently.
+        async for bar in client.get_ohlcv("NASDAQ:AAPL", "1D"):
+            print(bar.close)
 
-asyncio.run(stream_with_retry("BINANCE:BTCUSDT", "1"))
+asyncio.run(main())
 ```
 
-If bars are missed during a disconnect, backfill using `get_historical_ohlcv()` before resuming the stream.
+### Default Retry Behaviour
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `max_attempts` | `5` | Total connection attempts before giving up |
+| `base_backoff` | `1.0s` | Base delay, doubles each attempt |
+| `max_backoff` | `30.0s` | Maximum delay cap |
+
+### Custom Retry Configuration
+
+Override the defaults for long-running pipelines that require higher resilience:
+
+```python
+import asyncio
+from tvkit.api.chart.ohlcv import OHLCV
+
+async def main() -> None:
+    async with OHLCV(
+        max_attempts=10,
+        base_backoff=2.0,
+        max_backoff=60.0,
+    ) as client:
+        async for bar in client.get_ohlcv("NASDAQ:AAPL", "1D"):
+            print(bar.close)
+
+asyncio.run(main())
+```
+
+### Handling Attempt Exhaustion
+
+After all attempts fail, `StreamConnectionError` is raised. Catch it to alert, fall back, or exit cleanly:
+
+```python
+import asyncio
+from tvkit.api.chart.ohlcv import OHLCV
+from tvkit.api.chart.exceptions import StreamConnectionError
+
+async def main() -> None:
+    try:
+        async with OHLCV(max_attempts=3) as client:
+            async for bar in client.get_ohlcv("NASDAQ:AAPL", "1D"):
+                print(bar.close)
+    except StreamConnectionError as exc:
+        print(f"Stream permanently disconnected after {exc.attempts} attempts: {exc}")
+        # Alert, write to dead-letter queue, or exit
+
+asyncio.run(main())
+```
+
+If bars were missed during a disconnect, backfill the gap using `get_historical_ohlcv()` before resuming the live stream.
 
 ---
 

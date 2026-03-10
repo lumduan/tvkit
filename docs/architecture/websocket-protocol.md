@@ -66,6 +66,77 @@ Client                              TradingView
   │◀─── heartbeats (~m~N~m~~h~N) ───────│
 ```
 
+## Connection Lifecycle and State Machine
+
+The client follows an explicit connection state machine. Each state maps to a distinct phase of the WebSocket session:
+
+```text
+         ┌─────────────────────────────────┐
+         │                                 │
+    ┌────▼────┐                      ┌─────┴──────┐
+    │  IDLE   │──── connect() ──────▶│ CONNECTING │
+    └─────────┘                      └─────┬──────┘
+                                           │ success
+                                    ┌──────▼──────┐
+                                    │  STREAMING  │◀─────┐
+                                    └──────┬──────┘      │
+                                           │ unexpected   │
+                                           │ close        │
+                                    ┌──────▼──────┐      │
+                                    │RECONNECTING │      │
+                                    └──────┬──────┘      │
+                                           │ success ─────┘
+                                           │ exhausted
+                                    ┌──────▼──────┐
+                                    │   FAILED    │
+                                    └─────────────┘
+```
+
+| From | Event | To | Action |
+| --- | --- | --- | --- |
+| `IDLE` | `connect()` called | `CONNECTING` | Open WebSocket |
+| `CONNECTING` | Connection success | `STREAMING` | Start reader task |
+| `STREAMING` | Unexpected close (`1006`) | `RECONNECTING` | Start backoff loop |
+| `STREAMING` | Clean close (`1000`) | `IDLE` | No retry |
+| `STREAMING` | `close()` called | `IDLE` | Set `_closing`, skip retry |
+| `RECONNECTING` | Attempt success | `STREAMING` | Invoke `on_reconnect`, resume stream |
+| `RECONNECTING` | Attempts exhausted | `FAILED` | Raise `StreamConnectionError` |
+
+### Reconnect Path
+
+When an unexpected close is detected, the client enters a backoff retry loop before re-establishing the connection:
+
+```text
+STREAMING
+    │ unexpected close (code 1006)
+    ▼
+RECONNECTING
+    │
+    ├── _reset_connection()        ← cancel reader task, free WS reference
+    │
+    ├── calculate_backoff_delay()  ← min(base × 2^(attempt-1), max_backoff)
+    │
+    ├── asyncio.sleep(delay)
+    │
+    ├── reconnect WebSocket
+    │       │ success
+    │       ▼
+    │   STREAMING ─── on_reconnect() ─── restore subscription
+    │       │ failure
+    │       ▼
+    │   next attempt …
+    │
+    └── attempts exhausted → FAILED → StreamConnectionError
+```
+
+**Intentional close path**: calling `close()` sets a `_closing` flag before tearing down the connection. The retry logic checks this flag on entry and skips the backoff loop entirely, so the stream ends cleanly without retrying.
+
+**Single loop guarantee**: if two callers observe the same connection failure simultaneously, only the first enters the retry loop. The second returns immediately because the state is already `RECONNECTING`.
+
+See [Connection Service Internals](../internals/connection-service.md#retry-strategy) for implementation details and configurable parameters.
+
+---
+
 ## Full Example Message Flow
 
 A minimal session for fetching 5 daily bars of `NASDAQ:AAPL`:

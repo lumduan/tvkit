@@ -6,6 +6,7 @@ including timestamp conversion, symbol validation, and indicator management.
 
 The package is organized into focused modules:
 - models: Pydantic data models for TradingView structures
+- retry: Exponential backoff delay calculation
 - timestamp: Timestamp conversion utilities
 - symbol_validator: Symbol validation service
 - indicator_service: TradingView indicator management
@@ -28,11 +29,13 @@ from .models import (
     StudyPayload,
     SymbolConversionResult,
 )
+from .retry import calculate_backoff_delay
 from .symbol_validator import convert_symbol_format, validate_symbols
 from .timestamp import convert_timestamp_to_iso
 
 __all__ = [
     # Functions
+    "calculate_backoff_delay",
     "convert_timestamp_to_iso",
     "validate_symbols",
     "convert_symbol_format",
