@@ -4,6 +4,7 @@ import asyncio
 import logging
 import types
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -29,6 +30,32 @@ from tvkit.api.utils import convert_symbol_format, validate_symbols
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class _StreamingSession:
+    """Immutable session snapshot used to restore streaming after reconnect.
+
+    Stored after each successful call to ``_prepare_chart_session``. Used by
+    ``_restore_session`` to re-initialize the chart session and re-subscribe to
+    the symbol after a WebSocket reconnect. Never exposed in the public API.
+
+    Attributes:
+        symbol: TradingView symbol in EXCHANGE:SYMBOL format.
+        interval: Chart interval string (e.g. "1D", "60").
+        bars_count: Number of bars requested.
+        quote_session: Quote session identifier (e.g. "qs_abc123").
+        chart_session: Chart session identifier (e.g. "cs_abc123").
+        range_param: TradingView range string if range mode, else "".
+    """
+
+    symbol: str
+    interval: str
+    bars_count: int
+    quote_session: str
+    chart_session: str
+    range_param: str = ""
+
+
 # Timeout constants for get_historical_ohlcv().
 # Range mode uses a longer timeout — multi-year intraday streams can be slow.
 _HISTORICAL_TIMEOUT_SECONDS: int = 30
@@ -43,14 +70,34 @@ class OHLCV:
     OHLCV bars, quote data, and trade information from TradingView.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_attempts: int = 5,
+        base_backoff: float = 1.0,
+        max_backoff: float = 30.0,
+    ) -> None:
         """
-        Initializes the OHLCV class, setting up WebSocket connection parameters
-        and request headers for TradingView data streaming.
+        Initializes the OHLCV client with WebSocket connection parameters.
+
+        All retry parameters are optional with safe defaults. Existing call sites
+        require no changes — ``OHLCV()`` works identically to before.
+
+        Args:
+            max_attempts: Total WebSocket connection attempts before raising
+                ``StreamConnectionError`` (default: 5). Counts initial attempt
+                plus all retries.
+            base_backoff: Base retry delay in seconds. Doubles each attempt
+                (default: 1.0).
+            max_backoff: Maximum retry delay cap in seconds. Applied before and
+                after jitter (default: 30.0).
         """
         self.ws_url: str = "wss://data.tradingview.com/socket.io/websocket?from=chart%2F"
         self.connection_service: ConnectionService | None = None
         self.message_service: MessageService | None = None
+        self._max_attempts: int = max_attempts
+        self._base_backoff: float = base_backoff
+        self._max_backoff: float = max_backoff
+        self._session: _StreamingSession | None = None
 
     async def __aenter__(self) -> "OHLCV":
         """Async context manager entry."""
@@ -63,6 +110,7 @@ class OHLCV:
         exc_tb: types.TracebackType | None,
     ) -> None:
         """Async context manager exit."""
+        self._session = None
         if self.connection_service:
             await self.connection_service.close()
 
@@ -70,11 +118,80 @@ class OHLCV:
         """Initialize and connect the services, closing any existing connection first."""
         if self.connection_service is not None:
             await self.connection_service.close()
-        self.connection_service = ConnectionService(self.ws_url)
+        self.connection_service = ConnectionService(
+            self.ws_url,
+            max_attempts=self._max_attempts,
+            base_backoff=self._base_backoff,
+            max_backoff=self._max_backoff,
+            on_reconnect=self._restore_session,
+        )
         await self.connection_service.connect()
         if self.connection_service.ws is None:
             raise RuntimeError("WebSocket connection not established after connect()")
         self.message_service = MessageService(self.connection_service.ws)
+
+    async def _restore_session(self) -> None:
+        """Re-establish the chart session after a WebSocket reconnect.
+
+        Called by ``ConnectionService`` immediately after a successful reconnect
+        and before the message processing loop resumes. Recreates the
+        ``MessageService`` with the new WebSocket reference and re-sends all
+        session initialization and symbol subscription messages.
+
+        This method is idempotent: calling it multiple times (e.g. across
+        consecutive reconnects) produces the same final state — a clean session
+        with the original subscription active.
+
+        If no session has been established yet or there is no active connection
+        service, this method returns without action.
+
+        Raises:
+            Exception: Any exception from session initialization is logged then
+                re-raised so ``ConnectionService`` can decide whether to continue
+                the retry loop.
+        """
+        # Snapshot before the first await to guard against concurrent __aexit__
+        # setting self._session = None while this coroutine is suspended.
+        session = self._session
+        if session is None or self.connection_service is None:
+            return
+        logger.info(
+            "Restoring streaming session after reconnect.",
+            extra={
+                "symbol": session.symbol,
+                "interval": session.interval,
+                "chart_session": session.chart_session,
+            },
+        )
+        try:
+            if self.connection_service.ws is None:
+                raise RuntimeError("WebSocket connection not established after reconnect")
+            self.message_service = MessageService(self.connection_service.ws)
+            send_message_func = self.message_service.get_send_message_callable()
+            await self.connection_service.initialize_sessions(
+                session.quote_session,
+                session.chart_session,
+                send_message_func,
+            )
+            await self.connection_service.add_symbol_to_sessions(
+                session.quote_session,
+                session.chart_session,
+                session.symbol,
+                session.interval,
+                session.bars_count,
+                send_message_func,
+                range_param=session.range_param,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to restore streaming session after reconnect.",
+                extra={"symbol": session.symbol, "interval": session.interval},
+            )
+            raise
+        logger.info(
+            "Session restored successfully.",
+            extra={"symbol": session.symbol, "interval": session.interval},
+        )
 
     async def _prepare_chart_session(
         self,
@@ -120,6 +237,14 @@ class OHLCV:
             interval,
             bars_count,
             send_message_func,
+            range_param=range_param,
+        )
+        self._session = _StreamingSession(
+            symbol=converted_symbol,
+            interval=interval,
+            bars_count=bars_count,
+            quote_session=quote_session,
+            chart_session=chart_session,
             range_param=range_param,
         )
 

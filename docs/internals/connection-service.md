@@ -162,12 +162,129 @@ A single WebSocket frame may contain multiple concatenated TradingView messages 
 
 **Termination**: the `OHLCV` client breaks out of the `get_data_stream()` loop when it receives `series_completed`. The generator itself runs indefinitely until the caller stops iterating or the connection closes.
 
+## Retry Strategy
+
+`ConnectionService` automatically reconnects when the WebSocket closes unexpectedly, using a configurable exponential backoff strategy.
+
+### Connection State Machine
+
+The service follows an explicit state machine. States are defined in `ConnectionState` (importable from `tvkit.api.chart.services.connection_service`):
+
+```text
+┌─────────────────────────────────┐
+│                                 │
+┌────▼────┐                  ┌─────┴──────┐
+│  IDLE   │── connect() ────▶│ CONNECTING │
+└─────────┘                  └─────┬──────┘
+                                   │ success
+                            ┌──────▼──────┐
+                            │  STREAMING  │◀─────────┐
+                            └──────┬──────┘          │
+                                   │ unexpected       │
+                                   │ close            │
+                            ┌──────▼──────┐          │
+                            │RECONNECTING │          │
+                            └──────┬──────┘          │
+                                   │ success ─────────┘
+                                   │ exhausted
+                            ┌──────▼──────┐
+                            │   FAILED    │
+                            └─────────────┘
+```
+
+| From | Event | To | Action |
+| --- | --- | --- | --- |
+| `IDLE` | `connect()` called | `CONNECTING` | Open WebSocket |
+| `CONNECTING` | Connection success | `STREAMING` | Start reader task |
+| `STREAMING` | Unexpected close (`1006`) | `RECONNECTING` | Start backoff loop |
+| `STREAMING` | Clean close (`1000`) | `IDLE` | No retry |
+| `STREAMING` | `close()` called | `IDLE` | Set `_closing`, skip retry |
+| `RECONNECTING` | Attempt success | `STREAMING` | Invoke `on_reconnect`, resume stream |
+| `RECONNECTING` | Attempts exhausted | `FAILED` | Raise `StreamConnectionError` |
+
+### Backoff Formula
+
+```text
+delay = min(base_backoff × 2^(attempt - 1), max_backoff)
+delay = min(delay + random(0, jitter_range), max_backoff)
+```
+
+Both clamp operations are required: the first caps exponential growth; the second ensures jitter cannot push the final delay past `max_backoff`.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `max_attempts` | `5` | Total attempts before `StreamConnectionError` |
+| `base_backoff` | `1.0` | Base delay in seconds |
+| `max_backoff` | `30.0` | Maximum delay cap in seconds |
+| `jitter_range` | `0.0` | Additive jitter range in seconds (0 = disabled) |
+
+### Example Backoff Timeline (default config)
+
+```text
+t=0s    connection lost
+t=1s    attempt 1 (delay 1s)  → failure
+t=3s    attempt 2 (delay 2s)  → failure
+t=7s    attempt 3 (delay 4s)  → failure
+t=15s   attempt 4 (delay 8s)  → success → stream resumes
+```
+
+### Reconnect Trigger Timing
+
+The `on_reconnect` callback is invoked **after** a successful reconnect and **before** the message processing loop resumes. In `_reconnect_with_backoff()`:
+
+```python
+await self._connect()                        # 1. new WebSocket established
+self._state = ConnectionState.STREAMING
+self._reader_task = create_task(...)        # 2. reader starts (writes to queue)
+if self._on_reconnect:
+    await self._on_reconnect()              # 3. caller restores subscription
+return                                       # 4. get_data_stream() resumes
+```
+
+This ordering guarantees that subscription messages are sent before any data frames are consumed by the caller.
+
+### Connection Reset on Each Attempt
+
+Before each reconnect attempt, `_reset_connection()` tears down the previous connection:
+
+1. Cancel and await the reader task (suppress `CancelledError`)
+2. Close `self._ws` if not already closed (suppress all exceptions)
+3. Reset both references to `None`
+4. Drain the message queue to remove stale messages and leftover sentinels
+
+This runs **before** the backoff sleep, ensuring stale tasks and WebSocket references are freed immediately rather than held open during the delay.
+
+### Intentional Close vs Unexpected Close
+
+A `_closing` flag prevents retry when the caller intentionally closes the connection:
+
+```python
+# Intentional — no retry
+self._closing = True
+await self._ws.close()
+
+# Unexpected — retry triggered
+except ConnectionClosed:
+    if not self._closing:
+        await self._reconnect_with_backoff()
+```
+
+### Single Reconnect Loop Guard
+
+`_reconnect_with_backoff()` is protected by `_reconnect_lock` (an `asyncio.Lock` held for the entire retry loop). A second concurrent caller blocks at the lock boundary until the active loop completes (success or exhaustion). This prevents duplicate retry loops if both the reader task and a heartbeat monitor observe the same failure simultaneously.
+
+### Session Restoration
+
+`ConnectionService` does not know about symbols or subscriptions. The `on_reconnect` callback is provided by the caller (`OHLCV._restore_session`) and is responsible for re-establishing the application-level session after the transport reconnects. See [OHLCV Client](../reference/chart/ohlcv.md) for details.
+
 ## Error Handling
 
 | Error | Source | Handling |
 |-------|--------|----------|
-| `ConnectionClosed` | WebSocket dropped | Propagates to caller; retry is the caller's responsibility |
-| `WebSocketException` | Protocol error | Propagates to caller |
+| `ConnectionClosed` (unexpected) | WebSocket dropped | `_reconnect_with_backoff()` triggered |
+| `ConnectionClosed` (clean, `1000`) | Server/client close | Stream ends normally, no retry |
+| `StreamConnectionError` | All attempts exhausted | Raised from `get_data_stream()` |
+| `WebSocketException` | Protocol error during reconnect | Attempt counted as failure, backoff continues |
 | `json.JSONDecodeError` | Malformed server message | Logged; the message is skipped |
 | `RuntimeError` | `get_data_stream()` called before `connect()` | Raised immediately |
 
