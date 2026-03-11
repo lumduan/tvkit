@@ -8,6 +8,8 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.4.0** — Connection retry with exponential backoff for `OHLCV` WebSocket client
+
 - **Documentation refactor** — Restructuring docs into a layered hierarchy (concepts, guides, reference, architecture, internals)
 
 - **v0.3.0** — Historical OHLCV date-range mode (`start`/`end` parameters for `get_historical_ohlcv()`)
@@ -19,7 +21,9 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## In Progress
 
-- **v0.4.0** — Connection retry with exponential backoff for `OHLCV` WebSocket client
+#### Segmented Historical Fetch
+
+A built-in utility to automatically paginate through large date ranges by splitting them into multiple requests, eliminating the need for callers to implement pagination manually.
 
 ---
 
@@ -198,18 +202,6 @@ Proposed module: `tvkit.schema`
 ### API & Developer Experience
 
 Enhancements focused on usability and developer ergonomics.
-
-#### Segmented Historical Fetch
-
-A built-in utility to automatically paginate through large date ranges by splitting them into multiple requests, eliminating the need for callers to implement pagination manually.
-
----
-
-#### Connection Retry with Backoff
-
-Built-in reconnection logic in `OHLCV` with configurable exponential backoff to prevent users from having to manually reopen connections after brief network drops.
-
----
 
 #### Async Scanner Pagination
 
