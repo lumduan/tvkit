@@ -1,18 +1,23 @@
 """Utility functions for chart API operations."""
 
 import logging
+import math
 import re
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 __all__ = [
     "MAX_BARS_REQUEST",
+    "MAX_SEGMENTS",
     "to_unix_timestamp",
     "end_of_day_timestamp",
     "build_range_param",
     "validate_interval",
     "interval_to_seconds",
+    "TimeSegment",
+    "segment_time_range",
 ]
 
 # Precompiled regex for TradingView interval format validation.
@@ -58,6 +63,17 @@ _UNSUPPORTED_INTERVALS: frozenset[str] = frozenset(
 #
 # Source: https://www.tradingview.com/support/solutions/43000480679-historical-intraday-data-bars-and-limits-explained/
 MAX_BARS_REQUEST: int = 5000
+
+# Maximum number of segments allowed in a single segmented fetch.
+# Prevents unrealistically large or accidental requests (e.g., a 1-second
+# interval over 10 years) that would consume gigabytes of memory.
+#
+# Practical limits per interval at MAX_SEGMENTS = 2000:
+#   "1S" (1 sec) — ~116 days
+#   "1"  (1 min) — ~6.9 years
+#   "1H" (1 hour)— ~114 years   (never reached in practice)
+#   "1D" (1 day) — ~27,000 years (never reached in practice)
+MAX_SEGMENTS: int = 2000
 
 
 def to_unix_timestamp(ts: datetime | str) -> int:
@@ -326,3 +342,154 @@ def interval_to_seconds(interval: str) -> int:
 
     # Digits only → minutes
     return int(interval) * 60
+
+
+@dataclass(frozen=True)
+class TimeSegment:
+    """
+    An immutable time window representing a single segment fetch operation.
+
+    Both boundaries are inclusive. The start and end datetimes MUST be
+    UTC-aware; naive datetimes will cause silent timezone misalignment when
+    used in arithmetic with timedelta or compared with other UTC datetimes.
+
+    TimeSegment objects are produced exclusively by segment_time_range() and
+    consumed by SegmentedFetchService. They are not part of the public
+    user-facing API and must not be returned directly to callers of
+    get_historical_ohlcv().
+
+    Attributes:
+        start: Inclusive start of the segment (UTC-aware datetime).
+        end:   Inclusive end of the segment (UTC-aware datetime).
+    """
+
+    start: datetime
+    end: datetime
+
+
+def _to_utc_datetime(ts: datetime | str) -> datetime:
+    """
+    Normalize a datetime or ISO 8601 string to a UTC-aware datetime.
+
+    Delegates to to_unix_timestamp() for string parsing and naive-datetime
+    handling, then reconstructs a UTC-aware datetime from the unix timestamp.
+    This guarantees that segment boundaries computed by segment_time_range()
+    are always in UTC and avoids timezone arithmetic bugs.
+
+    Args:
+        ts: Timezone-aware datetime, naive datetime (assigned UTC without
+            conversion), or ISO 8601 string (including "Z" suffix).
+
+    Returns:
+        UTC-aware datetime object. Sub-second precision is truncated (inherited
+        from to_unix_timestamp() which operates on integer seconds).
+
+    Raises:
+        TypeError:  If ts is not a datetime or str.
+        ValueError: If ts is an invalid ISO 8601 string.
+
+    Note:
+        This function is a private implementation detail of the segmented fetch
+        engine. It is NOT exported from tvkit.api.chart.utils and must not be
+        used outside of SegmentedFetchService.
+    """
+    unix_ts: int = to_unix_timestamp(ts)
+    return datetime.fromtimestamp(unix_ts, tz=UTC)
+
+
+def segment_time_range(
+    start: datetime,
+    end: datetime,
+    interval_seconds: int,
+    max_bars: int = MAX_BARS_REQUEST,
+) -> list[TimeSegment]:
+    """
+    Split a UTC date range into non-overlapping segments sized for a single fetch.
+
+    Each segment spans at most (max_bars × interval_seconds) seconds, which
+    corresponds to at most max_bars TradingView bars. Consecutive segments are
+    separated by exactly one interval:
+
+        segment[n].end + timedelta(seconds=interval_seconds) == segment[n+1].start
+
+    This boundary formula ensures that the same timestamp never appears in two
+    segments — deduplication in SegmentedFetchService is a safety net, not the
+    primary correctness mechanism.
+
+    Args:
+        start:            Inclusive start of the full range (UTC-aware datetime).
+        end:              Inclusive end of the full range (UTC-aware datetime).
+        interval_seconds: Duration of one bar in seconds. Must be > 0.
+        max_bars:         Maximum bars per segment. Must be > 0.
+                          Defaults to MAX_BARS_REQUEST (5000).
+
+    Returns:
+        Non-empty, ordered list of TimeSegment objects (oldest first). At least
+        one segment is always returned when start <= end. The last segment's
+        end is always clamped to the original end argument (never exceeded).
+
+    Raises:
+        ValueError:         If start > end, interval_seconds <= 0, or max_bars <= 0.
+        RangeTooLargeError: If the segment count exceeds MAX_SEGMENTS (2000).
+                            Checked both before the loop (estimate) and after each
+                            append (authoritative). This is a subclass of ValueError.
+
+    Example:
+        >>> from datetime import datetime, UTC
+        >>> segs = segment_time_range(
+        ...     datetime(2023, 1, 1, tzinfo=UTC),
+        ...     datetime(2023, 3, 31, tzinfo=UTC),
+        ...     interval_seconds=60,
+        ...     max_bars=5000,
+        ... )
+        >>> len(segs)
+        26
+        >>> segs[0].start
+        datetime.datetime(2023, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)
+
+    Note:
+        start and end MUST be UTC-aware datetimes. Pass naive datetimes or
+        ISO strings through _to_utc_datetime() before calling this function.
+        Mixing naive and aware datetimes will raise TypeError from timedelta
+        arithmetic.
+    """
+    from tvkit.api.chart.exceptions import RangeTooLargeError
+
+    if interval_seconds <= 0:
+        raise ValueError(f"interval_seconds must be > 0, got {interval_seconds}")
+    if max_bars <= 0:
+        raise ValueError(f"max_bars must be > 0, got {max_bars}")
+    if start > end:
+        raise ValueError(f"start ({start.isoformat()}) must not be after end ({end.isoformat()})")
+
+    segment_duration_secs: int = interval_seconds * max_bars
+    total_secs: float = (end - start).total_seconds()
+
+    # Pre-loop estimate guard (fast path — avoids allocating the list).
+    # math.ceil can underestimate by 1 in rare boundary cases, which is why
+    # the in-loop post-append guard below is the authoritative safety net.
+    estimated_segments: int = math.ceil(total_secs / segment_duration_secs) if total_secs > 0 else 1
+    if estimated_segments > MAX_SEGMENTS:
+        raise RangeTooLargeError(
+            f"Requested range requires approximately {estimated_segments} segments, "
+            f"which exceeds the safety limit of MAX_SEGMENTS={MAX_SEGMENTS}. "
+            "Narrow the date range or use a wider interval."
+        )
+
+    segments: list[TimeSegment] = []
+    cursor: datetime = start
+    interval_delta: timedelta = timedelta(seconds=interval_seconds)
+    segment_delta: timedelta = timedelta(seconds=segment_duration_secs - interval_seconds)
+
+    while cursor <= end:
+        seg_end: datetime = min(cursor + segment_delta, end)
+        segments.append(TimeSegment(start=cursor, end=seg_end))
+        # Authoritative in-loop guard: catches cases where ceil underestimates.
+        if len(segments) > MAX_SEGMENTS:
+            raise RangeTooLargeError(
+                f"Segment count exceeded MAX_SEGMENTS={MAX_SEGMENTS} during iteration. "
+                "Narrow the date range or use a wider interval."
+            )
+        cursor = seg_end + interval_delta
+
+    return segments
