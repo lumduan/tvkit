@@ -391,7 +391,7 @@ def _to_utc_datetime(ts: datetime | str) -> datetime:
     Note:
         This function is a private implementation detail of the segmented fetch
         engine. It is NOT exported from tvkit.api.chart.utils and must not be
-        used outside of SegmentedFetchService.
+        used outside of the chart package (``ohlcv.py`` and ``SegmentedFetchService``).
     """
     unix_ts: int = to_unix_timestamp(ts)
     return datetime.fromtimestamp(unix_ts, tz=UTC)

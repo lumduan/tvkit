@@ -152,7 +152,7 @@ class SegmentedFetchService:
                 # _fetch_single_range() is extracted from get_historical_ohlcv() in
                 # Phase 4. The type: ignore suppresses the "no attribute" error until
                 # Phase 4 adds the method to OHLCV. Remove the ignore after Phase 4.
-                bars: list[OHLCVBar] = await self._client._fetch_single_range(  # type: ignore[attr-defined]
+                bars: list[OHLCVBar] = await self._client._fetch_single_range(
                     exchange_symbol,
                     interval,
                     start=segment.start,
