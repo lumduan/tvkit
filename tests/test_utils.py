@@ -1,102 +1,72 @@
 """
 Tests for the utils module, specifically for timestamp conversion functionality
-and chart utility functions (to_unix_timestamp, build_range_param, validate_interval).
+and chart utility functions (to_unix_timestamp, build_range_param, validate_interval,
+interval_to_seconds).
 """
 
 from datetime import UTC, datetime
 
 import pytest
 
-from tvkit.api.chart.utils import build_range_param, to_unix_timestamp
+from tvkit.api.chart.utils import build_range_param, interval_to_seconds, to_unix_timestamp
 from tvkit.api.utils import convert_timestamp_to_iso
 
 
 class TestTimestampConversion:
-    """Test cases for timestamp conversion functionality."""
+    """Test cases for convert_timestamp_to_iso() in tvkit.api.utils."""
 
-    def test_convert_timestamp_to_iso_basic(self) -> None:
-        """Test basic timestamp conversion to ISO format."""
-        # Test with a known timestamp
-        timestamp: float = 1753436820.0
-        result: str = convert_timestamp_to_iso(timestamp)
+    @pytest.mark.parametrize(
+        "timestamp,expected",
+        [
+            (0.0, "1970-01-01T00:00:00+00:00"),  # epoch
+            (1640995200.0, "2022-01-01T00:00:00+00:00"),  # 2022-01-01T00:00:00Z
+            (1753436820.0, "2025-07-25T09:47:00+00:00"),  # 2025-07-25T09:47:00Z
+        ],
+    )
+    def test_known_timestamps_produce_correct_iso_strings(
+        self, timestamp: float, expected: str
+    ) -> None:
+        """Known unix timestamps map to the correct UTC ISO 8601 string."""
+        assert convert_timestamp_to_iso(timestamp) == expected
 
-        # Expected: 2025-07-25T09:47:00+00:00
-        assert result == "2025-07-25T09:47:00+00:00"
-        assert result.endswith("+00:00")  # UTC timezone
-        assert "T" in result  # ISO format separator
+    def test_output_is_valid_iso_8601_format(self) -> None:
+        """Output contains all required ISO 8601 structural components."""
+        result: str = convert_timestamp_to_iso(1753436820.0)  # 2025-07-25T09:47:00Z
 
-    def test_convert_timestamp_to_iso_epoch(self) -> None:
-        """Test conversion of epoch timestamp (0)."""
-        timestamp: float = 0.0
-        result: str = convert_timestamp_to_iso(timestamp)
+        assert len(result) >= 19  # minimum ISO format length
+        assert result.count("T") == 1  # date-time separator
+        assert result.count("+") == 1  # timezone offset
+        assert result.count(":") >= 2  # time separators
+        assert result.count("-") >= 2  # date separators
+        assert result.endswith("+00:00")
 
-        # Expected: 1970-01-01T00:00:00+00:00
-        assert result == "1970-01-01T00:00:00+00:00"
-
-    def test_convert_timestamp_to_iso_known_date(self) -> None:
-        """Test conversion of a known date."""
-        # January 1, 2022, 00:00:00 UTC
-        timestamp: float = 1640995200.0
-        result: str = convert_timestamp_to_iso(timestamp)
-
-        # Expected: 2022-01-01T00:00:00+00:00
-        assert result == "2022-01-01T00:00:00+00:00"
-
-    def test_convert_timestamp_to_iso_fractional_seconds(self) -> None:
-        """Test conversion with fractional seconds."""
-        # Test with fractional seconds
-        timestamp: float = 1640995200.5
-        result: str = convert_timestamp_to_iso(timestamp)
-
-        # Should handle fractional seconds
+    def test_fractional_seconds_are_accepted(self) -> None:
+        """Fractional-second timestamps do not raise; result reflects the whole-second value."""
+        result: str = convert_timestamp_to_iso(1640995200.5)  # 2022-01-01T00:00:00.5Z
         assert result.startswith("2022-01-01T00:00:00")
         assert "+00:00" in result
 
-    def test_convert_timestamp_to_iso_format_validation(self) -> None:
-        """Test that the output format is valid ISO 8601."""
-        timestamp: float = 1753436820.0
-        result: str = convert_timestamp_to_iso(timestamp)
-
-        # Validate ISO format components
-        assert len(result) >= 19  # Minimum ISO format length
-        assert result.count("T") == 1  # Date-time separator
-        assert result.count("+") == 1  # Timezone offset
-        assert result.count(":") >= 2  # Time separators
-        assert result.count("-") >= 2  # Date separators
-
-    def test_convert_timestamp_consistency(self) -> None:
-        """Test that conversion is consistent and reversible."""
-        timestamp: float = 1753436820.0
+    def test_roundtrip_consistency(self) -> None:
+        """Parsing the output ISO string back to a datetime recovers the original timestamp."""
+        timestamp: float = 1753436820.0  # 2025-07-25T09:47:00Z
         iso_string: str = convert_timestamp_to_iso(timestamp)
 
-        # Parse back to datetime and verify
         parsed_dt: datetime = datetime.fromisoformat(iso_string)
         back_to_timestamp: float = parsed_dt.timestamp()
 
-        # Should be very close (within floating point precision)
         assert abs(back_to_timestamp - timestamp) < 0.001
 
-    def test_convert_timestamp_timezone(self) -> None:
-        """Test that the timezone is always UTC."""
-        timestamps: list[float] = [0.0, 1640995200.0, 1753436820.0]
+    def test_timezone_is_always_utc(self) -> None:
+        """All outputs end with '+00:00' regardless of the input value."""
+        for timestamp in (0.0, 1640995200.0, 1753436820.0):
+            assert convert_timestamp_to_iso(timestamp).endswith("+00:00")
 
-        for timestamp in timestamps:
-            result: str = convert_timestamp_to_iso(timestamp)
-            # All results should end with UTC timezone offset
-            assert result.endswith("+00:00"), f"Timestamp {timestamp} should have UTC timezone"
-
-    def test_convert_timestamp_type_validation(self) -> None:
-        """Test that the function handles different numeric types."""
-        # Test with int
-        timestamp_int: int = 1640995200
-        result_int: str = convert_timestamp_to_iso(float(timestamp_int))
-
-        # Test with float
-        timestamp_float: float = 1640995200.0
-        result_float: str = convert_timestamp_to_iso(timestamp_float)
-
-        # Results should be the same
-        assert result_int == result_float
+    def test_int_and_float_produce_identical_results(self) -> None:
+        """Python accepts int where float is annotated; both inputs yield the same ISO string."""
+        ts_int: int = 1640995200  # 2022-01-01T00:00:00Z
+        ts_float: float = 1640995200.0
+        # int is accepted by Python duck typing even though the annotation is float
+        assert convert_timestamp_to_iso(ts_int) == convert_timestamp_to_iso(ts_float)  # type: ignore[arg-type]
 
 
 class TestToUnixTimestamp:
@@ -192,3 +162,57 @@ class TestBuildRangeParam:
         # naive is assigned UTC — same result as explicit UTC
         expected: str = build_range_param(datetime(2024, 1, 1, tzinfo=UTC), aware_end)
         assert result == expected
+
+
+class TestIntervalToSeconds:
+    """Tests for interval_to_seconds() in tvkit.api.chart.utils."""
+
+    @pytest.mark.parametrize(
+        "interval,expected_seconds",
+        [
+            ("1S", 1),  # 1 second
+            ("30S", 30),  # 30 seconds
+            ("1", 60),  # 1 minute
+            ("5", 300),  # 5 minutes
+            ("15", 900),  # 15 minutes
+            ("1H", 3600),  # 1 hour
+            ("4H", 14400),  # 4 hours
+            ("1D", 86400),  # 1 day
+            ("D", 86400),  # bare "D" == "1D"
+        ],
+    )
+    def test_valid_intervals(self, interval: str, expected_seconds: int) -> None:
+        """Supported interval strings map to the correct duration in seconds."""
+        assert interval_to_seconds(interval) == expected_seconds
+
+    @pytest.mark.parametrize(
+        "interval",
+        ["M", "1M", "2M", "3M", "6M", "W", "1W", "2W", "3W"],
+    )
+    def test_monthly_and_weekly_raise_value_error(self, interval: str) -> None:
+        """Monthly and weekly intervals raise ValueError — not supported by segmentation engine."""
+        with pytest.raises(ValueError):
+            interval_to_seconds(interval)
+
+    def test_invalid_string_raises_value_error(self) -> None:
+        """Unrecognised interval strings raise ValueError."""
+        with pytest.raises(ValueError):
+            interval_to_seconds("invalid")
+
+    def test_non_string_raises_type_error(self) -> None:
+        """Non-string input raises TypeError."""
+        with pytest.raises(TypeError):
+            interval_to_seconds(123)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "interval",
+        [" 1H ", "\t1H\n"],
+    )
+    def test_interval_with_whitespace(self, interval: str) -> None:
+        """Leading/trailing whitespace (spaces and tabs/newlines) is stripped before parsing."""
+        assert interval_to_seconds(interval) == 3600
+
+    def test_lowercase_interval_raises_value_error(self) -> None:
+        """Lowercase interval strings (e.g. '1h') are rejected as invalid format."""
+        with pytest.raises(ValueError):
+            interval_to_seconds("1h")

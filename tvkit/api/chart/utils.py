@@ -12,6 +12,7 @@ __all__ = [
     "end_of_day_timestamp",
     "build_range_param",
     "validate_interval",
+    "interval_to_seconds",
 ]
 
 # Precompiled regex for TradingView interval format validation.
@@ -23,6 +24,25 @@ __all__ = [
 #   Weeks:   "W", "1W", "4W"      (optional digits + W)
 #   Months:  "M", "1M", "12M"     (optional digits + M)
 _INTERVAL_RE: re.Pattern[str] = re.compile(r"^(\d+)([SHDWM])?$|^([DWM])$")
+
+# Intervals not supported by the segmentation engine.
+# Monthly intervals have variable-length durations; weekly intervals are grouped
+# with monthly because the engine bypasses both before calling interval_to_seconds().
+# Named _UNSUPPORTED_INTERVALS (not _MONTHLY_WEEKLY_*) for extensibility — future
+# interval types (e.g. "Y" yearly) can be added here without renaming the constant.
+_UNSUPPORTED_INTERVALS: frozenset[str] = frozenset(
+    {
+        "M",
+        "1M",
+        "2M",
+        "3M",
+        "6M",
+        "W",
+        "1W",
+        "2W",
+        "3W",
+    }
+)
 
 # Sentinel bars_count sent in create_series during range mode.
 # TradingView ignores this value when modify_series range is active,
@@ -248,3 +268,61 @@ def validate_interval(interval: str) -> None:
     elif unit == "M":
         if value <= 0 or value > 12:
             raise ValueError(f"Invalid month interval: {interval}. Must be between 1M and 12M")
+
+
+def interval_to_seconds(interval: str) -> int:
+    """
+    Convert a TradingView interval string to its duration in seconds.
+
+    Used by the segmented fetch engine to compute segment sizes. Monthly and
+    weekly intervals are not supported — the segmentation engine bypasses
+    segmentation entirely for those intervals (they never have enough bars to
+    require it, and variable-length month/week durations make segment sizing
+    unreliable).
+
+    Args:
+        interval: TradingView interval string. Supported formats:
+            Seconds: "1S", "5S", "30S"
+            Minutes: "1", "5", "15", "60"
+            Hours:   "1H", "4H", "12H"
+            Days:    "D", "1D", "3D"
+
+    Returns:
+        Duration in seconds as a positive integer.
+
+    Raises:
+        TypeError:  If interval is not a string.
+        ValueError: If interval is empty, invalid, or a monthly/weekly format.
+
+    Example:
+        >>> interval_to_seconds("1")    # 1 minute
+        60
+        >>> interval_to_seconds("1H")   # 1 hour
+        3600
+        >>> interval_to_seconds("1D")   # 1 day
+        86400
+    """
+    validate_interval(interval)  # raises TypeError / ValueError for bad input
+    interval = interval.strip()
+
+    if interval in _UNSUPPORTED_INTERVALS:
+        raise ValueError(
+            f"interval_to_seconds() does not support monthly or weekly intervals "
+            f"(got {interval!r}). The segmentation engine bypasses segmentation "
+            f"for these intervals — they are handled via _needs_segmentation()."
+        )
+
+    # Bare "D" → 1 day (no numeric prefix)
+    if interval == "D":
+        return 86400
+
+    # Parse unit suffix and numeric multiplier
+    if interval.endswith("S"):
+        return int(interval[:-1]) * 1
+    if interval.endswith("H"):
+        return int(interval[:-1]) * 3600
+    if interval.endswith("D"):
+        return int(interval[:-1]) * 86400
+
+    # Digits only → minutes
+    return int(interval) * 60
