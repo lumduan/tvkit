@@ -4,19 +4,47 @@ This page documents known constraints of tvkit and the underlying TradingView da
 
 ## Bar Count Limit per Request
 
-TradingView caps the number of bars returned in a single request. This cap is exposed as `MAX_BARS_REQUEST` in `tvkit.api.chart.utils`.
+TradingView caps the number of bars returned in a single WebSocket request. This cap is exposed as `MAX_BARS_REQUEST` in `tvkit.api.chart.utils`.
 
-- The exact limit depends on your TradingView account tier.
-- Free accounts receive fewer historical bars than paid accounts.
-- To fetch more bars than the limit, use `get_historical_ohlcv()` in **date-range mode** and fetch in segments.
-- This limit may change if TradingView updates its backend behaviour.
+- The exact limit depends on your TradingView account tier (free tier: 5,000 bars).
+- In date-range mode, `get_historical_ohlcv()` automatically segments large requests — no manual workaround needed. See [Large Date Range Fetching](guides/historical-data.md#large-date-range-fetching-automatic-segmentation).
+- This limit is separate from the server-side historical depth limit described below.
 
 ```python
 from tvkit.api.chart.utils import MAX_BARS_REQUEST
 print(MAX_BARS_REQUEST)  # inspect the current limit
 ```
 
-See [Historical Data guide](guides/historical-data.md) for a segmented fetch example.
+---
+
+## TradingView Historical Depth Limitation
+
+Separate from the per-request bar limit, TradingView imposes a server-side rolling window that controls how far back in time data is accessible. This window is not the number of bars per request — it is the maximum age of accessible data for your account tier.
+
+Free/basic accounts can access approximately ≈5,000 bars backward from the current time. Paid tiers allow deeper history. The table below shows approximate accessible depth by interval and account tier:
+
+| Interval | Free / Basic | Essential / Plus | Premium | Expert | Ultimate |
+| -------- | ------------ | ---------------- | ------- | ------ | -------- |
+| 1 minute | ≈3.5 days | ≈17 days | ≈1 month | ≈3 months | ≈6 months |
+| 5 minutes | ≈17 days | ≈3 months | ≈6 months | ≈1 year | ≈2 years |
+| 15 minutes | ≈52 days | ≈9 months | ≈1.5 years | ≈3 years | ≈6 years |
+| 1 hour | ≈7 months | ≈3 years | ≈6 years | ≈12 years | ≈24 years |
+| 1 day | ≈27 years | Unlimited | Unlimited | Unlimited | Unlimited |
+
+These are approximate, empirical values. TradingView does not publish official figures and limits may change.
+
+**Effect on segmented fetching:**
+
+When `get_historical_ohlcv()` automatically segments a large date range, segments that fall before the accessible window for your account tier return no bars. tvkit treats these as empty results — no error is raised. This behavior mirrors TradingView's native chart behavior.
+
+**Distinction from `MAX_BARS_REQUEST`:**
+
+| Concept | What it controls |
+| ------- | ---------------- |
+| `MAX_BARS_REQUEST` | Protocol limit — maximum bars in a single fetch request |
+| Historical depth | Server-side policy — maximum age of accessible data per account tier |
+
+**Resolution:** To access older data, upgrade your TradingView account tier or switch to a wider interval (e.g., `"1H"` instead of `"1"`).
 
 ## Rate Limiting
 

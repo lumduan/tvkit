@@ -16,6 +16,7 @@ Designed for quantitative research, trading tools, and data pipelines.
 - Real-time OHLCV streaming via WebSocket with async generators
 - **Automatic reconnection** with exponential backoff — transient disconnects recovered transparently
 - Historical data retrieval by bar count or explicit date range
+- **Automatic segmented fetching** for large historical OHLCV date ranges (TradingView historical depth limits still apply)
 - Multi-market scanner: 69 global markets, 101+ financial metrics
 - Multi-format data export: Polars DataFrames, JSON, CSV
 - Symbol format auto-conversion: `EXCHANGE-SYMBOL` and `EXCHANGE:SYMBOL` both accepted

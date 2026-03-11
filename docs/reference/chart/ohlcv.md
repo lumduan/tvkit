@@ -84,6 +84,23 @@ async def get_historical_ohlcv(
 
 Range mode uses a longer timeout because multi-year intraday streams can be slow to transmit.
 
+#### Automatic Segmentation (v0.5.0+)
+
+When the estimated bar count for a `start`/`end` range exceeds `MAX_BARS_REQUEST` (5,000), `get_historical_ohlcv()` automatically dispatches to `SegmentedFetchService`, which:
+
+1. Splits the range into non-overlapping segments sized for at most `MAX_BARS_REQUEST` bars each
+2. Fetches each segment sequentially via the internal `_fetch_single_range()` method
+3. Merges, deduplicates by timestamp (first-occurrence wins), and sorts results chronologically
+
+The caller sees no difference — the return type is the same `list[OHLCVBar]`.
+
+**Constraints:**
+
+- Monthly (`M`, `1M`, …) and weekly (`W`, `1W`, …) intervals are never segmented — they always use a single request
+- If the range requires more than `MAX_SEGMENTS` (2,000) segments, `RangeTooLargeError` is raised before any fetch begins. Narrow the date range or use a wider interval
+- Segments covering periods with no data (weekends, holidays) are silently skipped (treated as empty, not an error)
+- TradingView historical depth limits still apply — see [TradingView Historical Depth Limitation](../../limitations.md)
+
 #### Returns
 
 `list[OHLCVBar]` — Bars sorted by timestamp in ascending order. Returns are never empty; `RuntimeError` is raised if no bars are received.
@@ -101,6 +118,8 @@ Range mode uses a longer timeout because multi-year intraday streams can be slow
 | `ValueError` | Interval format is invalid (from `validate_interval`) |
 | `ValueError` | TradingView returns a `series_error` (invalid symbol/interval for the requested timeframe) |
 | `RuntimeError` | No bars received from TradingView |
+| `RangeTooLargeError` | Date range would require more than `MAX_SEGMENTS` (2,000) segments — narrow the range or use a wider interval. Subclass of `ValueError`. |
+| `SegmentedFetchError` | A segment fetch failed with an unexpected error. Carries `segment_index`, `segment_start`, `segment_end`, `total_segments`, `cause`. |
 
 #### Examples
 

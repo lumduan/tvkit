@@ -27,7 +27,8 @@ tvkit/
    │  OHLCV client  │ │ ScannerSvc   │ │ DataExporter  │
    │  ConnectionSvc │ │ 69 markets   │ │ PolarsFormatter│
    │  MessageSvc    │ │ 100+ cols    │ │ JSONFormatter │
-   └───────┬────────┘ └──────┬───────┘ │ CSVFormatter  │
+   │  SegmentedFetch│ │              │ │ CSVFormatter  │
+   └───────┬────────┘ └──────┬───────┘ └───────┬───────┘
            │                 │         └───────┬───────┘
            │ WebSocket       │ HTTPS           │
            ▼                 ▼                 │
@@ -53,6 +54,7 @@ tvkit/
 **Internal services**:
 - `ConnectionService` — manages WebSocket lifecycle, session init, symbol subscription
 - `MessageService` — constructs and sends TradingView protocol messages
+- `SegmentedFetchService` — splits large date ranges into segments, fetches sequentially, merges/deduplicates results (v0.5.0+)
 
 **Methods exposed**:
 - `get_historical_ohlcv()` — fetch N bars or a date range; returns `list[OHLCV]`
