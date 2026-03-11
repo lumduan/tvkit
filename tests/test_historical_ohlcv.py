@@ -8,11 +8,13 @@ No real network calls — all external I/O is mocked.
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.ohlcv import OHLCV
 
 SYMBOL: str = "BINANCE:BTCUSDT"
@@ -1058,3 +1060,131 @@ class TestRangeMode:
             await client.get_historical_ohlcv(
                 exchange_symbol=SYMBOL, interval="1D", start="2024-01-01", end="2024-12-31"
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Class: TestSegmentationDispatch
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSegmentationDispatch:
+    """
+    Tests for _needs_segmentation() logic and get_historical_ohlcv() dispatch.
+
+    These are unit tests — no WebSocket connection is established. They verify:
+    1. _needs_segmentation() returns the correct True/False for various inputs.
+    2. get_historical_ohlcv() routes to SegmentedFetchService.fetch_all for large ranges.
+    3. get_historical_ohlcv() routes to _fetch_single_range for small ranges.
+    """
+
+    # ------------------------------------------------------------------
+    # _needs_segmentation() unit tests
+    # ------------------------------------------------------------------
+
+    def test_needs_segmentation_large_1min_range(self) -> None:
+        """1-minute interval over 1 full year (~525,600 bars >> 5000) → True."""
+        client: OHLCV = OHLCV()
+        start: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        end: datetime = datetime(2025, 1, 1, tzinfo=UTC)
+        assert client._needs_segmentation(start, end, "1") is True
+
+    def test_needs_segmentation_small_range(self) -> None:
+        """1-minute interval over 1 hour (~60 bars << 5000) → False."""
+        client: OHLCV = OHLCV()
+        start: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        end: datetime = datetime(2024, 1, 1, 1, 0, 0, tzinfo=UTC)
+        assert client._needs_segmentation(start, end, "1") is False
+
+    @pytest.mark.parametrize("interval", ["M", "1M", "3M", "6M"])
+    def test_needs_segmentation_monthly_always_false(self, interval: str) -> None:
+        """Monthly intervals bypass segmentation regardless of range size."""
+        client: OHLCV = OHLCV()
+        start: datetime = datetime(2000, 1, 1, tzinfo=UTC)
+        end: datetime = datetime(2025, 1, 1, tzinfo=UTC)
+        assert client._needs_segmentation(start, end, interval) is False
+
+    @pytest.mark.parametrize("interval", ["W", "1W", "2W", "3W"])
+    def test_needs_segmentation_weekly_always_false(self, interval: str) -> None:
+        """Weekly intervals bypass segmentation regardless of range size."""
+        client: OHLCV = OHLCV()
+        start: datetime = datetime(2000, 1, 1, tzinfo=UTC)
+        end: datetime = datetime(2025, 1, 1, tzinfo=UTC)
+        assert client._needs_segmentation(start, end, interval) is False
+
+    def test_needs_segmentation_does_not_match_numeric_m_suffix(self) -> None:
+        """
+        "15" (15-minute interval) over a large range requires segmentation → True.
+        Guards against a common bug: interval.endswith("M") would wrongly classify
+        "15M" as monthly and skip segmentation. The actual monthly set is explicit.
+        """
+        client: OHLCV = OHLCV()
+        start: datetime = datetime(2024, 1, 1, tzinfo=UTC)
+        end: datetime = datetime(2025, 1, 1, tzinfo=UTC)
+        # 15-minute interval over 1 year → ~35,040 bars >> 5000 → True
+        assert client._needs_segmentation(start, end, "15") is True
+
+    # ------------------------------------------------------------------
+    # Dispatch integration tests
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_large_range_dispatches_to_segmented_service(self) -> None:
+        """get_historical_ohlcv() calls SegmentedFetchService.fetch_all for a large range."""
+        expected_bar = OHLCVBar(
+            timestamp=_TS_2024_JAN_01,
+            open=100.0,
+            high=105.0,
+            low=95.0,
+            close=102.0,
+            volume=1.0,
+        )
+
+        with (
+            patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),
+            patch(
+                "tvkit.api.chart.ohlcv.SegmentedFetchService.fetch_all",
+                new_callable=AsyncMock,
+                return_value=[expected_bar],
+            ) as mock_fetch_all,
+        ):
+            client: OHLCV = OHLCV()
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL,
+                interval="1",  # 1-minute
+                start="2024-01-01",
+                end="2026-01-01",  # 2-year range → needs segmentation
+            )
+
+        mock_fetch_all.assert_called_once()
+        assert result == [expected_bar]
+
+    @pytest.mark.asyncio
+    async def test_small_range_uses_single_request_path(self) -> None:
+        """get_historical_ohlcv() calls _fetch_single_range directly for a small range."""
+        expected_bar = OHLCVBar(
+            timestamp=_TS_2024_JAN_01,
+            open=100.0,
+            high=105.0,
+            low=95.0,
+            close=102.0,
+            volume=1.0,
+        )
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            client: OHLCV = OHLCV()
+            client._fetch_single_range = AsyncMock(return_value=[expected_bar])  # type: ignore[method-assign]
+
+            with patch(
+                "tvkit.api.chart.ohlcv.SegmentedFetchService.fetch_all",
+                new_callable=AsyncMock,
+            ) as mock_fetch_all:
+                result = await client.get_historical_ohlcv(
+                    exchange_symbol=SYMBOL,
+                    interval="1",  # 1-minute
+                    start="2024-01-01T00:00:00Z",
+                    end="2024-01-01T01:00:00Z",  # 1-hour range → no segmentation
+                )
+
+        client._fetch_single_range.assert_called_once()  # type: ignore[union-attr]
+        mock_fetch_all.assert_not_called()
+        assert result == [expected_bar]
