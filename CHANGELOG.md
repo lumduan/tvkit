@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-11
+
+### Added
+
+- **Automatic segmented fetching for large historical OHLCV date ranges** in `get_historical_ohlcv()` range mode. When the requested range exceeds `MAX_BARS_REQUEST` bars, the client automatically splits the range into segments, fetches each sequentially, then merges, deduplicates, and sorts the results. The public API is unchanged — callers receive the same `list[OHLCVBar]` return type.
+- **`SegmentedFetchService`** internal orchestrator (`tvkit.api.chart.services.segmented_fetch_service`). Not part of the public API.
+- **`segment_time_range(start, end, interval_seconds, max_bars)`** — splits a UTC date range into non-overlapping `TimeSegment` objects sized for at most `max_bars` bars each. Raises `RangeTooLargeError` if segment count exceeds `MAX_SEGMENTS`.
+- **`interval_to_seconds(interval)`** — converts a TradingView interval string to seconds. Raises `ValueError` for monthly/weekly intervals (not supported by the segmentation engine).
+- **`TimeSegment`** — frozen dataclass (`start: datetime`, `end: datetime`). Hashable and equality-comparable.
+- **`MAX_SEGMENTS`** constant (`2000`) — safety guard for `segment_time_range()`.
+- **`RangeTooLargeError`** exception (subclass of `ValueError`) — raised when segment count exceeds `MAX_SEGMENTS`.
+- **`NoHistoricalDataError`** exception (subclass of `RuntimeError`) — raised by `_fetch_single_range()` for empty segments (weekends, holidays, illiquid periods, or dates outside the accessible history window). Treated as `[]` by `SegmentedFetchService`; never propagated to callers.
+- **`SegmentedFetchError`** exception — wraps unexpected segment failures. Carries `segment_index`, `segment_start`, `segment_end`, `total_segments`, `cause`.
+- **`_needs_segmentation(start, end, interval)`** private helper on `OHLCV` — returns `True` when the estimated bar count exceeds `MAX_BARS_REQUEST`. Always returns `False` for monthly/weekly intervals.
+- **`docs/internals/segmented-fetch.md`** — algorithm, recursion guard rationale, merge/dedup semantics, sequence diagram.
+
+### Changed
+
+- `get_historical_ohlcv()` in range mode now transparently segments large requests. Monthly and weekly intervals continue to use a single request (unchanged behaviour).
+- `docs/guides/historical-data.md` — replaced manual segmentation example with automatic segmentation. Added "TradingView Historical Depth Limitation" section with account-tier table and "Why did my request return fewer bars than expected?" troubleshooting section.
+- `docs/limitations.md` — added "TradingView Historical Depth Limitation" section with interval × tier depth table.
+- `docs/architecture/system-overview.md` — added `SegmentedFetchService` to chart component diagram.
+
+---
+
 ## [0.4.0] - 2026-03-10
 
 ### Added

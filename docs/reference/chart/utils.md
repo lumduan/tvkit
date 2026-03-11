@@ -1,9 +1,9 @@
 # Chart Utilities Reference
 
 **Module:** `tvkit.api.chart.utils`
-**Available since:** v0.2.0
+**Available since:** v0.2.0 (segmentation utilities added in v0.5.0)
 
-Timestamp conversion, interval validation, and range parameter construction utilities used by the OHLCV client. All functions are synchronous.
+Timestamp conversion, interval validation, range parameter construction, and segmentation utilities used by the OHLCV client. All functions are synchronous.
 
 ---
 
@@ -12,8 +12,12 @@ Timestamp conversion, interval validation, and range parameter construction util
 ```python
 from tvkit.api.chart.utils import (
     MAX_BARS_REQUEST,
+    MAX_SEGMENTS,
+    TimeSegment,
     build_range_param,
     end_of_day_timestamp,
+    interval_to_seconds,
+    segment_time_range,
     to_unix_timestamp,
     validate_interval,
 )
@@ -230,8 +234,182 @@ validate_interval(1)          # raises TypeError
 
 ---
 
+---
+
+## Segmentation Utilities (v0.5.0+)
+
+### `MAX_SEGMENTS`
+
+```python
+MAX_SEGMENTS: int = 2000
+```
+
+Safety guard used by `segment_time_range()`. If the computed segment count exceeds this value, `RangeTooLargeError` is raised before any fetch begins. Prevents accidental requests that would produce hundreds of millions of bars and exhaust memory.
+
+---
+
+### `TimeSegment`
+
+```python
+from tvkit.api.chart.utils import TimeSegment
+```
+
+A frozen dataclass representing one time segment produced by `segment_time_range()`.
+
+```python
+@dataclass(frozen=True)
+class TimeSegment:
+    start: datetime  # inclusive, UTC-aware
+    end: datetime    # inclusive, UTC-aware
+```
+
+`TimeSegment` is hashable and equality-comparable, making it safe to use in sets and as dict keys.
+
+---
+
+### `interval_to_seconds()`
+
+Convert a TradingView interval string to its duration in seconds.
+
+```python
+def interval_to_seconds(interval: str) -> int: ...
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+| --------- | ---- | ------- | ----------- |
+| `interval` | `str` | required | TradingView interval string (e.g. `"1"`, `"1H"`, `"1D"`). Leading/trailing whitespace is stripped. |
+
+**Supported intervals:**
+
+| Interval | Seconds | Notes |
+| -------- | ------- | ----- |
+| `"1S"` | 1 | 1 second |
+| `"30S"` | 30 | 30 seconds |
+| `"1"` | 60 | 1 minute (bare digits = minutes) |
+| `"5"` | 300 | 5 minutes |
+| `"15"` | 900 | 15 minutes |
+| `"1H"` | 3600 | 1 hour |
+| `"4H"` | 14400 | 4 hours |
+| `"D"` | 86400 | 1 day (bare `D` == `"1D"`) |
+| `"1D"` | 86400 | 1 day |
+
+**Monthly and weekly intervals are not supported** by the segmentation engine (variable-length months/weeks make fixed-second conversion unreliable). Passing `"M"`, `"1M"`, `"W"`, `"1W"`, etc. raises `ValueError`.
+
+**Returns:** `int` — Interval duration in seconds.
+
+**Raises:**
+
+| Exception | When |
+| --------- | ---- |
+| `TypeError` | `interval` is not a `str` |
+| `ValueError` | Monthly or weekly interval string (not supported) |
+| `ValueError` | Unrecognized interval format |
+
+**Examples:**
+
+```python
+from tvkit.api.chart.utils import interval_to_seconds
+
+interval_to_seconds("1")    # 60  (1 minute)
+interval_to_seconds("1H")   # 3600
+interval_to_seconds("1D")   # 86400
+interval_to_seconds("D")    # 86400
+interval_to_seconds("1M")   # raises ValueError
+```
+
+---
+
+### `segment_time_range()`
+
+Split a UTC date range into non-overlapping `TimeSegment` objects, each sized for at most `max_bars` bars.
+
+```python
+def segment_time_range(
+    start: datetime,
+    end: datetime,
+    interval_seconds: int,
+    max_bars: int,
+) -> list[TimeSegment]: ...
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+| --------- | ---- | ------- | ----------- |
+| `start` | `datetime` | required | Inclusive range start (UTC-aware datetime). |
+| `end` | `datetime` | required | Inclusive range end (UTC-aware datetime). Must not be before `start`. |
+| `interval_seconds` | `int` | required | Bar interval in seconds (e.g. `60` for 1-minute bars). Must be > 0. |
+| `max_bars` | `int` | required | Maximum bars per segment. Must be > 0. |
+
+**Boundary algebra:**
+
+- `segment_delta = (max_bars - 1) * interval_seconds` — the span of one full segment
+- Each segment covers `[cursor, min(cursor + segment_delta, end)]`
+- The cursor for the next segment advances by `interval_seconds` past the previous segment's end, ensuring no gaps and no overlaps
+- The last segment is always clamped to `end`
+
+**Returns:** `list[TimeSegment]` — At least one segment. Segments are non-overlapping and collectively cover the full `[start, end]` range.
+
+**Raises:**
+
+| Exception | When |
+| --------- | ---- |
+| `ValueError` | `start > end` |
+| `ValueError` | `interval_seconds <= 0` |
+| `ValueError` | `max_bars <= 0` |
+| `RangeTooLargeError` | Computed segment count exceeds `MAX_SEGMENTS` (2000) |
+
+**Examples:**
+
+```python
+from datetime import datetime, UTC
+from tvkit.api.chart.utils import segment_time_range
+
+start = datetime(2024, 1, 1, tzinfo=UTC)
+end   = datetime(2024, 12, 31, tzinfo=UTC)
+
+segments = segment_time_range(start, end, interval_seconds=60, max_bars=5000)
+# Returns a list of TimeSegment objects covering the full year
+print(len(segments))       # number of segments
+print(segments[0].start)   # 2024-01-01 00:00:00+00:00
+print(segments[-1].end)    # 2024-12-31 00:00:00+00:00
+```
+
+---
+
+### `_to_utc_datetime()` *(internal)*
+
+Normalize a `datetime | str` value to a UTC-aware `datetime`.
+
+```python
+def _to_utc_datetime(value: datetime | str) -> datetime: ...
+```
+
+This is an internal helper used by `get_historical_ohlcv()` before dispatching to `SegmentedFetchService`. It is not part of the public API.
+
+**Behaviour:**
+
+| Input | Output |
+| ----- | ------ |
+| UTC-aware `datetime` | Returned unchanged |
+| Aware `datetime` in another timezone | Converted to UTC |
+| Naive `datetime` (no tzinfo) | Assigned UTC (no conversion) |
+| ISO 8601 string (`"YYYY-MM-DD"` or `"YYYY-MM-DDTHH:MM:SSZ"`) | Parsed and returned as UTC-aware datetime |
+
+**Raises:**
+
+| Exception | When |
+| --------- | ---- |
+| `TypeError` | `value` is not a `datetime` or `str` |
+| `ValueError` | String cannot be parsed as ISO 8601 |
+
+---
+
 ## See Also
 
 - [Historical Data Guide](../../guides/historical-data.md)
 - [Concepts: Intervals](../../concepts/intervals.md)
 - [OHLCV Client Reference](ohlcv.md)
+- [Segmented Fetch internals](../../internals/segmented-fetch.md)
