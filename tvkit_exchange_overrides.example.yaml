@@ -1,0 +1,31 @@
+# Optional exchange timezone overrides for tvkit.
+#
+# Usage:
+#   1. Copy this file:
+#        cp tvkit_exchange_overrides.example.yaml tvkit_exchange_overrides.yaml
+#
+#   2. Add or override exchange → IANA timezone mappings under the "exchanges" key.
+#
+#   3. Load in your code:
+#        from tvkit.time import load_exchange_overrides
+#        load_exchange_overrides("tvkit_exchange_overrides.yaml")
+#
+#      Or auto-load at import time by setting the environment variable:
+#        export TVKIT_EXCHANGE_OVERRIDES=tvkit_exchange_overrides.yaml
+#
+# Notes:
+#   - Exchange codes are case-insensitive (normalized to uppercase internally).
+#   - Timezone strings must be valid IANA timezone identifiers.
+#     See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+#   - User overrides take precedence over the built-in registry.
+#   - Requires pyyaml: uv add pyyaml
+
+exchanges:
+  # Example: add a custom or new exchange
+  # MYEXCHANGE: Asia/Bangkok
+
+  # Example: override an existing mapping
+  # NASDAQ: America/New_York
+
+  # Example: map a crypto exchange to a specific timezone (unusual — most are UTC)
+  # BINANCE: UTC
