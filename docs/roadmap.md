@@ -8,6 +8,8 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.5.0** — Segmented Historical Fetch
+
 - **v0.4.0** — Connection retry with exponential backoff for `OHLCV` WebSocket client
 
 - **Documentation refactor** — Restructuring docs into a layered hierarchy (concepts, guides, reference, architecture, internals)
@@ -21,9 +23,17 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## In Progress
 
-#### Segmented Historical Fetch
+#### Timezone Handling
 
-A built-in utility to automatically paginate through large date ranges by splitting them into multiple requests, eliminating the need for callers to implement pagination manually.
+Consistent timezone management for OHLCV data.
+
+tvkit will operate **entirely in UTC internally**, while providing utilities to convert data into exchange local time, user-defined timezones, and research-specific timeframes.
+
+Proposed module: `tvkit.time`
+
+```python
+convert_to_timezone(df, "Asia/Bangkok")
+```
 
 ---
 
@@ -54,20 +64,6 @@ Proposed module: `tvkit.symbols`
 ```python
 normalize_symbol("aapl")      # → "NASDAQ:AAPL"
 normalize_symbol("btc/usdt")  # → "BINANCE:BTCUSDT"
-```
-
----
-
-#### Timezone Handling
-
-Consistent timezone management for OHLCV data.
-
-tvkit will operate **entirely in UTC internally**, while providing utilities to convert data into exchange local time, user-defined timezones, and research-specific timeframes.
-
-Proposed module: `tvkit.time`
-
-```python
-convert_to_timezone(df, "Asia/Bangkok")
 ```
 
 ---
@@ -215,9 +211,12 @@ Improved inline type annotations and `py.typed` marker validation to ensure tvki
 
 ---
 
-#### Documentation Refactor
+#### TradingView Account Authentication
 
-Restructuring documentation into a layered hierarchy (concepts, guides, reference, architecture, internals) to improve navigability and long-term maintainability.
+Accessing premium data requires a TradingView account. tvkit will support user authentication to enable features gated behind login, such as:
+
+- Extended historical data
+- Additional markets and indicators
 
 ---
 
@@ -238,7 +237,7 @@ These ideas have been explored but are not yet committed:
 The following are explicitly outside the scope of tvkit:
 
 - **Order placement** — tvkit is a data library, not a trading execution platform
-- **TradingView account authentication** — accessing premium data requires a TradingView subscription; tvkit focuses only on public endpoints
+
 - **Real-time order book data** — Level 2 (order book) data is not available via the public WebSocket protocol
 
 ---

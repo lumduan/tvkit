@@ -4,13 +4,15 @@ Historical OHLCV Data — tvkit Example
 ======================================
 
 Demonstrates fetching historical bar data in both count mode and date-range
-mode, concurrent multi-symbol fetching, and exporting results to CSV.
+mode, concurrent multi-symbol fetching, exporting results to CSV, and
+converting UTC timestamps to exchange or local timezones.
 
 What you'll learn:
 - Fetching N most-recent bars (count mode)
 - Fetching bars within a date range (date-range mode)
 - Concurrent multi-symbol fetching with asyncio.gather()
 - Exporting results to CSV with DataExporter
+- Converting UTC timestamps to exchange local time with tvkit.time
 
 Prerequisites:
 - Internet connection for TradingView API access
@@ -28,6 +30,7 @@ from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.api.utils import convert_timestamp_to_iso
 from tvkit.export import DataExporter, ExportFormat
+from tvkit.time import convert_to_exchange_timezone, convert_to_timezone
 
 
 def print_bars(bars: list[OHLCVBar], title: str) -> None:
@@ -113,12 +116,61 @@ async def export_to_csv() -> None:
     print(f"Exported {len(bars)} bars → {result.file_path}")
 
 
+async def timezone_conversion() -> None:
+    """Demonstrate UTC timestamp conversion using tvkit.time.
+
+    All OHLCVBar.timestamp values are UTC epoch floats. Use tvkit.time to
+    convert for display or analysis — never for backtesting or ML features.
+    """
+    print("\n=== Timezone Conversion: UTC epoch → local time ===")
+
+    # --- Traditional exchange: NASDAQ → America/New_York ---
+    async with OHLCV() as client:
+        bars = await client.get_historical_ohlcv(
+            exchange_symbol="NASDAQ:AAPL",
+            interval="60",
+            bars_count=5,
+        )
+
+    exporter = DataExporter()
+    df = await exporter.to_polars(bars)
+
+    print("\nNASDAQ:AAPL — raw UTC epoch timestamps:")
+    print(df.select(["timestamp", "close"]).head(3))
+
+    # Convert using exchange code — resolves to America/New_York automatically
+    df_ny = convert_to_exchange_timezone(df, "NASDAQ")
+    print("\nNASDAQ:AAPL — converted to America/New_York (exchange local time):")
+    print(df_ny.select(["timestamp", "close"]).head(3))
+
+    # --- Crypto exchange: BINANCE stays UTC (24/7, no local session) ---
+    async with OHLCV() as client:
+        btc_bars = await client.get_historical_ohlcv(
+            exchange_symbol="BINANCE:BTCUSDT",
+            interval="60",
+            bars_count=5,
+        )
+
+    df_btc = await exporter.to_polars(btc_bars)
+
+    # BINANCE maps to "UTC" — crypto has no exchange-local time concept
+    df_btc_utc = convert_to_exchange_timezone(df_btc, "BINANCE")
+    print("\nBINANCE:BTCUSDT — UTC (crypto = 24/7, no local session):")
+    print(df_btc_utc.select(["timestamp", "close"]).head(3))
+
+    # --- Arbitrary IANA timezone ---
+    df_bkk = convert_to_timezone(df_ny, "Asia/Bangkok")
+    print("\nNASDAQ:AAPL — converted to Asia/Bangkok (arbitrary IANA tz):")
+    print(df_bkk.select(["timestamp", "close"]).head(3))
+
+
 async def main() -> None:
     try:
         await fetch_count_mode()
         await fetch_date_range_mode()
         await fetch_concurrent()
         await export_to_csv()
+        await timezone_conversion()
         print("\nDone.")
     except Exception:
         traceback.print_exc()

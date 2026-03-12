@@ -1,4 +1,25 @@
-"""Message service for constructing and sending WebSocket messages."""
+"""
+Message service for constructing and sending WebSocket messages to TradingView.
+
+Protocol note — UTC Unix epoch timestamps
+------------------------------------------
+TradingView's WebSocket protocol sends all bar timestamps as UTC Unix epoch
+floats (seconds since the Unix epoch: 1970-01-01T00:00:00Z). Example OHLCV
+payload::
+
+    {
+        "t": 1704067200.0,   <- UTC Unix epoch seconds (2024-01-01T00:00:00Z)
+        "o": 42000.0,
+        "h": 42100.0,
+        "l": 41950.0,
+        "c": 42050.0,
+        "v": 12.5
+    }
+
+These values must never be converted to local time inside this service or any
+downstream parsing code. tvkit preserves them as-is and enforces the UTC
+invariant at the ``OHLCVBar`` model boundary via a Pydantic timestamp validator.
+"""
 
 import json
 import logging
@@ -17,6 +38,13 @@ class MessageService:
 
     This service handles the message protocol, formatting, and sending
     operations for TradingView WebSocket communication.
+
+    **Timestamp contract:** Incoming timestamps from TradingView and any
+    timestamps embedded in outgoing messages follow the UTC Unix epoch
+    convention (seconds since 1970-01-01T00:00:00Z), as guaranteed by the
+    TradingView WebSocket protocol. This service never converts or adjusts
+    timestamps — they are forwarded verbatim and validated downstream by
+    ``OHLCVBar``.
     """
 
     def __init__(self, ws: ClientConnection) -> None:

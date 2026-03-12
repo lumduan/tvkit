@@ -134,6 +134,93 @@ results = await asyncio.gather(fetch("NASDAQ:AAPL"), fetch("NASDAQ:MSFT"))
 
 ---
 
+## Timezones
+
+### Why are timestamps UTC?
+
+All `OHLCVBar.timestamp` values are UTC Unix epoch floats — the number of seconds since
+`1970-01-01T00:00:00Z`. This is the UTC invariant tvkit enforces: timestamps in the data layer are
+always UTC, and timezone conversion is explicit and opt-in at the display boundary.
+
+The reasons are practical:
+
+- **No DST ambiguity** — UTC has no daylight saving time transitions, so arithmetic over epoch values is always unambiguous
+- **No locale dependence** — a UTC epoch behaves identically on a server in New York, Bangkok, or anywhere else
+- **Wire protocol compatibility** — TradingView sends timestamps as UTC Unix epoch values; tvkit preserves them exactly as received
+- **Cross-dataset joins** — UTC is the natural common key when joining data from multiple exchanges in different time zones
+
+To convert, use `tvkit.time`:
+
+```python
+from tvkit.time import convert_to_exchange_timezone
+
+df_local = convert_to_exchange_timezone(df, "NASDAQ")  # America/New_York
+```
+
+See [Concepts: Timezones](concepts/timezones.md).
+
+### Why is BINANCE timezone UTC?
+
+Crypto exchanges such as `BINANCE`, `COINBASE`, and `KRAKEN` are mapped to `"UTC"` in the tvkit
+exchange registry. This is intentional. Crypto markets:
+
+- Trade **24/7** with no market open/close session
+- Operate globally, not from a single physical location
+- Express all data in UTC by convention
+
+There is no "exchange-local time" for a crypto exchange the way there is for NYSE (`America/New_York`) or SET (`Asia/Bangkok`). UTC is the correct and meaningful timezone for crypto data.
+
+```python
+from tvkit.time import exchange_timezone
+
+exchange_timezone("BINANCE")  # "UTC"
+exchange_timezone("NASDAQ")   # "America/New_York"
+exchange_timezone("SET")      # "Asia/Bangkok"
+```
+
+### How do I display timestamps in my local timezone?
+
+Use `convert_to_timezone()` for any IANA timezone, or `convert_to_exchange_timezone()` to resolve
+the timezone from an exchange code:
+
+```python
+from tvkit.time import convert_to_timezone, convert_to_exchange_timezone
+
+# Any IANA timezone
+df_local = convert_to_timezone(df, "Asia/Bangkok")
+
+# Exchange code → IANA timezone automatically
+df_ny = convert_to_exchange_timezone(df, "NASDAQ")     # America/New_York
+df_bkk = convert_to_exchange_timezone(df, "SET")       # Asia/Bangkok
+```
+
+Both functions return a new DataFrame; the original is not mutated.
+
+See [tvkit.time Reference](reference/time/index.md) and [Historical Data — Working with Timezones](guides/historical-data.md#working-with-timezones).
+
+### Why are timestamps `float` instead of `datetime`?
+
+Unix epoch floats are:
+
+- **Compact** — a single float per bar vs. a full datetime object
+- **Language-neutral** — trivially portable to JavaScript, SQL, or any other system
+- **Wire-protocol compatible** — TradingView sends epoch values directly; storing them as-is avoids any round-trip conversion
+- **Arithmetic-friendly** — computing durations is a simple subtraction; no timezone-aware subtraction required
+
+Convert to `datetime` only when needed, at the display or analysis layer.
+
+### Can I store timestamps as pandas datetime?
+
+Yes. After converting with `convert_to_timezone()` or `convert_to_exchange_timezone()`, the
+Polars `timestamp` column is a tz-aware `datetime[us, <tz>]`. You can convert to pandas via
+`df.to_pandas()` if your downstream pipeline requires it.
+
+The key principle is: keep timestamps as UTC epoch floats in the data layer, and convert to
+`datetime` (Polars or pandas) only at the analysis or export layer. This prevents accidental local
+time storage and keeps your pipeline timezone-agnostic.
+
+---
+
 ## Errors and Troubleshooting
 
 ### I'm getting a `ConnectionClosed` error. What do I do?

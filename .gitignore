@@ -191,3 +191,6 @@ tvkit.code-workspace
 examples/tvkit_exports/
 /export/
 *.ipynb_checkpoints/
+
+# Override file for tvkit_exchange (keep local only)
+tvkit_exchange_overrides.yaml

@@ -61,6 +61,7 @@ async with OHLCV() as client:
 - [Intervals](concepts/intervals.md)
 - [Streaming vs Historical](concepts/streaming-vs-historical.md)
 - [Scanner Columns](concepts/scanner-columns.md)
+- [Timezones](concepts/timezones.md) — UTC internal model; how to convert OHLCV timestamps to exchange or local time
 
 ---
 
@@ -83,6 +84,7 @@ async with OHLCV() as client:
 - [Chart API — OHLCV Client](reference/chart/ohlcv.md)
 - [Scanner API](reference/scanner/scanner.md)
 - [Export API](reference/export/exporter.md)
+- [Timezone Utilities — tvkit.time](reference/time/index.md)
 - [Full Reference Index](reference/index.md)
 
 ---

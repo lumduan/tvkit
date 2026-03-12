@@ -226,3 +226,62 @@ class TestLastBarStatus:
         # Test with valid data
         lbs = LastBarStatus(bar_close_time=1753692120.0)
         assert lbs.bar_close_time == 1753692120.0
+
+
+# ── TestOHLCVBarUtcInvariant ──────────────────────────────────────────────────
+
+
+class TestOHLCVBarUtcInvariant:
+    """
+    Tests for OHLCVBar._validate_timestamp_utc — UTC epoch bounds enforcement.
+
+    The validator rejects timestamps outside [0, 7_258_118_400] (1970–2200)
+    and non-finite values (NaN, Inf).
+    """
+
+    _VALID_FIELDS: dict[str, float] = {
+        "open": 100.0,
+        "high": 110.0,
+        "low": 90.0,
+        "close": 105.0,
+        "volume": 1000.0,
+    }
+
+    def _bar(self, timestamp: float) -> OHLCVBar:
+        return OHLCVBar(timestamp=timestamp, **self._VALID_FIELDS)
+
+    def test_valid_timestamp_2023(self) -> None:
+        """1_700_000_000 (2023-11-15) is within [0, 7_258_118_400]."""
+        bar = self._bar(1_700_000_000.0)
+        assert bar.timestamp == 1_700_000_000.0
+
+    def test_valid_timestamp_epoch_zero(self) -> None:
+        """0 (1970-01-01) is the inclusive lower bound."""
+        bar = self._bar(0.0)
+        assert bar.timestamp == 0.0
+
+    def test_valid_timestamp_upper_bound(self) -> None:
+        """7_258_118_400 (2200-01-01) is the inclusive upper bound."""
+        bar = self._bar(7_258_118_400.0)
+        assert bar.timestamp == 7_258_118_400.0
+
+    def test_negative_timestamp_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            self._bar(-1.0)
+
+    def test_far_future_timestamp_raises(self) -> None:
+        """9_999_999_999 (year 2286) exceeds the upper bound."""
+        with pytest.raises(ValidationError):
+            self._bar(9_999_999_999.0)
+
+    def test_nan_timestamp_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            self._bar(float("nan"))
+
+    def test_inf_timestamp_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            self._bar(float("inf"))
+
+    def test_error_message_mentions_plausible_range(self) -> None:
+        with pytest.raises(ValidationError, match="7258118400"):
+            self._bar(-1.0)

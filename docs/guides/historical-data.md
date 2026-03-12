@@ -155,7 +155,7 @@ See [Limitations → TradingView Historical Depth Limitation](../limitations.md)
 
 ## Converting Timestamps
 
-Each `OHLCVBar` has a `timestamp` field expressed as a Unix timestamp (seconds). Convert to ISO 8601 with the utility function:
+Each `OHLCVBar` has a `timestamp` field expressed as a UTC Unix epoch float (seconds). Convert to ISO 8601 with the utility function:
 
 ```python
 from tvkit.api.utils import convert_timestamp_to_iso
@@ -163,6 +163,85 @@ from tvkit.api.utils import convert_timestamp_to_iso
 date_string = convert_timestamp_to_iso(bar.timestamp)
 print(date_string)  # "2024-01-15T09:30:00+00:00"
 ```
+
+---
+
+## Working with Timezones
+
+All `OHLCVBar.timestamp` values are **UTC epoch floats**. tvkit never stores local time internally. Use `tvkit.time` to convert for display or analysis.
+
+### Full Workflow: Fetch → Convert → Display
+
+The most common pattern — download bars, export to a DataFrame, then convert timestamps to the exchange's local timezone for plotting:
+
+```python
+import asyncio
+import polars as pl
+from tvkit.api.chart.ohlcv import OHLCV
+from tvkit.export import DataExporter
+from tvkit.time import convert_to_exchange_timezone
+
+async def fetch_with_local_time(symbol: str, exchange: str) -> pl.DataFrame:
+    async with OHLCV() as client:
+        bars = await client.get_historical_ohlcv(symbol, "60", bars_count=10)
+
+    exporter = DataExporter()
+    df = await exporter.to_polars(bars)
+
+    # Internal timestamps are UTC — convert for display
+    print("UTC epoch:", df["timestamp"].head(3))
+
+    df_local = convert_to_exchange_timezone(df, exchange)
+    print("Local time:", df_local["timestamp"].head(3))
+    return df_local
+
+# NASDAQ → America/New_York
+asyncio.run(fetch_with_local_time("NASDAQ:AAPL", "NASDAQ"))
+# timestamp column changes from:
+#   1705312200.0  (UTC epoch float)
+# to:
+#   2024-01-15 09:30:00 EST
+```
+
+The original DataFrame is never mutated — `convert_to_exchange_timezone` returns a new DataFrame.
+
+### Convert to Any IANA Timezone
+
+Use `convert_to_timezone()` to convert to any arbitrary timezone:
+
+```python
+from tvkit.time import convert_to_timezone
+
+# Convert to Bangkok time for SET analysis
+df_bkk = convert_to_timezone(df, "Asia/Bangkok")
+
+# Convert to London time for LSE analysis
+df_lon = convert_to_timezone(df, "Europe/London")
+```
+
+### Convert Using Exchange Code
+
+Use `convert_to_exchange_timezone()` to let tvkit resolve the exchange code automatically:
+
+```python
+from tvkit.time import convert_to_exchange_timezone
+
+df_ny  = convert_to_exchange_timezone(df, "NYSE")      # America/New_York
+df_bkk = convert_to_exchange_timezone(df, "SET")       # Asia/Bangkok
+df_utc = convert_to_exchange_timezone(df, "BINANCE")   # UTC (crypto, 24/7)
+```
+
+Crypto exchanges like `BINANCE` and `COINBASE` map to `"UTC"`. This is correct — they trade 24/7
+with no market open/close session and no concept of exchange-local time.
+
+### When to Keep UTC
+
+Do **not** convert timestamps for backtesting, ML training, or cross-dataset joins. Converting
+early introduces DST gaps and makes datasets from different exchanges harder to join. Convert at
+the display or report layer only.
+
+See [Concepts: Timezones](../concepts/timezones.md) for the full rationale, and
+[tvkit.time Reference](../reference/time/index.md) for the complete API.
 
 ---
 
