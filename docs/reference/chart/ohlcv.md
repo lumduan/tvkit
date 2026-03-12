@@ -347,12 +347,38 @@ Represents one OHLCV candlestick bar.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `timestamp` | `float` | Unix timestamp (seconds) for the bar open time |
+| `timestamp` | `float` | UTC Unix epoch seconds for the bar open time |
 | `open` | `float` | Opening price |
 | `high` | `float` | Highest price during the period |
 | `low` | `float` | Lowest price during the period |
 | `close` | `float` | Closing price |
 | `volume` | `float` | Total volume traded |
+
+#### Timezone Behavior
+
+`OHLCVBar.timestamp` is always a **UTC Unix epoch float**. tvkit never stores local time
+internally; timezone conversion is explicit and opt-in at the display or analysis boundary.
+
+A Pydantic `field_validator` rejects timestamps outside `[0, 7_258_118_400]`
+(1970-01-01 to 2200-01-01). Values outside this range indicate a unit mismatch (e.g., milliseconds
+passed where seconds are expected) or corrupt data, and are rejected with `ValueError` at model
+construction time.
+
+**Converting to a target timezone:**
+
+```python
+from tvkit.time import convert_to_timezone, convert_to_exchange_timezone
+
+# Convert to any IANA timezone
+df_ny = convert_to_timezone(df, "America/New_York")
+
+# Convert using the exchange code (resolves to the exchange's IANA timezone)
+df_bkk = convert_to_exchange_timezone(df, "SET")    # Asia/Bangkok
+df_utc = convert_to_exchange_timezone(df, "BINANCE") # UTC (crypto, 24/7)
+```
+
+See [Concepts: Timezones](../../concepts/timezones.md) for the full explanation, and
+[tvkit.time Reference](../time/index.md) for the complete API.
 
 ### `QuoteSymbolData`
 
