@@ -15,6 +15,13 @@ import polars as pl
 
 logger = logging.getLogger(__name__)
 
+TimestampUnit = Literal["s", "ms"]
+"""Time unit for epoch-based timestamp columns.
+
+``"s"`` — Unix epoch seconds (default; TradingView OHLCV timestamps).
+``"ms"`` — Unix epoch milliseconds (REST APIs, third-party data sources).
+"""
+
 
 def to_utc(dt: datetime) -> datetime:
     """
@@ -117,7 +124,7 @@ def convert_to_timezone(
     df: pl.DataFrame,
     tz: str,
     column: str = "timestamp",
-    unit: Literal["s", "ms"] = "s",
+    unit: TimestampUnit = "s",
 ) -> pl.DataFrame:
     """
     Convert an epoch numeric column in a Polars DataFrame to a tz-aware datetime column.
@@ -142,7 +149,8 @@ def convert_to_timezone(
             Use ``"ms"`` for REST API or third-party data sources that use milliseconds.
 
     Returns:
-        DataFrame with the named column replaced by a tz-aware datetime column.
+        New DataFrame with the named column replaced by a tz-aware datetime column.
+        The original DataFrame is not mutated (Polars ``with_columns`` immutability).
 
     Raises:
         ZoneInfoNotFoundError: If ``tz`` is not a valid IANA timezone string.
