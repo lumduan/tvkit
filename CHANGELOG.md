@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-12
+
+### Added
+
+- **`tvkit.time` module** — UTC timezone utilities for TradingView OHLCV data:
+  - `to_utc(dt)` — normalise any `datetime` to UTC; emits a one-time `UserWarning` for naive inputs
+  - `ensure_utc(dt)` — semantic alias for `to_utc`; preferred in validation contexts
+  - `convert_timestamp(ts, tz)` — convert a single UTC epoch float to a tz-aware `datetime`
+  - `convert_to_timezone(df, tz, column, unit)` — convert a Polars DataFrame epoch column to a tz-aware datetime column
+  - `convert_to_exchange_timezone(df, exchange, column, unit)` — exchange-code-aware wrapper for `convert_to_timezone`; resolves exchange codes to IANA timezones automatically
+  - `exchange_timezone(exchange)` — look up the IANA timezone for any TradingView exchange code; falls back to `"UTC"` with a WARNING for unknown codes
+  - `exchange_timezone_map` — full built-in exchange → IANA timezone dict (all 69 tvkit markets)
+  - `supported_exchanges()` — list all exchange codes in the registry
+  - `register_exchange(exchange, tz)` — add or override a mapping at runtime
+  - `load_exchange_overrides(path)` — load overrides from a YAML file or `TVKIT_EXCHANGE_OVERRIDES` env var
+  - `validate_exchange_registry()` — validate all registry entries are valid IANA timezone strings
+  - `TimestampUnit` type alias — `Literal["s", "ms"]` for epoch column unit selection
+- **`OHLCVBar` UTC invariant** — Pydantic `field_validator` on `OHLCVBar.timestamp` rejects values outside `[0, 7_258_118_400]` (1970-01-01 to 2200-01-01). Catches milliseconds-passed-as-seconds and negative timestamps at model construction time.
+
+### Changed
+
+- `OHLCVBar.timestamp` now has a documented UTC contract. The field type is unchanged (`float`) — no breaking change.
+- `ohlcv.py` now calls `ensure_utc()` on `start`/`end` parameters before range computation, ensuring consistent UTC handling for timezone-aware and naive datetime inputs.
+- `examples/ohlcv_historical.py` — added `timezone_conversion()` demonstration function showing exchange-aware timestamp conversion for both traditional (NASDAQ) and crypto (BINANCE) exchanges.
+
+---
+
 ## [0.5.0] - 2026-03-11
 
 ### Added
