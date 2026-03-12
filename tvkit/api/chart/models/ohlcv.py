@@ -6,9 +6,15 @@ OHLCV (Open, High, Low, Close, Volume) data received from TradingView's
 WebSocket API.
 """
 
+import math
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+
+# Upper bound for plausible UTC Unix epoch timestamps: 2200-01-01 00:00:00 UTC.
+# Used by OHLCVBar._validate_timestamp_utc to reject obviously corrupted values
+# while remaining permissive enough for any realistic financial data.
+_MAX_PLAUSIBLE_UNIX_TS: int = 7_258_118_400
 
 
 class OHLCVBar(BaseModel):
@@ -53,6 +59,40 @@ class OHLCVBar(BaseModel):
             close=data[4],
             volume=data[5] if len(data) == 6 else 0.0,  # Default volume to 0 if not provided
         )
+
+    @field_validator("timestamp")
+    @classmethod
+    def _validate_timestamp_utc(cls, v: float) -> float:
+        """
+        Enforce the UTC invariant: timestamp must be a finite UTC Unix epoch float
+        within the plausible range [0, 7_258_118_400] (1970-01-01 to 2200-01-01).
+
+        Two checks are applied in order:
+
+        1. **Finite check** — rejects NaN and Inf before the bounds comparison.
+           Python float comparisons with NaN always return False (e.g. ``nan < 0``
+           is ``False``), so a NaN timestamp would silently pass a bounds-only check.
+
+        2. **Bounds check** — rejects negative values and values beyond year 2200.
+           TradingView timestamps are UTC Unix epoch seconds; values outside this
+           range indicate data corruption or a non-UTC source.
+
+        Raises:
+            ValueError: If the timestamp is NaN, Inf, negative, or above
+                _MAX_PLAUSIBLE_UNIX_TS.
+        """
+        if not math.isfinite(v):
+            raise ValueError(
+                f"OHLCVBar.timestamp must be a finite float, got {v!r}. "
+                f"TradingView timestamps are UTC Unix epoch seconds."
+            )
+        if v < 0 or v > _MAX_PLAUSIBLE_UNIX_TS:
+            raise ValueError(
+                f"OHLCVBar.timestamp {v!r} is outside the plausible UTC range "
+                f"[0, {_MAX_PLAUSIBLE_UNIX_TS}] (1970-01-01 to 2200-01-01). "
+                f"TradingView timestamps are UTC Unix epoch seconds."
+            )
+        return v
 
 
 class SeriesData(BaseModel):

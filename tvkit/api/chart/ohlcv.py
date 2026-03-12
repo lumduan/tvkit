@@ -32,8 +32,30 @@ from tvkit.api.chart.utils import (
     validate_interval,
 )
 from tvkit.api.utils import convert_symbol_format, validate_symbols
+from tvkit.time import ensure_utc
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+
+def _normalize_input(dt: datetime | str) -> datetime:
+    """Normalize a start/end input to a UTC-aware datetime (integer-second precision).
+
+    - ``datetime`` objects run through :func:`tvkit.time.ensure_utc` first, which
+      attaches UTC and emits a one-time ``UserWarning`` for naive datetimes, then
+      delegates to :func:`_to_utc_datetime` for integer-second truncation.
+    - ``str`` values are parsed directly by :func:`_to_utc_datetime` (ISO 8601,
+      including the ``Z`` suffix).
+
+    Args:
+        dt: UTC-aware datetime, naive datetime, or ISO 8601 string.
+
+    Returns:
+        UTC-aware ``datetime`` truncated to integer seconds.
+    """
+    if isinstance(dt, datetime):
+        dt = ensure_utc(dt)
+    return _to_utc_datetime(dt)
+
 
 # Intervals that bypass segmentation. Monthly/weekly intervals never accumulate enough
 # bars to require segmentation, and variable-length durations make segment sizing
@@ -915,8 +937,10 @@ class OHLCV:
                 raise ValueError("Both start and end must be provided for range-based queries.")
 
             # Normalize to UTC-aware datetimes (truncated to integer seconds).
-            start_dt: datetime = _to_utc_datetime(start)
-            end_dt: datetime = _to_utc_datetime(end)
+            # _normalize_input() calls ensure_utc() for datetime objects (warns if
+            # naive) then _to_utc_datetime() for string parsing and second truncation.
+            start_dt: datetime = _normalize_input(start)
+            end_dt: datetime = _normalize_input(end)
 
             # Validate range: clamp future end, check start <= end.
             start_dt, end_dt = self._validate_range(start_dt, end_dt)
