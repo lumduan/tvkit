@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from tvkit.auth.capability_detector import CapabilityDetector
+from tvkit.auth.cookie_provider import CookieProvider
 from tvkit.auth.credentials import TradingViewCredentials
 from tvkit.auth.models import TradingViewAccount
 from tvkit.auth.token_provider import TokenProvider
@@ -23,34 +24,42 @@ class AuthManager:
     """
     Async context manager that orchestrates TradingView authentication.
 
-    Supports three authentication modes (determined by ``TradingViewCredentials``):
+    Supports three authentication modes, determined by ``TradingViewCredentials``:
 
     - **Anonymous**: ``auth_token = "unauthorized_user_token"``, ``account = None``,
-      no capability probe launched.
+      no capability probe launched. Full backward compatibility.
     - **Direct token**: ``auth_token = credentials.auth_token``, ``account = None``,
-      no capability probe launched.
-    - **Credentials** (username + password): runs the Stage 0→1→2 login flow via
-      ``TokenProvider``, populates ``TradingViewAccount``, and launches the
-      background capability probe task (Phase 5 stub).
+      no capability probe launched. Caller is responsible for token refresh.
+    - **Browser / cookie dict**: extracts or receives session cookies →
+      issues authenticated ``GET /`` via ``TokenProvider`` → populates
+      ``TradingViewAccount`` → launches the background capability probe task.
 
-    The ``TokenProvider`` is held alive for the full lifetime of the context
-    manager so that ``token_provider.handle_401()`` and ``handle_403()`` can
-    be called by ``ConnectionService`` (Phase 6–8) when auth errors occur on
-    a live WebSocket session.
+    ``CookieProvider`` and ``TokenProvider`` are held alive for the full
+    lifetime of the context manager so that token re-extraction can be
+    triggered by ``ConnectionService`` (Phase 3+) when a WebSocket auth
+    error occurs.
 
     Args:
         credentials: Authentication credentials. Defaults to anonymous mode.
 
-    Example:
-        >>> async with AuthManager(TradingViewCredentials()) as auth:
-        ...     token = auth.auth_token  # "unauthorized_user_token"
-        ...     account = auth.account   # None
+    Example::
 
-        >>> creds = TradingViewCredentials(username="alice", password="s3cr3t")
-        >>> async with AuthManager(creds) as auth:
-        ...     token = auth.auth_token     # real token
-        ...     account = auth.account      # TradingViewAccount(...)
-        ...     provider = auth.token_provider  # for Phase 6-8 token refresh
+        # Anonymous (unchanged behaviour)
+        async with AuthManager() as auth:
+            token = auth.auth_token  # "unauthorized_user_token"
+            account = auth.account   # None
+
+        # Browser cookie extraction
+        from tvkit.auth import TradingViewCredentials
+        creds = TradingViewCredentials(browser="chrome")
+        async with AuthManager(creds) as auth:
+            token = auth.auth_token      # real TradingView auth token
+            account = auth.account       # TradingViewAccount(tier="premium", ...)
+
+        # Direct token injection
+        creds = TradingViewCredentials(auth_token="tv_auth_token_here")
+        async with AuthManager(creds) as auth:
+            token = auth.auth_token  # the injected token
     """
 
     def __init__(
@@ -60,7 +69,8 @@ class AuthManager:
         self._credentials: TradingViewCredentials = credentials or TradingViewCredentials()
         self._auth_token: str | None = None
         self._account: TradingViewAccount | None = None
-        self._provider: TokenProvider | None = None
+        self._cookie_provider: CookieProvider | None = None
+        self._token_provider: TokenProvider | None = None
         self._probe_task: asyncio.Task[None] | None = None
         self._probe_ws: ClientConnection | None = None  # reserved for Phase 5
 
@@ -68,58 +78,34 @@ class AuthManager:
         """
         Authenticate and return the manager.
 
-        For credentials mode, runs the full login flow, estimates capabilities,
-        and launches the background probe task.
+        For browser / cookie dict mode, extracts cookies, fetches the
+        TradingView homepage to obtain ``auth_token`` + profile, estimates
+        capabilities from the plan, and launches the background probe task.
 
         Returns:
             This ``AuthManager`` instance.
 
         Raises:
-            AuthenticationError: If login fails.
-            ProfileFetchError: If the user profile cannot be extracted.
+            BrowserCookieError: If browser cookie extraction fails.
+            ProfileFetchError: If the TradingView user profile cannot be
+                extracted from the homepage bootstrap.
         """
-        if self._credentials.is_anonymous:
+        creds = self._credentials
+
+        if creds.is_anonymous:
             logger.debug("AuthManager: anonymous mode — using unauthorized_user_token")
             self._auth_token = _ANONYMOUS_TOKEN
 
-        elif self._credentials.uses_direct_token:
-            logger.debug("AuthManager: direct-token mode — skipping login flow")
-            self._auth_token = self._credentials.auth_token
+        elif creds.uses_direct_token:
+            logger.debug("AuthManager: direct-token mode — skipping cookie extraction")
+            self._auth_token = creds.auth_token
 
         else:
-            # Credentials mode: Stage 0 + 1 + 2 login, capability estimate, probe launch
-            logger.info("AuthManager: credentials mode — starting login flow")
-            logger.debug(
-                "AuthManager: logging in as '%s'",
-                self._credentials.username,
-            )
-            self._provider = TokenProvider(
-                username=self._credentials.username,
-                password=self._credentials.password,
-            )
-            await self._provider.open()
+            # Browser or cookie-dict mode: extract/use cookies → fetch profile
+            await self._authenticate_with_cookies(creds)
 
-            result = await self._provider.login()
-            self._auth_token = result.auth_token
-
-            max_bars, tier = CapabilityDetector.estimate_from_plan(
-                pro_plan=result.user_profile.get("pro_plan", ""),
-                badges=result.user_profile.get("badges", []),
-            )
-            self._account = TradingViewAccount.from_profile(
-                profile=result.user_profile,
-                max_bars=max_bars,
-                tier=tier,
-            )
-            logger.info(
-                "AuthManager: logged in as '%s' (tier=%s, estimated_max_bars=%d)",
-                self._account.username,
-                self._account.tier,
-                self._account.estimated_max_bars,
-            )
-
-        # Launch background probe only when account is known (credentials mode).
-        # Anonymous and direct-token modes have no plan information to probe.
+        # Launch background probe only when account is known.
+        # Anonymous and direct-token modes have no plan info to probe.
         if self._account is not None:
             self._probe_task = asyncio.create_task(
                 self._probe_capabilities(),
@@ -136,13 +122,12 @@ class AuthManager:
         exc_tb: Any,
     ) -> None:
         """
-        Cancel the background probe task and close the ``TokenProvider`` session.
+        Cancel the background probe task.
 
-        Cleanup is performed in all exit paths (normal, exception, cancellation).
+        Cleanup runs in all exit paths (normal, exception, cancellation).
         The probe WebSocket (``_probe_ws``) is closed before task cancellation
-        to unblock any pending ``recv()`` awaitable (Phase 5).
+        to unblock any pending ``recv()`` awaitable.
         """
-        # Step 1: cancel probe task (if still running)
         if self._probe_task is not None and not self._probe_task.done():
             if self._probe_ws is not None:
                 try:
@@ -155,18 +140,71 @@ class AuthManager:
             except asyncio.CancelledError:
                 pass
 
-        # Step 2: close the persistent TokenProvider session
-        if self._provider is not None:
-            await self._provider.close()
-            self._provider = None
+    # ------------------------------------------------------------------
+    # Internal authentication helpers
+    # ------------------------------------------------------------------
+
+    async def _authenticate_with_cookies(
+        self,
+        creds: TradingViewCredentials,
+    ) -> None:
+        """
+        Execute cookie extraction (or use provided dict) then fetch the profile.
+
+        Args:
+            creds: Credentials in browser or cookie-dict mode.
+        """
+        # Obtain cookie dict — either from browser extraction or directly provided.
+        if creds.uses_browser:
+            logger.info(
+                "AuthManager: browser mode — extracting cookies from browser=%r profile=%r",
+                creds.browser,
+                creds.browser_profile,
+            )
+            self._cookie_provider = CookieProvider()
+            cookies = self._cookie_provider.extract(
+                browser=str(creds.browser),
+                profile=creds.browser_profile,
+            )
+        else:
+            # cookie-dict mode — caller supplies the dict directly
+            logger.info("AuthManager: cookie-dict mode — using provided cookie dict")
+            cookies = dict(creds.cookies or {})
+
+        # Fetch profile from the authenticated TradingView homepage.
+        self._token_provider = TokenProvider()
+        profile = await self._token_provider.fetch_profile(cookies)
+
+        self._auth_token = str(profile["auth_token"])
+
+        # Estimate capabilities from the plan and build the account model.
+        max_bars, tier = CapabilityDetector.estimate_from_plan(
+            pro_plan=profile.get("pro_plan", ""),  # type: ignore[arg-type]
+            badges=profile.get("badges", []),  # type: ignore[arg-type]
+        )
+        self._account = TradingViewAccount.from_profile(
+            profile=profile,
+            max_bars=max_bars,
+            tier=tier,
+        )
+        logger.info(
+            "AuthManager: authenticated as %r (tier=%s, estimated_max_bars=%d)",
+            self._account,
+            self._account.tier,
+            self._account.estimated_max_bars,
+        )
+
+    # ------------------------------------------------------------------
+    # Background probe (Phase 5 stub)
+    # ------------------------------------------------------------------
 
     async def _probe_capabilities(self) -> None:
         """
         Background capability probe — Phase 5 stub.
 
         Will be replaced in Phase 5 with a dedicated short-lived WebSocket
-        connection that requests 100,000 daily bars and records the server's
-        truncation point as the confirmed ``max_bars``.
+        connection that requests 50,000 daily bars (adaptive: 50k → 40k → 20k)
+        and records the server's truncation point as the confirmed ``max_bars``.
         """
         account = self._account
         if account is None:
@@ -178,7 +216,7 @@ class AuthManager:
                 account.estimated_max_bars,
             )
         except Exception:
-            logger.exception("Capability probe failed")
+            logger.exception("Capability probe failed unexpectedly")
 
     def _handle_probe_done(self, task: asyncio.Task[None]) -> None:
         """
@@ -186,7 +224,7 @@ class AuthManager:
 
         Retrieves the task result to surface any unhandled exception that
         slipped past the ``try/except`` inside ``_probe_capabilities``,
-        preventing the "Task exception was never retrieved" warning.
+        preventing the "Task exception was never retrieved" asyncio warning.
         """
         if task.cancelled():
             return
@@ -204,7 +242,7 @@ class AuthManager:
         The current TradingView ``auth_token`` for WebSocket authentication.
 
         Raises:
-            RuntimeError: If accessed before entering the async context manager.
+            AssertionError: If accessed before entering the async context manager.
         """
         assert self._auth_token is not None, (
             "auth_token is not set — use 'async with AuthManager(...) as auth' "
@@ -220,11 +258,21 @@ class AuthManager:
         return self._account
 
     @property
+    def cookie_provider(self) -> CookieProvider | None:
+        """
+        The ``CookieProvider`` instance, or ``None`` in non-browser mode.
+
+        Exposed for ``ConnectionService`` (Phase 3+) to call
+        ``invalidate_cache()`` before re-extraction on a WebSocket auth error.
+        """
+        return self._cookie_provider
+
+    @property
     def token_provider(self) -> TokenProvider | None:
         """
-        The persistent ``TokenProvider`` session, or ``None`` in non-credentials mode.
+        The ``TokenProvider`` instance, or ``None`` in anonymous / direct-token mode.
 
-        Exposed for ``ConnectionService`` (Phase 6–8) to call ``handle_401()``
-        or ``handle_403()`` when auth errors occur on a live WebSocket session.
+        Exposed for ``ConnectionService`` (Phase 3+) to call
+        ``get_valid_token()`` when a WebSocket auth error occurs.
         """
-        return self._provider
+        return self._token_provider

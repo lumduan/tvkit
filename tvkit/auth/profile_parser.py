@@ -27,14 +27,21 @@ _JSON_SCRIPT_RE: re.Pattern[str] = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# Strategy 0: TradingView embeds the full user object as a JS variable assignment.
+# e.g.  var user = {"id":123,"username":"alice",...,"auth_token":"eyJ..."};
+_VAR_USER_RE: re.Pattern[str] = re.compile(r"var\s+user\s*=\s*(\{)", re.DOTALL)
+
 
 class ProfileParser:
     """
     Extracts the TradingView user profile dict from homepage HTML.
 
-    Uses a 3-step fallback strategy to remain resilient across TradingView
+    Uses a 4-step fallback strategy to remain resilient across TradingView
     frontend deployments that restructure the bootstrap script layout:
 
+    0. **Strategy 0** — JavaScript variable assignment ``var user = {...}``.
+       TradingView's current frontend embeds the full authenticated user object
+       (including ``auth_token``) as a plain JS variable in an inline script.
     1. **Strategy 1** — Balanced-brace extraction directly from ``"user":{``.
     2. **Strategy 2** — Scan ``<script>`` blocks for one containing
        ``"auth_token"``, then extract ``"user":{`` within it.
@@ -63,6 +70,25 @@ class ProfileParser:
                 extracted user object is null, empty, or missing required fields.
         """
         raw: Any = _NOT_FOUND
+
+        # Strategy 0: var user = {...}
+        # TradingView's current frontend inlines the authenticated user object as a
+        # JavaScript variable assignment. This is the most reliable extraction path
+        # because the block is always the session owner's full profile.
+        m0 = _VAR_USER_RE.search(html)
+        if m0 is not None:
+            try:
+                json_block = ProfileParser._balanced_brace_extract(html, m0.start(1))
+                candidate = json.loads(json_block)
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("id")
+                    and candidate.get("username")
+                ):
+                    raw = candidate
+                    logger.debug("ProfileParser: Strategy 0 succeeded (var user = {...})")
+            except (json.JSONDecodeError, ValueError):
+                logger.debug("ProfileParser: Strategy 0 parse failed; falling through")
 
         # Strategy 1: scan all '"user":{' occurrences for one containing "auth_token"
         # The HTML may contain many user objects (feed, comment authors); only the

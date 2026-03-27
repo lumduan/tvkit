@@ -1,301 +1,217 @@
-"""TradingView HTTP authentication provider for tvkit.auth."""
+"""TradingView profile fetch provider for tvkit.auth."""
 
 import asyncio
 import logging
 import random
-from dataclasses import dataclass
 from typing import Any
 
-from tvkit.auth.exceptions import AuthenticationError, ProfileFetchError
+import httpx
+
+from tvkit.auth.exceptions import ProfileFetchError
 from tvkit.auth.profile_parser import ProfileParser
 
-try:
-    from curl_cffi import CurlMime  # type: ignore[import-untyped]
-    from curl_cffi.requests import AsyncSession  # type: ignore[import-untyped]
-except ImportError:  # pragma: no cover
-    CurlMime = None  # type: ignore[assignment,misc]
-    AsyncSession = None  # type: ignore[assignment,misc]
-
-__all__ = ["LoginResult", "TokenProvider"]
+__all__ = ["TokenProvider"]
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-_BASE_URL: str = "https://www.tradingview.com"
-_LOGIN_URL: str = f"{_BASE_URL}/accounts/signin/"
-_LOGIN_TIMEOUT: float = 30.0
+_HOMEPAGE_URL: str = "https://www.tradingview.com/"
+_FETCH_TIMEOUT: float = 10.0
 
+# Retry jitter constants for HTTP 5xx / timeout.
+FETCH_RETRY_MIN_DELAY: float = 1.5
+FETCH_RETRY_MAX_DELAY: float = 2.5
 
-@dataclass
-class LoginResult:
-    """
-    Result of a successful TradingView login.
-
-    Attributes:
-        auth_token: The ``auth_token`` extracted from the Stage 2 homepage bootstrap.
-        user_profile: The full parsed ``user`` profile dict from the homepage.
-    """
-
-    auth_token: str
-    user_profile: dict[str, Any]
+# Minimum expected length of a valid auth_token.
+_MIN_TOKEN_LENGTH: int = 10
 
 
 class TokenProvider:
     """
-    Manages the TradingView HTTP login flow and provides a valid ``auth_token``.
+    Fetches the TradingView ``auth_token`` and user profile from the homepage.
 
-    Implements a 2-stage login protocol:
+    Issues an authenticated ``GET https://www.tradingview.com/`` using the
+    supplied cookie jar. The response HTML is parsed by ``ProfileParser`` to
+    extract the ``user`` object including ``auth_token``.
 
-    - **Stage 1** — ``POST /accounts/signin/`` with ``multipart/form-data``
-      credentials. No CSRF token is required.
-    - **Stage 2** — Authenticated ``GET /`` to extract ``auth_token`` and user
-      profile from the homepage bootstrap payload.
+    Supports transparent re-extraction when a WebSocket auth error occurs.
+    Uses an ``asyncio.Lock`` (double-checked locking pattern) to ensure only
+    one concurrent re-extraction runs at a time — all other waiters receive
+    the already-refreshed token.
 
-    Must be used as an ``async with`` context manager. The ``curl-cffi``
-    ``AsyncSession`` is opened in ``__aenter__`` and closed in ``__aexit__``.
-    ``AuthManager`` holds the provider alive for its full lifetime so that
-    ``handle_401()`` and ``handle_403()`` can re-login on token expiry.
+    The provider holds the most recently fetched ``auth_token`` so that
+    :meth:`get_valid_token` can return it without re-fetching on every call.
 
-    Args:
-        username: TradingView account username.
-        password: TradingView account password.
+    Example::
+
+        provider = TokenProvider()
+        profile = await provider.fetch_profile(cookies)
+        token = profile["auth_token"]
     """
 
-    def __init__(self, username: str, password: str) -> None:
-        self._username: str = username
-        self._password: str = password
-        self._session: Any = None  # curl_cffi.requests.AsyncSession; opened in __aenter__
-        self._relogin_in_progress: bool = False
+    def __init__(self) -> None:
+        self._token: str | None = None
+        self._cookies: dict[str, str] | None = None
+        self._refresh_lock: asyncio.Lock = asyncio.Lock()
 
-    async def __aenter__(self) -> "TokenProvider":
-        """Open the curl-cffi AsyncSession with Chrome TLS fingerprint."""
-        if AsyncSession is None:  # pragma: no cover
-            raise ImportError(
-                "curl-cffi is required for TradingView authentication. "
-                "Install it with: uv add curl-cffi"
-            )
-        self._session = AsyncSession(impersonate="chrome110")
-        return self
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-    async def __aexit__(
+    async def fetch_profile(
         self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: Any,
-    ) -> None:
-        """Close the curl-cffi AsyncSession."""
-        await self.close()
-
-    # ------------------------------------------------------------------
-    # Lifecycle helpers (preferred over calling __aenter__/__aexit__ directly)
-    # ------------------------------------------------------------------
-
-    async def open(self) -> None:
+        cookies: dict[str, str],
+    ) -> dict[str, Any]:
         """
-        Open the curl-cffi ``AsyncSession``.
+        Retrieve the user profile and ``auth_token`` from the TradingView homepage.
 
-        Equivalent to entering the async context manager. Prefer this over
-        calling ``__aenter__()`` directly when ``AuthManager`` needs to own
-        the provider lifecycle across multiple method calls.
+        Issues ``GET https://www.tradingview.com/`` via ``httpx.AsyncClient``
+        with the supplied cookie jar. The ``user`` object is extracted from the
+        homepage bootstrap payload using ``ProfileParser`` (4-strategy fallback).
 
-        Raises:
-            ImportError: If ``curl-cffi`` is not installed.
-        """
-        await self.__aenter__()
+        Retries once on HTTP 5xx or ``httpx.TimeoutException`` with a random
+        jitter delay of ``FETCH_RETRY_MIN_DELAY``–``FETCH_RETRY_MAX_DELAY``
+        seconds. Defined by module-level constants to allow test overrides.
 
-    async def close(self) -> None:
-        """
-        Close the curl-cffi ``AsyncSession``.
+        After extraction, validates ``auth_token``: must be a non-empty string
+        of at least ``_MIN_TOKEN_LENGTH`` characters.
 
-        Equivalent to exiting the async context manager. Safe to call multiple
-        times; subsequent calls are no-ops if the session is already closed.
-        """
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
-
-    # ------------------------------------------------------------------
-    # Public login methods
-    # ------------------------------------------------------------------
-
-    async def login(self) -> LoginResult:
-        """
-        Execute the Stage 1 → Stage 2 login flow.
-
-        Stage 1 POSTs credentials to ``/accounts/signin/`` (no CSRF required).
-        Stage 2 fetches the authenticated homepage to extract ``auth_token``.
+        Args:
+            cookies: Cookie name→value dict from ``CookieProvider``.
+                Must include ``sessionid``.
 
         Returns:
-            A ``LoginResult`` containing ``auth_token`` and ``user_profile``.
+            Parsed ``user`` profile dict from the TradingView homepage bootstrap.
+            Includes at minimum ``id``, ``username``, ``auth_token``,
+            ``pro_plan``, ``is_pro``, ``is_broker``, ``badges``.
 
         Raises:
-            RuntimeError: If called before entering the async context manager.
-            AuthenticationError: If credentials are rejected (HTTP 401),
-                session is forbidden (HTTP 403), or login times out after one retry.
-            ProfileFetchError: If the homepage bootstrap payload cannot be parsed
-                or the user profile is missing required fields.
+            ProfileFetchError: If the homepage cannot be fetched after one
+                retry, if the ``user`` object cannot be parsed, or if
+                ``auth_token`` is missing or too short.
         """
-        self._require_session("login")
-        await self._stage1_login_with_retry()
-        return await self._stage2_get_login_result()
+        profile = await self._fetch_with_retry(cookies)
+        self._cookies = cookies
 
-    async def handle_401(self) -> LoginResult:
-        """
-        Handle an HTTP 401 auth error by re-running Stage 1 + Stage 2.
-
-        Raises ``AuthenticationError`` immediately if a re-login is already in
-        progress (re-login loop prevention).
-
-        Returns:
-            A fresh ``LoginResult`` with the new ``auth_token``.
-
-        Raises:
-            RuntimeError: If called before entering the async context manager.
-            AuthenticationError: If ``_relogin_in_progress`` is already ``True``
-                (loop detection), or if Stage 1 returns HTTP 401/403/timeout.
-            ProfileFetchError: If Stage 2 profile extraction fails.
-        """
-        self._require_session("handle_401")
-        if self._relogin_in_progress:
-            raise AuthenticationError(
-                "Re-login loop detected — HTTP 401 persisted after re-login attempt. "
-                "Check that credentials are still valid."
+        auth_token: Any = profile.get("auth_token")
+        if not auth_token or len(str(auth_token)) < _MIN_TOKEN_LENGTH:
+            raise ProfileFetchError(
+                "Invalid auth_token extracted from TradingView homepage — "
+                f"token is missing or too short (got: {str(auth_token)[:20]!r}). "
+                "TradingView may have changed its bootstrap structure, or the "
+                "session cookies may be expired."
             )
-        self._relogin_in_progress = True
-        try:
-            await self._stage1_login_with_retry()
-            return await self._stage2_get_login_result()
-        finally:
-            self._relogin_in_progress = False
 
-    async def handle_403(self) -> LoginResult:
+        self._token = str(auth_token)
+        logger.info(
+            "TokenProvider: auth_token obtained: %s... (len=%d)",
+            self._token[:8],
+            len(self._token),
+        )
+        return profile
+
+    async def get_valid_token(
+        self,
+        cookies: dict[str, str],
+    ) -> str:
         """
-        Handle an HTTP 403 session expiry by executing the full Stage 1 + 2 flow.
+        Return a valid auth token, safe under concurrent access.
+
+        Uses double-checked locking: after acquiring ``_refresh_lock``, checks
+        whether the token was already refreshed by a competing coroutine before
+        performing the actual re-extraction. This prevents N simultaneous expiries
+        from triggering N cookie re-extractions.
+
+        Args:
+            cookies: Fresh cookie dict from ``CookieProvider`` (already
+                invalidated before calling this method on WS auth error).
 
         Returns:
-            A fresh ``LoginResult`` with the new ``auth_token``.
+            A freshly-extracted ``auth_token``.
 
         Raises:
-            RuntimeError: If called before entering the async context manager.
-            AuthenticationError: On HTTP 401/403, or timeout.
-            ProfileFetchError: On Stage 2 profile extraction failure.
+            ProfileFetchError: If re-extraction fails.
         """
-        self._require_session("handle_403")
-        return await self.login()
+        async with self._refresh_lock:
+            # Double-check: another coroutine may have refreshed while we waited.
+            if self._cookies is not None and cookies == self._cookies and self._token:
+                logger.debug("TokenProvider: token already refreshed by a competing coroutine")
+                return self._token
+            profile = await self.fetch_profile(cookies)
+            return str(profile["auth_token"])
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _require_session(self, method_name: str) -> None:
-        """Guard against calls made before entering the async context manager."""
-        if self._session is None:
-            raise RuntimeError(
-                f"TokenProvider.{method_name}() called before entering async context manager. "
-                "Use: async with TokenProvider(...) as provider: ..."
-            )
-
-    async def _stage1_login_with_retry(self) -> None:
+    async def _fetch_with_retry(
+        self,
+        cookies: dict[str, str],
+    ) -> dict[str, Any]:
         """
-        Stage 1 with a single timeout retry (jitter 1.5–2.5 s).
+        Fetch the TradingView homepage with one retry on HTTP 5xx or timeout.
 
-        Raises:
-            AuthenticationError: On HTTP 401/403/4xx or timeout after one retry.
-        """
-        for attempt in range(2):
-            try:
-                await self._stage1_login()
-                return
-            except TimeoutError:
-                if attempt == 0:
-                    jitter = random.uniform(1.5, 2.5)
-                    logger.warning("Stage 1 login timed out; retrying in %.1f s", jitter)
-                    await asyncio.sleep(jitter)
-                else:
-                    raise AuthenticationError(
-                        "TradingView login timed out after one retry. "
-                        "Check your network connection."
-                    ) from None
-
-    async def _stage1_login(self) -> None:
-        """
-        Stage 1: POST /accounts/signin/ with multipart/form-data credentials.
-
-        TradingView does not require a CSRF token for this endpoint when using
-        a browser-fingerprinted TLS session (curl-cffi impersonate).
-
-        Raises:
-            AuthenticationError: On HTTP 401 (wrong credentials), HTTP 403
-                (session expired), or other HTTP 4xx/5xx errors.
-            TimeoutError: If the request exceeds ``_LOGIN_TIMEOUT``.
-        """
-        logger.debug("Stage 1: posting login credentials to TradingView")
-        if CurlMime is None:  # pragma: no cover
-            raise ImportError("curl-cffi is required for TradingView authentication.")
-        form = CurlMime()
-        form.addpart("username", data=self._username.encode())
-        form.addpart("password", data=self._password.encode())
-        form.addpart("remember", data=b"true")
-        response = await self._session.post(
-            _LOGIN_URL,
-            multipart=form,
-            headers={
-                "Referer": _BASE_URL + "/",
-                "x-language": "en",
-                "x-requested-with": "XMLHttpRequest",
-            },
-            timeout=_LOGIN_TIMEOUT,
-        )
-
-        status = response.status_code
-        if status == 401:
-            raise AuthenticationError(
-                "TradingView returned HTTP 401 — invalid username or password."
-            )
-        if status == 403:
-            raise AuthenticationError(
-                "TradingView returned HTTP 403 — session expired. "
-                "Call handle_403() to perform a full re-login."
-            )
-        if status >= 400:
-            raise AuthenticationError(f"TradingView login failed with HTTP {status}.")
-
-        # Check for application-level errors returned with HTTP 200 (e.g. CAPTCHA)
-        try:
-            body = response.json()
-            if isinstance(body, dict) and body.get("error"):
-                raise AuthenticationError(f"TradingView login rejected: {body['error']}")
-        except (ValueError, AttributeError):
-            pass  # Non-JSON response is fine — Stage 2 will validate auth state
-
-        logger.debug("Stage 1: login POST succeeded (HTTP %d)", status)
-
-    async def _stage2_get_login_result(self) -> LoginResult:
-        """
-        Stage 2: GET / (authenticated) and extract auth_token + user profile.
+        Args:
+            cookies: Cookie dict to send with the request.
 
         Returns:
-            ``LoginResult`` with ``auth_token`` and ``user_profile``.
+            Parsed ``user`` profile dict.
 
         Raises:
-            ProfileFetchError: If the homepage cannot be parsed or ``auth_token``
-                is missing from the profile.
+            ProfileFetchError: After exhausting retries.
         """
-        logger.debug("Stage 2: fetching authenticated TradingView homepage")
-        response = await self._session.get(_BASE_URL, timeout=_LOGIN_TIMEOUT)
+        last_error: Exception | None = None
+
+        for attempt in range(2):
+            try:
+                return await self._do_fetch(cookies)
+            except ProfileFetchError as exc:
+                # Structural parse errors are not retryable — surface immediately.
+                raise exc from None
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                last_error = exc
+                if attempt == 0:
+                    jitter = random.uniform(FETCH_RETRY_MIN_DELAY, FETCH_RETRY_MAX_DELAY)
+                    logger.warning(
+                        "TokenProvider: profile fetch failed (%s); retrying in %.1f s",
+                        type(exc).__name__,
+                        jitter,
+                    )
+                    await asyncio.sleep(jitter)
+
+        raise ProfileFetchError(
+            f"Failed to fetch TradingView profile after one retry: {last_error}"
+        ) from last_error
+
+    async def _do_fetch(
+        self,
+        cookies: dict[str, str],
+    ) -> dict[str, Any]:
+        """
+        Issue a single authenticated GET to the TradingView homepage.
+
+        Args:
+            cookies: Cookie dict to send with the request.
+
+        Returns:
+            Parsed ``user`` profile dict.
+
+        Raises:
+            ProfileFetchError: If the user object cannot be parsed.
+            httpx.TimeoutException: On connect or read timeout.
+            httpx.HTTPStatusError: On HTTP 5xx responses.
+        """
+        logger.debug("TokenProvider: fetching authenticated TradingView homepage")
+
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(_FETCH_TIMEOUT),
+            cookies=cookies,
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(_HOMEPAGE_URL)
+
+        if response.status_code >= 500:
+            response.raise_for_status()
+
         html: str = response.text
-
         profile = ProfileParser.parse(html)
-
-        auth_token: str | None = profile.get("auth_token")
-        if not auth_token:
-            raise ProfileFetchError(
-                "auth_token field is missing or empty in the TradingView user profile. "
-                "The authenticated homepage returned a profile without an auth token."
-            )
-
-        logger.info(
-            "Stage 2: auth_token obtained: %s... (len=%d)",
-            auth_token[:8],
-            len(auth_token),
-        )
-        return LoginResult(auth_token=auth_token, user_profile=profile)
+        return profile

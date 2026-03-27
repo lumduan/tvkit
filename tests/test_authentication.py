@@ -1,35 +1,40 @@
 """
-Unit and integration tests for tvkit.auth.
+Unit tests for tvkit.auth.
 
-Unit tests mock all external HTTP calls.
-Integration tests use real TradingView credentials from a .env file and are
-skipped automatically when the environment variables are not set.
+All external calls (browser_cookie3, httpx) are mocked.
+No real browser or network access is required.
 
-Environment variables (set in .env or shell):
-    TRADINGVIEW_USERNAME  — TradingView account email / username
-    TRADINGVIEW_PASSWORD  — TradingView account password
+Integration tests using a real browser are gated by TVKIT_BROWSER env var
+and skipped automatically when it is not set.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import time
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tvkit.auth import (
-    AuthenticationError,
     AuthError,
     AuthManager,
+    BrowserCookieError,
     CapabilityProbeError,
+    CookieProvider,
     ProfileFetchError,
     TradingViewAccount,
     TradingViewCredentials,
 )
 from tvkit.auth.capability_detector import CapabilityDetector
+from tvkit.auth.cookie_provider import COOKIE_CACHE_TTL
+from tvkit.auth.probe_cache import PROBE_CACHE_TTL, ProbeCache
 from tvkit.auth.profile_parser import ProfileParser
-from tvkit.auth.token_provider import LoginResult, TokenProvider
+from tvkit.auth.token_provider import TokenProvider
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -45,13 +50,27 @@ _SAMPLE_PROFILE: dict[str, Any] = {
     "is_broker": False,
 }
 
+_SAMPLE_COOKIES: dict[str, str] = {
+    "sessionid": "sess_abc123",
+    "csrftoken": "csrf_xyz",
+    "device_t": "dt_value",
+}
+
+# Strategy 0: var user = {...}  (TradingView current frontend)
+_SAMPLE_HTML_STRATEGY0 = (
+    '<html><body><script>var user = {"id":65880006,"username":"testuser",'
+    '"auth_token":"abcdefgh1234567890","is_pro":true,"pro_plan":"pro_premium",'
+    '"badges":[{"name":"pro:pro_premium"}],"is_broker":false};</script></body></html>'
+)
+
+# Strategy 1: "user":{...} at root of a JSON blob
 _SAMPLE_HTML_STRATEGY1 = (
     '<html><body><script>window.data = {"user":{"id":65880006,"username":"testuser",'
     '"auth_token":"abcdefgh1234567890","is_pro":true,"pro_plan":"pro_premium",'
     '"badges":[{"name":"pro:pro_premium"}],"is_broker":false}}</script></body></html>'
 )
 
-# Strategy 2: auth_token only inside a <script> block, not at top level
+# Strategy 2: auth_token inside a <script> block
 _SAMPLE_HTML_STRATEGY2 = (
     "<html><body>"
     '<script src="external.js"></script>'
@@ -87,41 +106,6 @@ _SAMPLE_HTML_NO_USER = "<html><body><script>var x = 1;</script></body></html>"
 
 
 # ---------------------------------------------------------------------------
-# Mock helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_mock_response(
-    status: int,
-    text: str = "",
-    cookies: dict[str, str] | None = None,
-) -> MagicMock:
-    resp = MagicMock()
-    resp.status_code = status
-    resp.text = text
-    jar: dict[str, str] = cookies or {}
-    resp.cookies = MagicMock()
-    resp.cookies.get = lambda key, default=None: jar.get(key, default)
-    return resp
-
-
-def _make_mock_session(
-    stage1_status: int = 200,
-    homepage_html: str = _SAMPLE_HTML_STRATEGY1,
-) -> MagicMock:
-    """Build a mock curl-cffi AsyncSession for the Stage 1→2 flow (no CSRF)."""
-    session = AsyncMock()
-    stage1_resp = _make_mock_response(stage1_status)
-    stage2_resp = _make_mock_response(200, text=homepage_html)
-
-    # Stage 1 = POST, Stage 2 = GET /
-    session.get = AsyncMock(return_value=stage2_resp)
-    session.post = AsyncMock(return_value=stage1_resp)
-    session.close = AsyncMock()
-    return session
-
-
-# ---------------------------------------------------------------------------
 # TradingViewCredentials
 # ---------------------------------------------------------------------------
 
@@ -130,40 +114,61 @@ class TestTradingViewCredentials:
     def test_anonymous_mode(self) -> None:
         creds = TradingViewCredentials()
         assert creds.is_anonymous is True
+        assert creds.uses_browser is False
+        assert creds.uses_cookie_dict is False
         assert creds.uses_direct_token is False
-        assert creds.uses_credentials is False
 
-    def test_credentials_mode(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
+    def test_browser_chrome(self) -> None:
+        creds = TradingViewCredentials(browser="chrome")
         assert creds.is_anonymous is False
-        assert creds.uses_credentials is True
-        assert creds.uses_direct_token is False
+        assert creds.uses_browser is True
+        assert creds.browser == "chrome"
+
+    def test_browser_firefox(self) -> None:
+        creds = TradingViewCredentials(browser="firefox")
+        assert creds.uses_browser is True
+        assert creds.browser == "firefox"
+
+    def test_browser_with_profile(self) -> None:
+        creds = TradingViewCredentials(browser="chrome", browser_profile="Profile 2")
+        assert creds.uses_browser is True
+        assert creds.browser_profile == "Profile 2"
+
+    def test_cookie_dict_mode(self) -> None:
+        creds = TradingViewCredentials(cookies={"sessionid": "abc"})
+        assert creds.is_anonymous is False
+        assert creds.uses_cookie_dict is True
+        assert creds.uses_browser is False
 
     def test_direct_token_mode(self) -> None:
         creds = TradingViewCredentials(auth_token="mytoken123")
         assert creds.is_anonymous is False
         assert creds.uses_direct_token is True
-        assert creds.uses_credentials is False
+        assert creds.uses_browser is False
 
-    def test_both_creds_and_token_raises(self) -> None:
-        with pytest.raises(ValueError, match="not both"):
-            TradingViewCredentials(username="alice", password="secret", auth_token="tok")
+    def test_browser_plus_token_raises(self) -> None:
+        with pytest.raises(ValueError, match="exactly one"):
+            TradingViewCredentials(browser="chrome", auth_token="tok")
 
-    def test_username_only_raises(self) -> None:
-        with pytest.raises(ValueError, match="together"):
-            TradingViewCredentials(username="alice")
+    def test_browser_plus_cookies_raises(self) -> None:
+        with pytest.raises(ValueError, match="exactly one"):
+            TradingViewCredentials(browser="chrome", cookies={"sessionid": "x"})
 
-    def test_password_only_raises(self) -> None:
-        with pytest.raises(ValueError, match="together"):
-            TradingViewCredentials(password="secret")
+    def test_cookies_plus_token_raises(self) -> None:
+        with pytest.raises(ValueError, match="exactly one"):
+            TradingViewCredentials(cookies={"sessionid": "x"}, auth_token="tok")
 
-    def test_password_not_in_repr(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
-        assert "secret" not in repr(creds)
+    def test_unsupported_browser_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported browser"):
+            TradingViewCredentials(browser="edge")
+
+    def test_browser_profile_without_browser_raises(self) -> None:
+        with pytest.raises(ValueError, match="browser_profile requires browser"):
+            TradingViewCredentials(browser_profile="Profile 2")
 
     def test_auth_token_not_in_repr(self) -> None:
-        creds = TradingViewCredentials(auth_token="supersecret")
-        assert "supersecret" not in repr(creds)
+        creds = TradingViewCredentials(auth_token="supersecrettoken")
+        assert "supersecrettoken" not in repr(creds)
 
 
 # ---------------------------------------------------------------------------
@@ -172,13 +177,18 @@ class TestTradingViewCredentials:
 
 
 class TestProfileParser:
-    def test_strategy1_extracts_user(self) -> None:
-        profile = ProfileParser.parse(_SAMPLE_HTML_STRATEGY1)
+    def test_strategy0_var_user_assignment(self) -> None:
+        profile = ProfileParser.parse(_SAMPLE_HTML_STRATEGY0)
         assert profile["id"] == 65880006
         assert profile["username"] == "testuser"
         assert profile["auth_token"] == "abcdefgh1234567890"
 
-    def test_strategy2_fallback(self) -> None:
+    def test_strategy1_user_key_in_json(self) -> None:
+        profile = ProfileParser.parse(_SAMPLE_HTML_STRATEGY1)
+        assert profile["id"] == 65880006
+        assert profile["auth_token"] == "abcdefgh1234567890"
+
+    def test_strategy2_script_block_scan(self) -> None:
         profile = ProfileParser.parse(_SAMPLE_HTML_STRATEGY2)
         assert profile["id"] == 1
         assert profile["auth_token"] == "abcdefgh1234567890"
@@ -210,23 +220,12 @@ class TestProfileParser:
 
     def test_escaped_strings_do_not_break_extraction(self) -> None:
         html = (
-            '<html><script>var d={"user":{"id":3,"username":"has\\"quote",'
+            '<html><script>var user = {"id":3,"username":"has\\"quote",'
             '"auth_token":"abcdefgh12345678","is_pro":false,"pro_plan":"",'
-            '"badges":[],"is_broker":false}}</script></html>'
+            '"badges":[],"is_broker":false};</script></html>'
         )
         profile = ProfileParser.parse(html)
         assert profile["id"] == 3
-
-    def test_empty_script_blocks_skipped(self) -> None:
-        html = (
-            '<html><script src="a.js"></script>'
-            '<script src="b.js"></script>'
-            '<script>var d={"user":{"id":99,"username":"skip_test",'
-            '"auth_token":"abcdefgh99999990","is_pro":false,"pro_plan":"",'
-            '"badges":[],"is_broker":false}}</script></html>'
-        )
-        profile = ProfileParser.parse(html)
-        assert profile["id"] == 99
 
     def test_balanced_brace_extract_basic(self) -> None:
         text = 'start {"key": "value", "nested": {"a": 1}} end'
@@ -335,6 +334,8 @@ class TestTradingViewAccount:
         assert account.max_bars == 20_000
         assert account.estimated_max_bars == 20_000
         assert account.probe_confirmed is False
+        assert account.max_bars_source == "estimate"
+        assert account.probe_status == "pending"
 
     def test_probe_confirmed_defaults_false(self) -> None:
         account = TradingViewAccount.from_profile(_SAMPLE_PROFILE, 5_000, "free")
@@ -342,155 +343,336 @@ class TestTradingViewAccount:
 
     def test_max_bars_mutable_estimated_immutable(self) -> None:
         account = TradingViewAccount.from_profile(_SAMPLE_PROFILE, 10_000, "pro")
-        account.max_bars = 9_500  # simulates probe update
+        account.max_bars = 9_500
         assert account.max_bars == 9_500
-        assert account.estimated_max_bars == 10_000  # unchanged
+        assert account.estimated_max_bars == 10_000
+
+    def test_repr_masks_username(self) -> None:
+        account = TradingViewAccount.from_profile(_SAMPLE_PROFILE, 20_000, "premium")
+        r = repr(account)
+        assert "tes***" in r
+        assert "testuser" not in r
+
+    def test_repr_excludes_lock(self) -> None:
+        account = TradingViewAccount.from_profile(_SAMPLE_PROFILE, 20_000, "premium")
+        assert "_lock" not in repr(account)
+
+    def test_lock_field_is_asyncio_lock(self) -> None:
+        account = TradingViewAccount.from_profile(_SAMPLE_PROFILE, 20_000, "premium")
+        assert isinstance(account._lock, asyncio.Lock)
 
 
 # ---------------------------------------------------------------------------
-# TokenProvider (unit — mocked curl-cffi)
+# CookieProvider
 # ---------------------------------------------------------------------------
+
+
+def _make_cookie_jar(cookies: dict[str, str]) -> list[MagicMock]:
+    """Build a list of mock cookie objects from a name→value dict."""
+    jar = []
+    for name, value in cookies.items():
+        c = MagicMock()
+        c.name = name
+        c.value = value
+        jar.append(c)
+    return jar
+
+
+class TestCookieProvider:
+    def _make_bc3(self, cookies: dict[str, str] | None = None) -> MagicMock:
+        bc3 = MagicMock()
+        jar = _make_cookie_jar(cookies or _SAMPLE_COOKIES)
+        bc3.chrome.return_value = jar
+        bc3.firefox.return_value = jar
+        return bc3
+
+    def test_extract_chrome_calls_bc3_chrome(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            result = provider.extract("chrome")
+        bc3.chrome.assert_called_once_with(domain_name="tradingview.com")
+        assert result["sessionid"] == "sess_abc123"
+
+    def test_extract_firefox_calls_bc3_firefox(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            result = provider.extract("firefox")
+        bc3.firefox.assert_called_once_with(domain_name="tradingview.com")
+        assert "sessionid" in result
+
+    def test_missing_sessionid_raises_browser_cookie_error(self) -> None:
+        bc3 = self._make_bc3({"csrftoken": "csrf"})  # no sessionid
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            with pytest.raises(BrowserCookieError, match="sessionid"):
+                provider.extract("chrome")
+
+    def test_bc3_exception_wrapped_as_browser_cookie_error(self) -> None:
+        bc3 = MagicMock()
+        bc3.chrome.side_effect = Exception("DB locked")
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            with pytest.raises(BrowserCookieError, match="DB locked"):
+                provider.extract("chrome")
+
+    def test_result_cached_within_ttl(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            provider.extract("chrome")
+            provider.extract("chrome")
+        # browser_cookie3.chrome only called once — second call served from cache
+        assert bc3.chrome.call_count == 1
+
+    def test_cache_invalidation_forces_re_extraction(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            provider.extract("chrome")
+            provider.invalidate_cache("chrome")
+            provider.extract("chrome")
+        assert bc3.chrome.call_count == 2
+
+    def test_cache_expires_after_ttl(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            provider.extract("chrome")
+            # Manually expire the cache entry by backdating the timestamp
+            key = ("chrome", None)
+            old_cookies, _ = provider._cache[key]
+            provider._cache[key] = (old_cookies, time.monotonic() - COOKIE_CACHE_TTL - 1)
+            provider.extract("chrome")
+        assert bc3.chrome.call_count == 2
+
+    def test_unsupported_browser_raises(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            with pytest.raises(BrowserCookieError, match="Unsupported browser"):
+                provider.extract("safari")
+
+    def test_different_profiles_cached_separately(self) -> None:
+        bc3 = self._make_bc3()
+        with patch("tvkit.auth.cookie_provider._get_browser_cookie3", return_value=bc3):
+            provider = CookieProvider()
+            provider.extract("chrome", profile=None)
+            provider.extract("chrome", profile="Profile 2")
+        assert bc3.chrome.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# TokenProvider (unit — mocked httpx)
+# ---------------------------------------------------------------------------
+
+
+def _make_httpx_response(status: int, text: str = "") -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status
+    resp.text = text
+    resp.raise_for_status = MagicMock(
+        side_effect=(None if status < 400 else Exception(f"HTTP {status}"))
+    )
+    return resp
 
 
 @pytest.mark.asyncio
 class TestTokenProvider:
-    async def test_login_success(self) -> None:
-        mock_session = _make_mock_session()
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                result = await provider.login()
-        assert result.auth_token == "abcdefgh1234567890"
-        assert result.user_profile["username"] == "testuser"
+    async def test_fetch_profile_success(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value=_make_httpx_response(200, text=_SAMPLE_HTML_STRATEGY0)
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    async def test_login_raises_if_session_none(self) -> None:
-        provider = TokenProvider("user", "pass")
-        with pytest.raises(RuntimeError, match="async context manager"):
-            await provider.login()
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
+            provider = TokenProvider()
+            profile = await provider.fetch_profile(_SAMPLE_COOKIES)
 
-    async def test_handle_401_raises_if_session_none(self) -> None:
-        provider = TokenProvider("user", "pass")
-        with pytest.raises(RuntimeError, match="async context manager"):
-            await provider.handle_401()
+        assert profile["auth_token"] == "abcdefgh1234567890"
+        assert profile["username"] == "testuser"
 
-    async def test_handle_403_raises_if_session_none(self) -> None:
-        provider = TokenProvider("user", "pass")
-        with pytest.raises(RuntimeError, match="async context manager"):
-            await provider.handle_403()
+    async def test_fetch_profile_stores_token(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value=_make_httpx_response(200, text=_SAMPLE_HTML_STRATEGY0)
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    async def test_http_401_raises_authentication_error(self) -> None:
-        mock_session = _make_mock_session(stage1_status=401)
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                with pytest.raises(AuthenticationError, match="401"):
-                    await provider.login()
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
+            provider = TokenProvider()
+            await provider.fetch_profile(_SAMPLE_COOKIES)
 
-    async def test_http_403_raises_authentication_error(self) -> None:
-        mock_session = _make_mock_session(stage1_status=403)
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                with pytest.raises(AuthenticationError, match="403"):
-                    await provider.login()
+        assert provider._token == "abcdefgh1234567890"
 
-    async def test_http_500_raises_authentication_error(self) -> None:
-        mock_session = _make_mock_session(stage1_status=500)
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                with pytest.raises(AuthenticationError, match="500"):
-                    await provider.login()
+    async def test_missing_auth_token_raises_profile_fetch_error(self) -> None:
+        html_no_token = (
+            '<html><body><script>window.__TV_DATA__ = {"user":{"id":1,'
+            '"username":"u"}}</script></body></html>'
+        )
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_make_httpx_response(200, text=html_no_token))
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
+            provider = TokenProvider()
+            # ProfileParser will raise ProfileFetchError because user has no id/username pair
+            # but we get to ProfileFetchError either from parse or from token validation
+            with pytest.raises(ProfileFetchError):
+                await provider.fetch_profile(_SAMPLE_COOKIES)
+
+    async def test_short_auth_token_raises_profile_fetch_error(self) -> None:
+        html_short_token = (
+            '<html><body><script>var user = {"id":1,"username":"u",'
+            '"auth_token":"short","is_pro":false,"pro_plan":"","badges":[],'
+            '"is_broker":false};</script></body></html>'
+        )
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_make_httpx_response(200, text=html_short_token))
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
+            provider = TokenProvider()
+            with pytest.raises(ProfileFetchError, match="Invalid auth_token"):
+                await provider.fetch_profile(_SAMPLE_COOKIES)
+
+    async def test_http_5xx_retries_once(self) -> None:
+        import httpx as _httpx
+
+        mock_client = AsyncMock()
+        ok_resp = _make_httpx_response(200, text=_SAMPLE_HTML_STRATEGY0)
+        ok_resp.raise_for_status = MagicMock()
+
+        err_resp = MagicMock()
+        err_resp.status_code = 503
+        err_resp.raise_for_status = MagicMock(
+            side_effect=_httpx.HTTPStatusError("503", request=MagicMock(), response=err_resp)
+        )
+
+        mock_client.get = AsyncMock(side_effect=[err_resp, ok_resp])
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                provider = TokenProvider()
+                profile = await provider.fetch_profile(_SAMPLE_COOKIES)
+
+        assert profile["auth_token"] == "abcdefgh1234567890"
+        assert mock_client.get.call_count == 2
 
     async def test_timeout_retries_once_then_raises(self) -> None:
-        mock_session = AsyncMock()
-        mock_session.post = AsyncMock(side_effect=TimeoutError())
-        mock_session.close = AsyncMock()
+        import httpx as _httpx
 
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=_httpx.TimeoutException("timed out"))
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
             with patch("asyncio.sleep", new_callable=AsyncMock):
-                async with TokenProvider("user", "pass") as provider:
-                    with pytest.raises(AuthenticationError, match="timed out"):
-                        await provider.login()
+                provider = TokenProvider()
+                with pytest.raises(ProfileFetchError, match="one retry"):
+                    await provider.fetch_profile(_SAMPLE_COOKIES)
 
-        # POST called twice: initial attempt + exactly one retry
-        assert mock_session.post.call_count == 2
+        assert mock_client.get.call_count == 2
 
-    async def test_handle_401_loop_prevention(self) -> None:
-        mock_session = _make_mock_session()
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                provider._relogin_in_progress = True
-                with pytest.raises(AuthenticationError, match="Re-login loop"):
-                    await provider.handle_401()
+    async def test_get_valid_token_returns_fresh_token(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value=_make_httpx_response(200, text=_SAMPLE_HTML_STRATEGY0)
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    async def test_handle_401_resets_flag_on_success(self) -> None:
-        """_relogin_in_progress must be False after a successful handle_401."""
-        mock_session = _make_mock_session()
+        with patch("tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx):
+            provider = TokenProvider()
+            token = await provider.get_valid_token(_SAMPLE_COOKIES)
 
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                result = await provider.handle_401()
-
-        assert result.auth_token == "abcdefgh1234567890"
-        assert provider._relogin_in_progress is False
-
-    async def test_handle_401_resets_flag_on_failure(self) -> None:
-        """_relogin_in_progress must be False even when handle_401 fails."""
-        mock_session = _make_mock_session(stage1_status=401)
-
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                with pytest.raises(AuthenticationError):
-                    await provider.handle_401()
-                assert provider._relogin_in_progress is False
-
-    async def test_handle_403_calls_full_login(self) -> None:
-        mock_session = _make_mock_session()
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                with patch.object(provider, "login", new_callable=AsyncMock) as mock_login:
-                    mock_login.return_value = LoginResult(
-                        auth_token="newtoken12", user_profile=_SAMPLE_PROFILE
-                    )
-                    result = await provider.handle_403()
-        assert result.auth_token == "newtoken12"
-        mock_login.assert_called_once()
-
-    async def test_token_refresh_flow_returns_new_token(self) -> None:
-        """Simulate: initial login → 401 → handle_401 → new token returned."""
-        mock_session = AsyncMock()
-        stage2a_resp = _make_mock_response(200, text=_SAMPLE_HTML_STRATEGY1)
-        stage2b_resp = _make_mock_response(200, text=_SAMPLE_HTML_STRATEGY1)
-        mock_session.get = AsyncMock(side_effect=[stage2a_resp, stage2b_resp])
-        mock_session.post = AsyncMock(return_value=_make_mock_response(200))
-        mock_session.close = AsyncMock()
-
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass") as provider:
-                first = await provider.login()
-                second = await provider.handle_401()
-
-        assert first.auth_token == "abcdefgh1234567890"
-        assert second.auth_token == "abcdefgh1234567890"
-        # GET called twice: stage2 (login) + stage2 (handle_401)
-        assert mock_session.get.call_count == 2
-
-    async def test_session_closed_on_aexit(self) -> None:
-        mock_session = _make_mock_session()
-        with patch("tvkit.auth.token_provider.AsyncSession", return_value=mock_session):
-            async with TokenProvider("user", "pass"):
-                pass
-        mock_session.close.assert_called_once()
+        assert token == "abcdefgh1234567890"
 
 
 # ---------------------------------------------------------------------------
-# AuthManager (unit — mocked TokenProvider)
+# ProbeCache
 # ---------------------------------------------------------------------------
 
 
-def _mock_provider(login_result: LoginResult) -> MagicMock:
-    """Return a fully mocked TokenProvider instance."""
-    inst = AsyncMock()
-    inst.login = AsyncMock(return_value=login_result)
-    inst.__aenter__ = AsyncMock(return_value=inst)
-    inst.__aexit__ = AsyncMock(return_value=None)
+class TestProbeCache:
+    def test_save_and_load_within_ttl(self, tmp_path: Path) -> None:
+        cache = ProbeCache(path=tmp_path / "caps.json")
+        cache.save(user_id=123, max_bars=20_000, plan="pro_premium")
+        result = cache.load(user_id=123)
+        assert result == 20_000
+
+    def test_load_missing_user_returns_none(self, tmp_path: Path) -> None:
+        cache = ProbeCache(path=tmp_path / "caps.json")
+        assert cache.load(user_id=999) is None
+
+    def test_load_expired_entry_returns_none(self, tmp_path: Path) -> None:
+        cache_path = tmp_path / "caps.json"
+        data = {
+            "123": {
+                "max_bars": 20_000,
+                "plan": "pro_premium",
+                "timestamp": time.time() - PROBE_CACHE_TTL - 1,
+            }
+        }
+        cache_path.write_text(json.dumps(data))
+        cache = ProbeCache(path=cache_path)
+        assert cache.load(user_id=123) is None
+
+    def test_save_creates_directory_if_missing(self, tmp_path: Path) -> None:
+        deep_path = tmp_path / "a" / "b" / "caps.json"
+        cache = ProbeCache(path=deep_path)
+        cache.save(user_id=1, max_bars=5_000, plan="")
+        assert deep_path.exists()
+
+    def test_save_overwrites_existing_entry(self, tmp_path: Path) -> None:
+        cache = ProbeCache(path=tmp_path / "caps.json")
+        cache.save(user_id=1, max_bars=10_000, plan="pro")
+        cache.save(user_id=1, max_bars=20_000, plan="pro_premium")
+        assert cache.load(user_id=1) == 20_000
+
+    def test_custom_ttl_respected(self, tmp_path: Path) -> None:
+        cache_path = tmp_path / "caps.json"
+        # TTL of 1 second
+        cache = ProbeCache(path=cache_path, ttl=1)
+        cache.save(user_id=1, max_bars=5_000, plan="")
+        # Manually backdate the timestamp by 2 seconds
+        data = json.loads(cache_path.read_text())
+        data["1"]["timestamp"] = time.time() - 2
+        cache_path.write_text(json.dumps(data))
+        assert cache.load(user_id=1) is None
+
+    def test_corrupt_cache_file_returns_none(self, tmp_path: Path) -> None:
+        cache_path = tmp_path / "caps.json"
+        cache_path.write_text("not valid json {{{")
+        cache = ProbeCache(path=cache_path)
+        assert cache.load(user_id=1) is None
+
+
+# ---------------------------------------------------------------------------
+# AuthManager (unit — mocked CookieProvider + TokenProvider)
+# ---------------------------------------------------------------------------
+
+
+def _mock_token_provider(profile: dict[str, Any] | None = None) -> AsyncMock:
+    """Return a mock TokenProvider that returns the given profile from fetch_profile."""
+    inst = AsyncMock(spec=TokenProvider)
+    inst.fetch_profile = AsyncMock(return_value=profile or _SAMPLE_PROFILE)
     return inst
 
 
@@ -501,6 +683,7 @@ class TestAuthManager:
             assert auth.auth_token == "unauthorized_user_token"
             assert auth.account is None
             assert auth.token_provider is None
+            assert auth.cookie_provider is None
             assert auth._probe_task is None
 
     async def test_direct_token_mode(self) -> None:
@@ -511,78 +694,70 @@ class TestAuthManager:
             assert auth.token_provider is None
             assert auth._probe_task is None
 
-    async def test_credentials_mode_populates_account(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
-        mock_result = LoginResult(auth_token="realtoken99", user_profile=_SAMPLE_PROFILE)
+    async def test_browser_mode_populates_account(self) -> None:
+        creds = TradingViewCredentials(browser="chrome")
+        mock_tp = _mock_token_provider()
 
-        with patch("tvkit.auth.auth_manager.TokenProvider") as MockProvider:
-            MockProvider.return_value = _mock_provider(mock_result)
+        with (
+            patch("tvkit.auth.auth_manager.CookieProvider") as MockCP,
+            patch("tvkit.auth.auth_manager.TokenProvider", return_value=mock_tp),
+        ):
+            mock_cp_inst = MagicMock()
+            mock_cp_inst.extract.return_value = _SAMPLE_COOKIES
+            MockCP.return_value = mock_cp_inst
+
             async with AuthManager(creds) as auth:
-                assert auth.auth_token == "realtoken99"
+                assert auth.auth_token == "abcdefgh1234567890"
                 assert auth.account is not None
                 assert auth.account.username == "testuser"
                 assert auth.account.tier == "premium"
                 assert auth.account.max_bars == 20_000
-                assert auth.token_provider is not None
+                assert auth.account.max_bars_source == "estimate"
+                assert auth.account.probe_status == "pending"
+                assert auth.token_provider is mock_tp
+                assert auth.cookie_provider is mock_cp_inst
                 assert auth._probe_task is not None
 
-    async def test_anonymous_mode_no_probe_task(self) -> None:
-        async with AuthManager() as auth:
-            assert auth._probe_task is None
+    async def test_cookie_dict_mode_populates_account(self) -> None:
+        creds = TradingViewCredentials(cookies=_SAMPLE_COOKIES)
+        mock_tp = _mock_token_provider()
 
-    async def test_direct_token_no_probe_task(self) -> None:
-        creds = TradingViewCredentials(auth_token="tok")
-        async with AuthManager(creds) as auth:
-            assert auth._probe_task is None
+        with patch("tvkit.auth.auth_manager.TokenProvider", return_value=mock_tp):
+            async with AuthManager(creds) as auth:
+                assert auth.auth_token == "abcdefgh1234567890"
+                assert auth.account is not None
+                assert auth.cookie_provider is None  # not browser mode
 
     async def test_aexit_cancels_probe_task(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
-        mock_result = LoginResult(auth_token="tok", user_profile=_SAMPLE_PROFILE)
+        creds = TradingViewCredentials(browser="chrome")
+        mock_tp = _mock_token_provider()
 
-        with patch("tvkit.auth.auth_manager.TokenProvider") as MockProvider:
-            MockProvider.return_value = _mock_provider(mock_result)
+        with (
+            patch("tvkit.auth.auth_manager.CookieProvider") as MockCP,
+            patch("tvkit.auth.auth_manager.TokenProvider", return_value=mock_tp),
+        ):
+            mock_cp_inst = MagicMock()
+            mock_cp_inst.extract.return_value = _SAMPLE_COOKIES
+            MockCP.return_value = mock_cp_inst
+
             async with AuthManager(creds) as auth:
                 task = auth._probe_task
                 assert task is not None
-            # After __aexit__, task must be done (cancelled or completed)
-            assert task.done()
 
-    async def test_aexit_closes_token_provider(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
-        mock_result = LoginResult(auth_token="tok", user_profile=_SAMPLE_PROFILE)
+        assert task.done()
 
-        with patch("tvkit.auth.auth_manager.TokenProvider") as MockProvider:
-            mock_inst = _mock_provider(mock_result)
-            MockProvider.return_value = mock_inst
-            async with AuthManager(creds):
-                pass
-            mock_inst.close.assert_called_once()
-
-    async def test_aexit_closes_provider_on_exception(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
-        mock_result = LoginResult(auth_token="tok", user_profile=_SAMPLE_PROFILE)
-
-        with patch("tvkit.auth.auth_manager.TokenProvider") as MockProvider:
-            mock_inst = _mock_provider(mock_result)
-            MockProvider.return_value = mock_inst
-            with pytest.raises(RuntimeError, match="test error"):
-                async with AuthManager(creds):
-                    raise RuntimeError("test error")
-            # Provider must still be closed when an exception propagates
-            mock_inst.close.assert_called_once()
+    async def test_auth_token_raises_before_aenter(self) -> None:
+        auth = AuthManager()
+        with pytest.raises(AssertionError, match="async with AuthManager"):
+            _ = auth.auth_token
 
     async def test_default_credentials_is_anonymous(self) -> None:
         auth = AuthManager()
         assert auth._credentials.is_anonymous is True
 
-    async def test_token_provider_property_available_after_aenter(self) -> None:
-        creds = TradingViewCredentials(username="alice", password="secret")
-        mock_result = LoginResult(auth_token="tok", user_profile=_SAMPLE_PROFILE)
-
-        with patch("tvkit.auth.auth_manager.TokenProvider") as MockProvider:
-            MockProvider.return_value = _mock_provider(mock_result)
-            async with AuthManager(creds) as auth:
-                assert auth.token_provider is not None
+    async def test_browser_mode_no_probe_task_for_anonymous(self) -> None:
+        async with AuthManager() as auth:
+            assert auth._probe_task is None
 
 
 # ---------------------------------------------------------------------------
@@ -591,8 +766,8 @@ class TestAuthManager:
 
 
 class TestExceptionHierarchy:
-    def test_authentication_error_is_auth_error(self) -> None:
-        assert issubclass(AuthenticationError, AuthError)
+    def test_browser_cookie_error_is_auth_error(self) -> None:
+        assert issubclass(BrowserCookieError, AuthError)
 
     def test_profile_fetch_error_is_auth_error(self) -> None:
         assert issubclass(ProfileFetchError, AuthError)
@@ -601,73 +776,53 @@ class TestExceptionHierarchy:
         assert issubclass(CapabilityProbeError, AuthError)
 
     def test_catch_all_with_auth_error(self) -> None:
-        for err in [AuthenticationError("a"), ProfileFetchError("b"), CapabilityProbeError("c")]:
+        for err in [
+            BrowserCookieError("a"),
+            ProfileFetchError("b"),
+            CapabilityProbeError("c"),
+        ]:
             assert isinstance(err, AuthError)
 
-    def test_authentication_error_is_exception(self) -> None:
-        assert issubclass(AuthenticationError, Exception)
+    def test_all_auth_errors_are_exceptions(self) -> None:
+        for cls in [BrowserCookieError, ProfileFetchError, CapabilityProbeError]:
+            assert issubclass(cls, Exception)
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — real TradingView credentials from .env
+# Integration tests — real browser (skipped unless TVKIT_BROWSER is set)
 # ---------------------------------------------------------------------------
 
-_TV_USERNAME = os.getenv("TRADINGVIEW_USERNAME", "")
-_TV_PASSWORD = os.getenv("TRADINGVIEW_PASSWORD", "")
-_HAS_REAL_CREDENTIALS = bool(_TV_USERNAME and _TV_PASSWORD)
+_TV_BROWSER = os.getenv("TVKIT_BROWSER", "")
+_HAS_REAL_BROWSER = bool(_TV_BROWSER)
 
 _SKIP_REASON = (
-    "TRADINGVIEW_USERNAME and TRADINGVIEW_PASSWORD not set — "
-    "set them in .env to run real-credential integration tests"
+    "TVKIT_BROWSER not set — set to 'chrome' or 'firefox' to run "
+    "real browser integration tests (requires active TradingView session)"
 )
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not _HAS_REAL_CREDENTIALS, reason=_SKIP_REASON)
-class TestRealTradingViewLogin:
+@pytest.mark.skipif(not _HAS_REAL_BROWSER, reason=_SKIP_REASON)
+class TestRealBrowserAuth:
     """
-    Integration tests that perform a real TradingView login.
+    Integration tests that extract real cookies from a local browser.
 
-    Skipped unless TRADINGVIEW_USERNAME and TRADINGVIEW_PASSWORD are available
-    in the environment (e.g. loaded from .env via python-dotenv or direnv).
+    Skipped unless TVKIT_BROWSER=chrome or TVKIT_BROWSER=firefox is set.
+    Requires the user to be actively logged in to TradingView in that browser.
     """
 
-    async def test_real_login_returns_auth_token(self) -> None:
-        """Full Stage 1→2 login returns a non-empty auth_token."""
-        try:
-            async with TokenProvider(_TV_USERNAME, _TV_PASSWORD) as provider:
-                result = await provider.login()
-        except AuthenticationError as e:
-            msg = str(e)
-            if "robot" in msg.lower() or "captcha" in msg.lower():
-                pytest.skip(f"TradingView CAPTCHA triggered (rate-limited): {msg}")
-            raise
-
-        assert result.auth_token, "auth_token must be non-empty"
-        assert len(result.auth_token) > 8, "auth_token length must exceed 8 chars"
-        assert result.user_profile.get("id"), "user.id must be present"
-        assert result.user_profile.get("username"), "user.username must be present"
-
-    async def test_real_auth_manager_credentials_mode(self) -> None:
-        """AuthManager with real credentials returns a populated account and valid token."""
-        creds = TradingViewCredentials(username=_TV_USERNAME, password=_TV_PASSWORD)
-        try:
-            async with AuthManager(creds) as auth:
-                assert auth.auth_token, "auth_token must be non-empty"
-                assert auth.account is not None, "account must be populated"
-                assert auth.account.user_id > 0
-                assert auth.account.username
-                assert auth.account.tier in ("free", "pro", "premium", "ultimate")
-                assert auth.account.max_bars > 0
-                assert auth.token_provider is not None
-        except AuthenticationError as e:
-            msg = str(e)
-            if "robot" in msg.lower() or "captcha" in msg.lower():
-                pytest.skip(f"TradingView CAPTCHA triggered (rate-limited): {msg}")
-            raise
+    async def test_real_browser_returns_auth_token(self) -> None:
+        creds = TradingViewCredentials(browser=_TV_BROWSER)
+        async with AuthManager(creds) as auth:
+            assert auth.auth_token, "auth_token must be non-empty"
+            assert len(auth.auth_token) >= 10, "auth_token must be at least 10 chars"
+            assert auth.account is not None
+            assert auth.account.user_id > 0
+            assert auth.account.username
+            assert auth.account.tier in ("free", "pro", "premium", "ultimate")
+            assert auth.account.max_bars > 0
 
     async def test_real_anonymous_token_unchanged(self) -> None:
-        """Anonymous mode always returns 'unauthorized_user_token'."""
         async with AuthManager() as auth:
             assert auth.auth_token == "unauthorized_user_token"
             assert auth.account is None
