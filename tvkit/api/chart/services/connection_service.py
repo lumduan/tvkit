@@ -13,7 +13,7 @@ from websockets.asyncio.client import connect
 from websockets.connection import State as WebSocketState
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from tvkit.api.chart.exceptions import StreamConnectionError
+from tvkit.api.chart.exceptions import AuthError, StreamConnectionError
 from tvkit.api.chart.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
@@ -73,8 +73,10 @@ class ConnectionService:
         jitter_range: float = 0.0,
         connect_timeout: float = 10.0,
         on_reconnect: Callable[[], Awaitable[None]] | None = None,
+        auth_token: str = "unauthorized_user_token",
     ) -> None:
         self.ws_url: str = ws_url
+        self._auth_token: str = auth_token
         self._ws: ClientConnection | None = None
         self._state: ConnectionState = ConnectionState.IDLE
         self._closing: bool = False
@@ -344,6 +346,37 @@ class ConnectionService:
     # Data stream (consumer)
     # ------------------------------------------------------------------
 
+    def _is_auth_error(self, data: dict[str, object]) -> bool:
+        """Return True if the parsed TradingView WebSocket frame indicates auth failure.
+
+        Checks two TradingView auth rejection patterns:
+
+        - ``critical_error`` frame with ``error_code == "unauthorized_access"``
+        - ``set_auth_token`` response frame with an ``"error"`` field present
+
+        Args:
+            data: A parsed JSON dict from the TradingView WebSocket stream.
+
+        Returns:
+            True if the frame signals an authentication failure, False otherwise.
+        """
+        message_type: object = data.get("m")
+        params: object = data.get("p", [])
+        if not isinstance(params, list):
+            return False
+
+        if message_type == "critical_error":
+            for param in params:
+                if isinstance(param, dict) and param.get("error_code") == "unauthorized_access":
+                    return True
+
+        if message_type == "set_auth_token":
+            for param in params:
+                if isinstance(param, dict) and "error" in param:
+                    return True
+
+        return False
+
     async def get_data_stream(self) -> AsyncGenerator[dict[str, Any], None]:
         """
         Yield parsed TradingView WebSocket frames.
@@ -353,11 +386,14 @@ class ConnectionService:
         backoff. Yields parsed JSON dicts; skips malformed frames with a warning.
 
         Yields:
-            Parsed JSON data received from TradingView.
+            Parsed TradingView WebSocket frames as parsed JSON dicts.
 
         Raises:
             RuntimeError: If the WebSocket connection is not established.
             StreamConnectionError: If reconnection is exhausted after all attempts.
+            AuthError: If TradingView rejects the authentication token. The connection
+                is closed by the ``finally`` block before this exception propagates.
+                Callers must re-enter the OHLCV context manager with fresh credentials.
         """
         if self._ws is None:
             raise RuntimeError("WebSocket connection not established")
@@ -380,9 +416,20 @@ class ConnectionService:
                 for item in split_result:
                     if item:
                         try:
-                            yield json.loads(item)
+                            parsed: object = json.loads(item)
                         except json.JSONDecodeError:
                             logger.warning("Failed to parse JSON: %s", item)
+                            continue
+                        if isinstance(parsed, dict) and self._is_auth_error(parsed):
+                            logger.error(
+                                "WebSocket authentication error — token rejected by TradingView.",
+                                extra={"m": parsed.get("m")},
+                            )
+                            raise AuthError(
+                                "TradingView rejected the authentication token. "
+                                "Re-enter the OHLCV context manager with fresh credentials."
+                            )
+                        yield parsed  # type: ignore[misc]
         finally:
             await self.close()
 
@@ -404,7 +451,7 @@ class ConnectionService:
             chart_session: The chart session identifier
             send_message_func: Function to send messages through the WebSocket
         """
-        await send_message_func("set_auth_token", ["unauthorized_user_token"])
+        await send_message_func("set_auth_token", [self._auth_token])
         await send_message_func("set_locale", ["en", "US"])
         await send_message_func("chart_create_session", [chart_session, ""])
         await send_message_func("quote_create_session", [quote_session])
