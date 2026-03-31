@@ -18,8 +18,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from tvkit.api.chart.exceptions import AuthError as ChartAuthError
+from tvkit.api.chart.services.connection_service import ConnectionService
 from tvkit.auth import (
     AuthError,
     AuthManager,
@@ -34,7 +37,7 @@ from tvkit.auth.capability_detector import CapabilityDetector
 from tvkit.auth.cookie_provider import COOKIE_CACHE_TTL
 from tvkit.auth.probe_cache import PROBE_CACHE_TTL, ProbeCache
 from tvkit.auth.profile_parser import ProfileParser
-from tvkit.auth.token_provider import TokenProvider
+from tvkit.auth.token_provider import _FETCH_TIMEOUT, TokenProvider
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -604,6 +607,53 @@ class TestTokenProvider:
 
         assert token == "abcdefgh1234567890"
 
+    async def test_double_checked_locking_single_reextraction(self) -> None:
+        """N concurrent get_valid_token calls with matching cookies → _do_fetch called once."""
+        fetch_count = 0
+        original_profile = {**_SAMPLE_PROFILE}
+
+        async def _fake_do_fetch(cookies: dict[str, str]) -> dict[str, Any]:
+            nonlocal fetch_count
+            fetch_count += 1
+            return original_profile
+
+        provider = TokenProvider()
+        # Seed the provider with the same cookies so the double-check fires for waiters.
+        provider._token = "abcdefgh1234567890"
+        provider._cookies = _SAMPLE_COOKIES.copy()
+
+        with patch.object(provider, "_do_fetch", side_effect=_fake_do_fetch):
+            # The cookies match — double-check should short-circuit all but the first.
+            # Temporarily clear to force the first call to really fetch.
+            provider._token = None
+
+            await asyncio.gather(
+                *[provider.get_valid_token(_SAMPLE_COOKIES.copy()) for _ in range(5)]
+            )
+
+        # Even under 5-way concurrency, _do_fetch is called exactly once.
+        assert fetch_count == 1
+
+    async def test_httpx_timeout_enforced(self) -> None:
+        """_do_fetch creates httpx.AsyncClient with timeout=_FETCH_TIMEOUT (10.0 s)."""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value=_make_httpx_response(200, text=_SAMPLE_HTML_STRATEGY0)
+        )
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch(
+            "tvkit.auth.token_provider.httpx.AsyncClient", return_value=mock_ctx
+        ) as MockClient:
+            provider = TokenProvider()
+            await provider._do_fetch(_SAMPLE_COOKIES)
+
+        call_kwargs = MockClient.call_args[1]
+        assert "timeout" in call_kwargs
+        assert call_kwargs["timeout"] == httpx.Timeout(_FETCH_TIMEOUT)
+
 
 # ---------------------------------------------------------------------------
 # ProbeCache
@@ -759,6 +809,50 @@ class TestAuthManager:
         async with AuthManager() as auth:
             assert auth._probe_task is None
 
+    async def test_no_cookie_values_in_logs(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Raw cookie values must never appear in any log record during browser auth."""
+        import logging
+
+        sensitive_value = "SECRETSESSION_DO_NOT_LOG"
+        cookies = {"sessionid": sensitive_value, "csrftoken": "csrf_xyz"}
+        creds = TradingViewCredentials(cookies=cookies)
+        mock_tp = _mock_token_provider()
+
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch("tvkit.auth.auth_manager.TokenProvider", return_value=mock_tp),
+        ):
+            async with AuthManager(creds):
+                pass
+
+        all_messages = " ".join(r.getMessage() for r in caplog.records)
+        assert sensitive_value not in all_messages, (
+            f"Cookie value {sensitive_value!r} leaked into logs"
+        )
+
+    async def test_username_masked_in_logs(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Full username must not appear in logs; masked form (first3***) must appear."""
+        import logging
+
+        full_username = _SAMPLE_PROFILE["username"]  # "testuser"
+        masked_prefix = full_username[:3] + "***"  # "tes***"
+
+        creds = TradingViewCredentials(cookies=_SAMPLE_COOKIES)
+        mock_tp = _mock_token_provider()
+
+        with (
+            caplog.at_level(logging.DEBUG),
+            patch("tvkit.auth.auth_manager.TokenProvider", return_value=mock_tp),
+        ):
+            async with AuthManager(creds):
+                pass
+
+        all_messages = " ".join(r.getMessage() for r in caplog.records)
+        assert full_username not in all_messages, (
+            f"Full username {full_username!r} leaked into logs"
+        )
+        assert masked_prefix in all_messages, f"Expected masked username {masked_prefix!r} in logs"
+
 
 # ---------------------------------------------------------------------------
 # Exception hierarchy
@@ -786,6 +880,95 @@ class TestExceptionHierarchy:
     def test_all_auth_errors_are_exceptions(self) -> None:
         for cls in [BrowserCookieError, ProfileFetchError, CapabilityProbeError]:
             assert issubclass(cls, Exception)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — ConnectionService auth token behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestConnectionServiceAuthToken:
+    """Unit tests for ConnectionService Phase 3 auth token wiring.
+
+    Verifies that:
+    - The auth_token passed at construction is forwarded to set_auth_token.
+    - The default token is "unauthorized_user_token" for anonymous sessions.
+    - The token is stored at construction time so reconnects reuse it.
+    - A WS auth error frame raises ChartAuthError from get_data_stream().
+    - A WS auth error does NOT trigger cookie re-extraction.
+
+    All WebSocket I/O is bypassed by injecting frames directly into
+    ConnectionService._message_queue and mocking _ws to a non-None sentinel.
+    """
+
+    async def test_auth_token_passed_to_set_auth_token_message(self) -> None:
+        """initialize_sessions sends the constructor auth_token as the first message."""
+        svc = ConnectionService(ws_url="wss://test", auth_token="fake_token_abc123xyz")
+        send = AsyncMock()
+        await svc.initialize_sessions("qs_abc", "cs_abc", send)
+        # First call must be set_auth_token with our token.
+        first_call_args = send.call_args_list[0][0]
+        assert first_call_args[0] == "set_auth_token"
+        assert first_call_args[1] == ["fake_token_abc123xyz"]
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_default_token_is_anonymous(self) -> None:
+        """ConnectionService() with no auth_token uses 'unauthorized_user_token'."""
+        svc = ConnectionService(ws_url="wss://test")
+        assert svc._auth_token == "unauthorized_user_token"
+
+    async def test_auth_token_used_on_reconnect(self) -> None:
+        """Token is stored at construction; initialize_sessions always sends the same token."""
+        svc = ConnectionService(ws_url="wss://test", auth_token="fake_token_abc123xyz")
+        send = AsyncMock()
+        # First call (initial session setup)
+        await svc.initialize_sessions("qs1", "cs1", send)
+        # Second call (simulating reconnect — _restore_session calls initialize_sessions again)
+        send.reset_mock()
+        await svc.initialize_sessions("qs2", "cs2", send)
+        second_first_call = send.call_args_list[0][0]
+        assert second_first_call[0] == "set_auth_token"
+        assert second_first_call[1] == ["fake_token_abc123xyz"]
+
+    async def test_ws_auth_error_raises_auth_error(self) -> None:
+        """A critical_error frame with unauthorized_access error_code raises ChartAuthError."""
+        svc = ConnectionService(ws_url="wss://test", auth_token="fake_token_abc123xyz")
+        # Satisfy the RuntimeError guard in get_data_stream()
+        svc._ws = MagicMock()  # type: ignore[assignment]
+        svc._ws.close = AsyncMock()
+        svc._ws.state = MagicMock()
+
+        auth_error_frame = json.dumps(
+            {"m": "critical_error", "p": [{"error_code": "unauthorized_access"}]}
+        )
+        await svc._message_queue.put(auth_error_frame)
+
+        with pytest.raises(ChartAuthError):
+            async for _ in svc.get_data_stream():
+                pass
+
+    async def test_ws_auth_error_no_transparent_reextraction(self) -> None:
+        """Auth error propagates bare — no cookie or token re-extraction is attempted."""
+        svc = ConnectionService(ws_url="wss://test", auth_token="fake_token_abc123xyz")
+        svc._ws = MagicMock()  # type: ignore[assignment]
+        svc._ws.close = AsyncMock()
+        svc._ws.state = MagicMock()
+
+        auth_error_frame = json.dumps(
+            {"m": "set_auth_token", "p": [{"error": "unauthorized_access"}]}
+        )
+        await svc._message_queue.put(auth_error_frame)
+
+        mock_cookie_provider = MagicMock()
+        mock_token_provider = MagicMock()
+
+        with pytest.raises(ChartAuthError):
+            async for _ in svc.get_data_stream():
+                pass
+
+        mock_cookie_provider.invalidate_cache.assert_not_called()
+        mock_token_provider.get_valid_token.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1356,6 +1539,68 @@ class TestOHLCVSessionWiring:
             probe_task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await probe_task
+
+    async def test_ws_auth_error_raises_to_caller(self) -> None:
+        """ChartAuthError raised from get_data_stream() propagates out of the service layer."""
+        svc = ConnectionService(ws_url="wss://test", auth_token="fake_token_abc123xyz")
+        svc._ws = MagicMock()  # type: ignore[assignment]
+        svc._ws.close = AsyncMock()
+        svc._ws.state = MagicMock()
+
+        auth_error_frame = json.dumps(
+            {"m": "critical_error", "p": [{"error_code": "unauthorized_access"}]}
+        )
+        await svc._message_queue.put(auth_error_frame)
+
+        with pytest.raises(ChartAuthError):
+            async for _ in svc.get_data_stream():
+                pass
+
+    async def test_ws_auth_error_raises_no_reextraction(self) -> None:
+        """Auth error raises ChartAuthError; no cookie invalidation or token re-fetch occurs."""
+        svc = ConnectionService(ws_url="wss://test", auth_token="fake_token_abc123xyz")
+        svc._ws = MagicMock()  # type: ignore[assignment]
+        svc._ws.close = AsyncMock()
+        svc._ws.state = MagicMock()
+
+        auth_error_frame = json.dumps(
+            {"m": "set_auth_token", "p": [{"error": "unauthorized_access"}]}
+        )
+        await svc._message_queue.put(auth_error_frame)
+
+        mock_cp = MagicMock()
+        mock_tp = MagicMock()
+
+        with pytest.raises(ChartAuthError):
+            async for _ in svc.get_data_stream():
+                pass
+
+        mock_cp.invalidate_cache.assert_not_called()
+        mock_tp.get_valid_token.assert_not_called()
+
+    async def test_max_bars_source_transitions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """max_bars_source is 'estimate' after __aenter__; stub probe does not change it."""
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+
+        mock_account = _make_mock_account()
+        assert mock_account.max_bars_source == "estimate"  # initial state
+
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(
+                auth_token="fake_token_abc123xyz", account=mock_account
+            )
+            MockAM.return_value = mock_am
+
+            from tvkit.api.chart.ohlcv import OHLCV
+
+            async with OHLCV(browser="chrome") as client:
+                # Immediately after __aenter__, source is plan-based estimate.
+                assert client.account is mock_account
+                assert client.account.max_bars_source == "estimate"
+
+            # After context exit, source is still "estimate" (probe stub did not update it).
+            assert mock_account.max_bars_source == "estimate"
 
 
 # ---------------------------------------------------------------------------
