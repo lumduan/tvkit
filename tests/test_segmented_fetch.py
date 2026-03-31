@@ -16,8 +16,9 @@ No live WebSocket connections — all external I/O is mocked.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,6 +26,7 @@ from tvkit.api.chart.exceptions import NoHistoricalDataError, SegmentedFetchErro
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.api.chart.services.segmented_fetch_service import SegmentedFetchService
+from tvkit.api.chart.utils import MAX_BARS_REQUEST
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -406,3 +408,173 @@ class TestRecursionGuard:
 
         mock_client._fetch_single_range.assert_called()
         mock_client.get_historical_ohlcv.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestSegmentedFetchMaxBarsSnapshot  (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestSegmentedFetchMaxBarsSnapshot:
+    """
+    Phase 5: SegmentedFetchService reads auth_manager.account.max_bars for segment sizing.
+
+    Covers:
+    - _resolve_max_bars() returns account.max_bars for authenticated sessions
+    - _resolve_max_bars() falls back to _max_bars_per_segment for anonymous sessions
+    - fetch_all() snapshots max_bars once at entry (probe update mid-fetch is ignored)
+    - OHLCV._needs_segmentation() uses account.max_bars as the threshold
+    - Log record contains max_bars_source from account
+    - Constructor override (max_bars_per_segment=N) still respected for anonymous sessions
+    """
+
+    @staticmethod
+    def _mock_client_with_account(max_bars: int, max_bars_source: str = "estimate") -> MagicMock:
+        """Return a mock OHLCV client with _auth_manager.account.max_bars set."""
+        account = MagicMock()
+        account.max_bars = max_bars
+        account.max_bars_source = max_bars_source
+        auth_manager = MagicMock()
+        auth_manager.account = account
+        mock_client = MagicMock(spec=OHLCV)
+        mock_client._auth_manager = auth_manager
+        mock_client._fetch_single_range = AsyncMock(return_value=[])
+        return mock_client
+
+    # --- _resolve_max_bars() unit tests ---
+
+    def test_resolve_max_bars_uses_account_max_bars(self) -> None:
+        """_resolve_max_bars returns auth_manager.account.max_bars when account is set."""
+        mock_client = self._mock_client_with_account(max_bars=20_000)
+        service = SegmentedFetchService(client=mock_client)
+        assert service._resolve_max_bars() == 20_000
+
+    def test_resolve_max_bars_anonymous_uses_default(self) -> None:
+        """_resolve_max_bars returns MAX_BARS_REQUEST for anonymous (_auth_manager=None)."""
+        mock_client = MagicMock(spec=OHLCV)
+        mock_client._auth_manager = None
+        service = SegmentedFetchService(client=mock_client)
+        assert service._resolve_max_bars() == MAX_BARS_REQUEST
+
+    def test_resolve_max_bars_no_account_uses_default(self) -> None:
+        """_resolve_max_bars returns MAX_BARS_REQUEST when auth_manager.account is None."""
+        auth_manager = MagicMock()
+        auth_manager.account = None
+        mock_client = MagicMock(spec=OHLCV)
+        mock_client._auth_manager = auth_manager
+        service = SegmentedFetchService(client=mock_client)
+        assert service._resolve_max_bars() == MAX_BARS_REQUEST
+
+    def test_constructor_override_still_works_without_session(self) -> None:
+        """SegmentedFetchService(client, max_bars_per_segment=1000) with anon client uses 1000."""
+        mock_client = MagicMock(spec=OHLCV)
+        mock_client._auth_manager = None
+        service = SegmentedFetchService(client=mock_client, max_bars_per_segment=1000)
+        assert service._resolve_max_bars() == 1000
+
+    # --- OHLCV._needs_segmentation() with account threshold ---
+
+    def test_needs_segmentation_uses_account_max_bars(self) -> None:
+        """Authenticated session with max_bars=20000: 6000-bar range does NOT trigger segmentation."""
+        client = OHLCV()
+        account = MagicMock()
+        account.max_bars = 20_000
+        auth_manager = MagicMock()
+        auth_manager.account = account
+        client._auth_manager = auth_manager  # type: ignore[attr-defined]
+        # 6000 bars at 1-minute interval
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = start + timedelta(seconds=6000 * 60)
+        assert not client._needs_segmentation(start, end, "1")
+
+    def test_needs_segmentation_falls_back_to_max_bars_request_for_anon(self) -> None:
+        """Anonymous session: 6000-bar range DOES trigger segmentation (threshold=5000)."""
+        client = OHLCV()
+        # _auth_manager is None by default after Phase 4
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = start + timedelta(seconds=6000 * 60)
+        assert client._needs_segmentation(start, end, "1")
+
+    # --- Snapshot invariant ---
+
+    @pytest.mark.asyncio
+    async def test_probe_update_mid_fetch_does_not_change_segments(self) -> None:
+        """
+        Mid-fetch probe update to account.max_bars does not change the segment list.
+
+        segment_time_range() is called with the snapshot value captured before the fetch
+        loop starts — a subsequent probe update to a different value is ignored.
+        """
+        mock_client = self._mock_client_with_account(max_bars=20_000)
+        captured_max_bars: list[int] = []
+
+        import tvkit.api.chart.services.segmented_fetch_service as sfs_module
+
+        original_str = sfs_module.segment_time_range
+
+        def capture_and_mutate(
+            start: datetime,
+            end: datetime,
+            interval_secs: int,
+            max_bars_arg: int,
+        ) -> list:
+            captured_max_bars.append(max_bars_arg)
+            # Simulate probe update happening mid-call
+            mock_client._auth_manager.account.max_bars = 99_999
+            return original_str(start, end, interval_secs, max_bars_arg)
+
+        with patch.object(sfs_module, "segment_time_range", side_effect=capture_and_mutate):
+            service = SegmentedFetchService(client=mock_client)
+            await service.fetch_all(
+                "NASDAQ:AAPL",
+                "1H",
+                start=datetime(2024, 1, 1, tzinfo=UTC),
+                end=datetime(2024, 1, 2, tzinfo=UTC),
+            )
+
+        # segment_time_range was called with the pre-update snapshot (20_000), not 99_999
+        assert captured_max_bars == [20_000]
+
+    # --- Structured log source field ---
+
+    @pytest.mark.asyncio
+    async def test_max_bars_source_probe_logged_correctly(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Log record contains max_bars_source='probe' for probe-confirmed accounts."""
+        mock_client = self._mock_client_with_account(max_bars=20_000, max_bars_source="probe")
+        service = SegmentedFetchService(client=mock_client)
+        with caplog.at_level(
+            logging.INFO, logger="tvkit.api.chart.services.segmented_fetch_service"
+        ):
+            await service.fetch_all(
+                "NASDAQ:AAPL",
+                "1H",
+                start=datetime(2024, 1, 1, tzinfo=UTC),
+                end=datetime(2024, 1, 1, 1, 0, 0, tzinfo=UTC),
+            )
+        start_records = [r for r in caplog.records if "Starting segmented fetch" in r.message]
+        assert len(start_records) >= 1
+        assert start_records[0].__dict__.get("max_bars_source") == "probe"
+
+    @pytest.mark.asyncio
+    async def test_max_bars_source_default_for_anonymous(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Log record contains max_bars_source='default' for anonymous sessions."""
+        mock_client = MagicMock(spec=OHLCV)
+        mock_client._auth_manager = None
+        mock_client._fetch_single_range = AsyncMock(return_value=[])
+        service = SegmentedFetchService(client=mock_client)
+        with caplog.at_level(
+            logging.INFO, logger="tvkit.api.chart.services.segmented_fetch_service"
+        ):
+            await service.fetch_all(
+                "NASDAQ:AAPL",
+                "1H",
+                start=datetime(2024, 1, 1, tzinfo=UTC),
+                end=datetime(2024, 1, 1, 1, 0, 0, tzinfo=UTC),
+            )
+        start_records = [r for r in caplog.records if "Starting segmented fetch" in r.message]
+        assert len(start_records) >= 1
+        assert start_records[0].__dict__.get("max_bars_source") == "default"

@@ -49,6 +49,26 @@ class SegmentedFetchService:
         self._client = client
         self._max_bars_per_segment: int = max_bars_per_segment
 
+    def _resolve_max_bars(self) -> int:
+        """
+        Return the effective max_bars for this fetch.
+
+        If the OHLCV client has an authenticated AuthManager with account capability
+        data, use ``auth_manager.account.max_bars`` (probe-confirmed or plan estimate).
+        Otherwise fall back to the constructor-supplied ``_max_bars_per_segment``
+        (default: ``MAX_BARS_REQUEST`` = 5000 for anonymous sessions).
+
+        ``getattr`` is used for safe access because ``SegmentedFetchService`` may be
+        used in tests where ``_auth_manager`` was never set on the mock client.
+
+        Returns:
+            Effective maximum bars per segment for this fetch.
+        """
+        auth_manager = getattr(self._client, "_auth_manager", None)
+        if auth_manager is not None and auth_manager.account is not None:
+            return auth_manager.account.max_bars
+        return self._max_bars_per_segment
+
     async def fetch_all(
         self,
         exchange_symbol: str,
@@ -104,18 +124,23 @@ class SegmentedFetchService:
             ...     )
             ...     print(len(bars))
         """
+        # Snapshot max_bars at fetch start — stable for the entire fetch even if
+        # the background capability probe updates auth_manager.account.max_bars mid-flight.
+        max_bars: int = self._resolve_max_bars()
         interval_secs: int = interval_to_seconds(interval)
-        segments: list[TimeSegment] = segment_time_range(
-            start, end, interval_secs, self._max_bars_per_segment
-        )
+        segments: list[TimeSegment] = segment_time_range(start, end, interval_secs, max_bars)
 
         total: int = len(segments)
+        auth_manager = getattr(self._client, "_auth_manager", None)
+        account = auth_manager.account if auth_manager is not None else None
         logger.info(
             "Starting segmented fetch.",
             extra={
                 "symbol": exchange_symbol,
                 "interval": interval,
                 "segments": total,
+                "max_bars_per_segment": max_bars,
+                "max_bars_source": account.max_bars_source if account is not None else "default",
                 "start": start.isoformat(),
                 "end": end.isoformat(),
             },

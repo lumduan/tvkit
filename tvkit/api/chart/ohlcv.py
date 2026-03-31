@@ -498,7 +498,12 @@ class OHLCV:
 
     def _needs_segmentation(self, start: datetime, end: datetime, interval: str) -> bool:
         """
-        Return True if the estimated bar count for the range exceeds MAX_BARS_REQUEST.
+        Return True if the estimated bar count for the range exceeds the effective threshold.
+
+        The threshold is ``auth_manager.account.max_bars`` for authenticated sessions
+        (probe-confirmed or plan estimate), and ``MAX_BARS_REQUEST`` (5000) for anonymous
+        sessions. This ensures that Premium users with ``max_bars=20000`` are not routed
+        to segmented fetch for ranges that fit within their actual account limit.
 
         Monthly and weekly intervals always return False — they never accumulate enough
         bars to require segmentation, and variable-length durations complicate segment
@@ -529,7 +534,12 @@ class OHLCV:
         if range_secs <= 0:
             return False  # start == end or start > end — zero or negative bars, no segmentation
         estimated_bars: int = math.ceil(range_secs / interval_secs)
-        return estimated_bars > MAX_BARS_REQUEST
+        threshold: int = (
+            self._auth_manager.account.max_bars
+            if self._auth_manager is not None and self._auth_manager.account is not None
+            else MAX_BARS_REQUEST
+        )
+        return estimated_bars > threshold
 
     async def _fetch_single_range(
         self,
