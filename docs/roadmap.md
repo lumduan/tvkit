@@ -9,13 +9,9 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 ## Recently Shipped
 
 - **v0.6.0** — Timezone Handling
-
 - **v0.5.0** — Segmented Historical Fetch
-
 - **v0.4.0** — Connection retry with exponential backoff for `OHLCV` WebSocket client
-
-- **Documentation refactor** — Restructuring docs into a layered hierarchy (concepts, guides, reference, architecture, internals)
-
+- **Documentation refactor**
 - **v0.3.0** — Historical OHLCV date-range mode (`start`/`end` parameters for `get_historical_ohlcv()`)
 - **v0.1.5** — Symbol format auto-conversion (dash → colon notation)
 - **v0.1.4** — Multi-market scanner with 69 markets and 101+ columns
