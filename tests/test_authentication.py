@@ -789,6 +789,576 @@ class TestExceptionHierarchy:
 
 
 # ---------------------------------------------------------------------------
+# Phase 4 — OHLCV constructor credential resolution
+# ---------------------------------------------------------------------------
+
+
+class TestOHLCVConstructorCredentials:
+    """Unit tests for OHLCV keyword-only credential params and env-var fallbacks.
+
+    All tests are synchronous — no I/O. Both env vars are cleared via monkeypatch
+    in every test to prevent cross-test bleed.
+    """
+
+    def test_browser_kwarg_sets_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(browser="chrome")
+        assert client._credentials.browser == "chrome"
+        assert client._credentials.auth_token is None
+        assert client._credentials.cookies is None
+
+    def test_browser_profile_kwarg_sets_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(browser="firefox", browser_profile="Profile 2")
+        assert client._credentials.browser == "firefox"
+        assert client._credentials.browser_profile == "Profile 2"
+
+    def test_cookies_kwarg_sets_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(cookies={"sessionid": "abc"})
+        assert client._credentials.cookies == {"sessionid": "abc"}
+        assert client._credentials.browser is None
+
+    def test_auth_token_kwarg_sets_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(auth_token="fake_token_abc123xyz")
+        assert client._credentials.auth_token == "fake_token_abc123xyz"
+        assert client._credentials.browser is None
+
+    def test_anonymous_when_no_credentials_and_no_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV()
+        assert client._credentials.is_anonymous
+
+    def test_env_var_tvkit_browser_loaded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_BROWSER", "firefox")
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV()
+        assert client._credentials.browser == "firefox"
+
+    def test_env_var_tvkit_auth_token_loaded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_AUTH_TOKEN", "fake_token_abc123xyz")
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        client = OHLCV()
+        assert client._credentials.auth_token == "fake_token_abc123xyz"
+
+    def test_constructor_kwarg_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_BROWSER", "firefox")
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(browser="chrome")
+        assert client._credentials.browser == "chrome"
+
+    def test_invalid_combination_raises_at_construction(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="exactly one"):
+            OHLCV(browser="chrome", auth_token="fake_token_abc123xyz")
+
+    def test_retry_params_remain_positional(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OHLCV(3, 2.0, 60.0) still works — retry params keep their positional order."""
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(3, 2.0, 60.0)
+        assert client._max_attempts == 3
+        assert client._base_backoff == 2.0
+        assert client._max_backoff == 60.0
+        assert client._credentials.is_anonymous
+
+    def test_auth_params_are_keyword_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OHLCV(3, 2.0, 60.0, 'chrome') raises TypeError — auth params are keyword-only."""
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with pytest.raises(TypeError):
+            OHLCV(3, 2.0, 60.0, "chrome")  # type: ignore[call-arg]
+
+    def test_browser_kwarg_ignores_tvkit_auth_token_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_AUTH_TOKEN", "should_be_ignored")
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        client = OHLCV(browser="chrome")
+        assert client._credentials.browser == "chrome"
+        assert client._credentials.auth_token is None
+
+    def test_cookies_kwarg_ignores_tvkit_browser_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_BROWSER", "firefox")
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(cookies={"sessionid": "abc"})
+        assert client._credentials.cookies == {"sessionid": "abc"}
+        assert client._credentials.browser is None
+
+    def test_cookies_kwarg_ignores_tvkit_auth_token_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_AUTH_TOKEN", "should_be_ignored")
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        client = OHLCV(cookies={"sessionid": "abc"})
+        assert client._credentials.auth_token is None
+
+    def test_auth_token_kwarg_ignores_tvkit_browser_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_BROWSER", "firefox")
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(auth_token="fake_token_abc123xyz")
+        assert client._credentials.auth_token == "fake_token_abc123xyz"
+        assert client._credentials.browser is None
+
+    def test_browser_profile_with_env_var_browser(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_BROWSER", "chrome")
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV(browser_profile="Profile 2")
+        assert client._credentials.browser == "chrome"
+        assert client._credentials.browser_profile == "Profile 2"
+
+    def test_both_env_vars_set_raises_at_construction(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.setenv("TVKIT_BROWSER", "chrome")
+        monkeypatch.setenv("TVKIT_AUTH_TOKEN", "fake_token_abc123xyz")
+        with pytest.raises(ValueError, match="exactly one"):
+            OHLCV()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — OHLCV session wiring (mocked AuthManager + ConnectionService)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_auth_manager(
+    *,
+    auth_token: str = "fake_token_abc123xyz",
+    account: TradingViewAccount | None = None,
+    probe_task: asyncio.Task[None] | None = None,
+) -> MagicMock:
+    """Return a MagicMock shaped like AuthManager for OHLCV wiring tests."""
+    m = MagicMock(spec=AuthManager)
+    m.auth_token = auth_token
+    m.account = account
+    m._probe_task = probe_task
+    m.__aenter__ = AsyncMock(return_value=m)
+    m.__aexit__ = AsyncMock(return_value=None)
+    return m
+
+
+def _make_mock_account() -> TradingViewAccount:
+    """Return a minimal TradingViewAccount for wiring tests."""
+    return TradingViewAccount.from_profile(
+        profile=_SAMPLE_PROFILE,
+        max_bars=20_000,
+        tier="premium",
+    )
+
+
+def _patch_connection_service() -> Any:
+    """Return a context manager that stubs ConnectionService for _setup_services."""
+    mock_ws = MagicMock()
+    mock_cs = MagicMock()
+    mock_cs.ws = mock_ws
+    mock_cs.connect = AsyncMock()
+    mock_cs.close = AsyncMock()
+    mock_cs.initialize_sessions = AsyncMock()
+    mock_cs.add_symbol_to_sessions = AsyncMock()
+    return patch("tvkit.api.chart.ohlcv.ConnectionService", return_value=mock_cs)
+
+
+@pytest.mark.asyncio
+class TestOHLCVSessionWiring:
+    """Integration tests for OHLCV Phase 4 authentication wiring.
+
+    All ConnectionService and AuthManager calls are mocked — no real I/O.
+    Both env vars are cleared in each test via monkeypatch.
+    """
+
+    async def test_account_none_before_aenter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        client = OHLCV()
+        assert client.account is None
+
+    async def test_account_none_for_anonymous_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(auth_token="unauthorized_user_token")
+            MockAM.return_value = mock_am
+
+            async with OHLCV() as client:
+                assert client._credentials.is_anonymous
+                assert client.account is None
+
+    async def test_account_populated_after_aenter_browser_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        mock_account = _make_mock_account()
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(
+                auth_token="fake_token_abc123xyz", account=mock_account
+            )
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+                assert client.account is mock_account
+
+    async def test_account_populated_after_aenter_cookies_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        mock_account = _make_mock_account()
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(
+                auth_token="fake_token_abc123xyz", account=mock_account
+            )
+            MockAM.return_value = mock_am
+
+            async with OHLCV(cookies=_SAMPLE_COOKIES) as client:
+                assert client.account is mock_account
+
+    async def test_account_none_for_direct_token_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(auth_token="fake_token_abc123xyz", account=None)
+            MockAM.return_value = mock_am
+
+            async with OHLCV(auth_token="fake_token_abc123xyz") as client:
+                assert client.account is None
+
+    async def test_account_none_after_aexit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        mock_account = _make_mock_account()
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(
+                auth_token="fake_token_abc123xyz", account=mock_account
+            )
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+                pass
+
+            assert client.account is None
+
+    async def test_aexit_forwards_exception_info_to_auth_manager(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """__aexit__ must forward (exc_type, exc_val, exc_tb) to AuthManager.__aexit__."""
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager()
+            MockAM.return_value = mock_am
+
+            exc = ValueError("test error")
+            try:
+                async with OHLCV() as _:
+                    raise exc
+            except ValueError:
+                pass
+
+            call_args = mock_am.__aexit__.call_args[0]
+            assert call_args[0] is ValueError  # exc_type
+            assert call_args[1] is exc  # exc_val
+            assert call_args[2] is not None  # exc_tb (traceback object)
+
+    async def test_aexit_does_not_raise_if_probe_already_done(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        finished_task: asyncio.Task[None] = asyncio.ensure_future(asyncio.sleep(0))
+        await finished_task
+
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(probe_task=finished_task)
+            MockAM.return_value = mock_am
+
+            async with OHLCV() as _:
+                pass
+
+    async def test_connection_service_receives_auth_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with (
+            patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM,
+            _patch_connection_service() as MockCS,
+        ):
+            mock_am = _make_mock_auth_manager(auth_token="fake_token_abc123xyz")
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+                await client._setup_services()
+
+            call_kwargs = MockCS.call_args[1]
+            assert call_kwargs["auth_token"] == "fake_token_abc123xyz"
+
+    async def test_connection_service_receives_anonymous_token_for_anon_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with (
+            patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM,
+            _patch_connection_service() as MockCS,
+        ):
+            mock_am = _make_mock_auth_manager(auth_token="unauthorized_user_token")
+            MockAM.return_value = mock_am
+
+            async with OHLCV() as client:
+                await client._setup_services()
+
+            call_kwargs = MockCS.call_args[1]
+            assert call_kwargs["auth_token"] == "unauthorized_user_token"
+
+    async def test_anonymous_outside_async_with_passes_anonymous_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """OHLCV() without async with must still pass the anonymous token."""
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with _patch_connection_service() as MockCS:
+            client = OHLCV()
+            assert client._auth_manager is None
+
+            await client._setup_services()
+
+            assert client._auth_manager is None  # anonymous: no AuthManager created
+            call_kwargs = MockCS.call_args[1]
+            assert call_kwargs["auth_token"] == "unauthorized_user_token"
+
+    async def test_lazy_init_authenticates_without_async_with(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Credentials authenticate lazily when _setup_services is called without async with."""
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with (
+            patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM,
+            _patch_connection_service(),
+        ):
+            mock_am = _make_mock_auth_manager(auth_token="fake_token_abc123xyz")
+            MockAM.return_value = mock_am
+
+            client = OHLCV(auth_token="fake_token_abc123xyz")
+            assert client._auth_manager is None
+
+            await client._setup_services()
+
+            assert client._auth_manager is mock_am
+            mock_am.__aenter__.assert_called_once()
+
+    async def test_aenter_after_lazy_init_does_not_reinitialize(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """__aenter__ must reuse the existing AuthManager if lazy init already ran."""
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with (
+            patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM,
+            _patch_connection_service(),
+        ):
+            mock_am = _make_mock_auth_manager(auth_token="fake_token_abc123xyz")
+            MockAM.return_value = mock_am
+
+            client = OHLCV(auth_token="fake_token_abc123xyz")
+            await client._setup_services()  # lazy init — __aenter__ called once
+
+            async with client:
+                pass  # __aenter__ runs — must reuse existing manager
+
+            mock_am.__aenter__.assert_called_once()  # still only one call total
+            assert MockAM.call_count == 1  # no second AuthManager constructed
+
+    async def test_wait_until_ready_returns_immediately_if_no_probe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            mock_am = _make_mock_auth_manager(probe_task=None)
+            MockAM.return_value = mock_am
+
+            async with OHLCV() as client:
+                await client.wait_until_ready()
+
+    async def test_wait_until_ready_blocks_until_probe_done(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+        done_event = asyncio.Event()
+
+        async def _slow_probe() -> None:
+            await done_event.wait()
+
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            probe_task: asyncio.Task[None] = asyncio.create_task(_slow_probe())
+            mock_am = _make_mock_auth_manager(probe_task=probe_task)
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+
+                async def _unblock() -> None:
+                    await asyncio.sleep(0)
+                    done_event.set()
+
+                await asyncio.gather(client.wait_until_ready(), _unblock())
+
+    async def test_wait_until_ready_never_raises_on_probe_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+
+        async def _failing_probe() -> None:
+            raise RuntimeError("probe failed")
+
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            probe_task: asyncio.Task[None] = asyncio.create_task(_failing_probe())
+            mock_am = _make_mock_auth_manager(probe_task=probe_task)
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+                await client.wait_until_ready()
+
+    async def test_wait_until_ready_never_raises_on_cancelled_probe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+
+        async def _sleeping_probe() -> None:
+            await asyncio.sleep(100)
+
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            probe_task: asyncio.Task[None] = asyncio.create_task(_sleeping_probe())
+            probe_task.cancel()
+            try:
+                await probe_task
+            except asyncio.CancelledError:
+                pass
+
+            mock_am = _make_mock_auth_manager(probe_task=probe_task)
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+                await client.wait_until_ready()
+
+    async def test_wait_until_ready_propagates_caller_cancellation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tvkit.api.chart.ohlcv import OHLCV
+
+        monkeypatch.delenv("TVKIT_BROWSER", raising=False)
+        monkeypatch.delenv("TVKIT_AUTH_TOKEN", raising=False)
+
+        async def _long_probe() -> None:
+            await asyncio.sleep(100)
+
+        with patch("tvkit.api.chart.ohlcv.AuthManager") as MockAM:
+            probe_task: asyncio.Task[None] = asyncio.create_task(_long_probe())
+            mock_am = _make_mock_auth_manager(probe_task=probe_task)
+            MockAM.return_value = mock_am
+
+            async with OHLCV(browser="chrome") as client:
+                waiter: asyncio.Task[None] = asyncio.create_task(client.wait_until_ready())
+                await asyncio.sleep(0)
+                waiter.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await waiter
+
+            probe_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await probe_task
+
+
+# ---------------------------------------------------------------------------
 # Integration tests — real browser (skipped unless TVKIT_BROWSER is set)
 # ---------------------------------------------------------------------------
 

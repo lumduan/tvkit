@@ -215,6 +215,7 @@ class TestSetupServices:
 
         mock_cs_cls.assert_called_once_with(
             client.ws_url,
+            auth_token="unauthorized_user_token",
             max_attempts=3,
             base_backoff=2.0,
             max_backoff=60.0,
