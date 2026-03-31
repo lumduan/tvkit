@@ -19,25 +19,142 @@ from tvkit.api.chart.ohlcv import OHLCV
 
 Async context manager that manages a TradingView WebSocket connection. Each method call opens a fresh connection and closes it on completion (or on context manager exit).
 
+Supports optional account authentication. Pass `browser`, `cookies`, or `auth_token` (as keyword arguments) to use an authenticated session. When no credential is provided, the session runs in anonymous mode with a 5,000-bar limit. See [Authenticated Sessions Guide](../../guides/authenticated-sessions.md) for full details.
+
 ### Signature
 
 ```python
 class OHLCV:
-    def __init__(self) -> None: ...
+    def __init__(
+        self,
+        max_attempts: int = 5,
+        base_backoff: float = 1.0,
+        max_backoff: float = 30.0,
+        *,
+        browser: str | None = None,
+        browser_profile: str | None = None,
+        cookies: dict[str, str] | None = None,
+        auth_token: str | None = None,
+    ) -> None: ...
 ```
+
+### Constructor Parameters
+
+**Reconnection parameters** (positional, optional):
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_attempts` | `int` | `5` | Total WebSocket connection attempts before raising `StreamConnectionError`. |
+| `base_backoff` | `float` | `1.0` | Base retry delay in seconds. Doubles each attempt. |
+| `max_backoff` | `float` | `30.0` | Maximum retry delay cap in seconds. |
+
+**Authentication parameters** (keyword-only, optional):
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `browser` | `str \| None` | `None` | Browser to extract session cookies from. Must be `"chrome"` or `"firefox"`. Mutually exclusive with `cookies` and `auth_token`. When `None` and no other credential kwarg is provided, `TVKIT_BROWSER` env var is used as fallback. |
+| `browser_profile` | `str \| None` | `None` | Specific browser profile name (e.g. `"Default"`, `"Profile 2"`). Only valid when `browser` resolves to a value. |
+| `cookies` | `dict[str, str] \| None` | `None` | Pre-extracted cookie dict. Mutually exclusive with `browser` and `auth_token`. |
+| `auth_token` | `str \| None` | `None` | Pre-obtained TradingView auth token. Mutually exclusive with `browser` and `cookies`. When `None` and no other credential kwarg is provided, `TVKIT_AUTH_TOKEN` env var is used as fallback. |
+
+**Credential resolution order:** constructor kwargs → `TVKIT_BROWSER` / `TVKIT_AUTH_TOKEN` env vars → anonymous mode. Providing conflicting sources (e.g. both `browser` kwarg and `TVKIT_AUTH_TOKEN` env var, or both `TVKIT_BROWSER` and `TVKIT_AUTH_TOKEN`) raises `ValueError` at construction.
 
 ### Context Manager Usage
 
 ```python
+# Anonymous session (unchanged from pre-v0.7.0)
 async with OHLCV() as client:
-    bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", bars_count=10)
+    bars = await client.get_historical_ohlcv(
+        exchange_symbol="NASDAQ:AAPL",
+        interval="1D",
+        bars_count=10,
+    )
+
+# Authenticated session via Chrome cookies
+async with OHLCV(browser="chrome") as client:
+    bars = await client.get_historical_ohlcv(
+        exchange_symbol="NASDAQ:AAPL",
+        interval="1D",
+        bars_count=10_000,
+    )
 ```
 
-`OHLCV` implements `__aenter__` and `__aexit__`. The `__aexit__` method closes any active WebSocket connection. It is safe to call multiple methods on the same client instance sequentially — each method call re-establishes the connection.
+`OHLCV` implements `__aenter__` and `__aexit__`. The `__aexit__` method cancels any background capability probe task and closes the active WebSocket connection. It is safe to call multiple methods on the same client instance sequentially — each method call re-establishes the connection.
+
+---
+
+## Properties
+
+### `account`
+
+```python
+@property
+def account(self) -> TradingViewAccount | None: ...
+```
+
+The authenticated account profile, or `None`.
+
+Returns `None` when:
+
+- Called before `__aenter__` or after `__aexit__`
+- The session is anonymous (no credentials provided and no env vars set)
+- The session uses direct token injection (`auth_token=...`) — no profile fetch is performed in this mode
+
+Populated after `__aenter__` for browser and cookie-dict modes with the account tier, `max_bars`, and probe status. The `max_bars` field starts as a plan-based estimate and is updated in-place by the background probe when it completes.
+
+```python
+from tvkit.auth import TradingViewAccount
+
+async with OHLCV(browser="chrome") as client:
+    account: TradingViewAccount | None = client.account
+    if account is not None:
+        print(f"Tier: {account.tier!r}, max_bars: {account.max_bars}")
+```
+
+See [TradingViewAccount Reference](../auth/account.md) for the full field list.
 
 ---
 
 ## Methods
+
+### `wait_until_ready()`
+
+```python
+async def wait_until_ready(self) -> None: ...
+```
+
+Wait until the background capability probe completes.
+
+Returns immediately if:
+
+- No probe is running (anonymous session or direct token injection)
+- The probe already finished (success or failure)
+- Called before `__aenter__`
+
+Probe failures and probe-task cancellations are treated as non-fatal — the method returns silently in both cases and the plan-based estimate remains in effect. Caller-task cancellation is re-raised so cooperative cancellation is preserved.
+
+#### When to use
+
+Use `wait_until_ready()` when you need probe-confirmed `max_bars` before your first fetch — typically for very large bar counts near the account limit.
+
+#### Example
+
+```python
+async with OHLCV(browser="chrome") as client:
+    await client.wait_until_ready()
+    account = client.account
+    if account:
+        print(f"max_bars confirmed: {account.max_bars} (source={account.max_bars_source!r})")
+    bars = await client.get_historical_ohlcv(
+        exchange_symbol="NASDAQ:AAPL",
+        interval="1",
+        bars_count=50_000,
+    )
+```
+
+See [Concepts: Account Capabilities — wait_until_ready()](../../concepts/capabilities.md#wait_until_ready) for the full trade-off discussion.
+
+---
 
 ### `get_historical_ohlcv()`
 
@@ -86,13 +203,23 @@ Range mode uses a longer timeout because multi-year intraday streams can be slow
 
 #### Automatic Segmentation (v0.5.0+)
 
-When the estimated bar count for a `start`/`end` range exceeds `MAX_BARS_REQUEST` (5,000), `get_historical_ohlcv()` automatically dispatches to `SegmentedFetchService`, which:
+When the estimated bar count for a `start`/`end` range exceeds the per-segment limit, `get_historical_ohlcv()` automatically dispatches to `SegmentedFetchService`, which:
 
-1. Splits the range into non-overlapping segments sized for at most `MAX_BARS_REQUEST` bars each
+1. Splits the range into non-overlapping segments sized for at most `max_bars` bars each
 2. Fetches each segment sequentially via the internal `_fetch_single_range()` method
 3. Merges, deduplicates by timestamp (first-occurrence wins), and sorts results chronologically
 
 The caller sees no difference — the return type is the same `list[OHLCVBar]`.
+
+**Segment size depends on the session type:**
+
+| Session | Segment size |
+| ------- | ------------ |
+| Anonymous | `MAX_BARS_REQUEST` (5,000) |
+| Authenticated (browser / cookie-dict) | `account.max_bars` — plan estimate or probe-confirmed value |
+| Authenticated (direct token) | `MAX_BARS_REQUEST` (5,000) — no plan info available |
+
+The segment size is snapshotted once at the start of each fetch so that a mid-flight probe update cannot change boundaries during a running request. Use `wait_until_ready()` before a large fetch if you want probe-confirmed `max_bars` to be the segment size from the first request.
 
 **Constraints:**
 

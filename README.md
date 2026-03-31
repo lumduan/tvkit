@@ -56,6 +56,56 @@ asyncio.run(main())
 
 See more working examples in [examples/](examples/).
 
+## Authenticated Sessions
+
+Authenticate with your TradingView account to unlock larger historical data windows beyond the anonymous 5,000-bar limit. See [TradingView Pricing](https://www.tradingview.com/pricing/) for the full plan comparison.
+
+| Plan | Max bars per fetch |
+| ---------------------------------------- | ------------------ |
+| Basic (free) | 5,000 |
+| Essential / Plus | 10,000 |
+| Premium | 20,000 |
+| Ultimate | 40,000 |
+
+```python
+# Browser cookie extraction — Chrome or Firefox (must be logged in to TradingView)
+async with OHLCV(browser="chrome") as client:
+    await client.wait_until_ready()           # optional: wait for probe-confirmed max_bars
+    account = client.account
+    if account:
+        print(f"Tier: {account.tier}, max_bars: {account.max_bars}")
+    bars = await client.get_historical_ohlcv(
+        exchange_symbol="NASDAQ:AAPL",
+        interval="1D",
+        bars_count=10_000,
+    )
+
+# Firefox
+async with OHLCV(browser="firefox") as client: ...
+
+# Direct token injection (CI/CD — no browser required)
+async with OHLCV(auth_token=os.environ["TVKIT_AUTH_TOKEN"]) as client: ...
+
+# Anonymous (default — no changes required)
+async with OHLCV() as client: ...
+```
+
+**Environment variables** (alternative to kwargs):
+
+```bash
+export TVKIT_BROWSER=chrome        # equivalent to OHLCV(browser="chrome")
+export TVKIT_AUTH_TOKEN=<token>    # equivalent to OHLCV(auth_token=...)
+```
+
+**Troubleshooting:**
+
+- `BrowserCookieError` — not logged in to TradingView in the browser; log in and retry
+- `ProfileFetchError` — session expired; log out and back in to TradingView
+
+More details: [Authenticated Sessions Guide](docs/guides/authenticated-sessions.md) · [Account Capabilities](docs/concepts/capabilities.md) · [Auth Reference](docs/reference/auth/index.md)
+
+---
+
 ## Automatic Reconnection
 
 Reconnection is on by default — no changes needed to existing call sites:
@@ -107,11 +157,13 @@ Full documentation index → [docs/index.md](docs/index.md)
 - [Intervals](docs/concepts/intervals.md) — All supported timeframes and format strings
 - [Streaming vs Historical](docs/concepts/streaming-vs-historical.md) — When to use each method
 - [Scanner Columns](docs/concepts/scanner-columns.md) — Column sets and when to use each
+- [Account Capabilities](docs/concepts/capabilities.md) — Plan tiers, bar limits, and capability detection
 
 ### Guides
 
 - [Historical Data](docs/guides/historical-data.md) — Bar count mode, date-range mode, Polars integration
 - [Real-time Streaming](docs/guides/realtime-streaming.md) — WebSocket streaming, multiple symbols, reconnection
+- [Authenticated Sessions](docs/guides/authenticated-sessions.md) — Browser cookies, token injection, capability detection
 - [Scanner](docs/guides/scanner.md) — 69 global markets, filters, sorting, regional analysis
 - [Exporting Data](docs/guides/exporting.md) — DataExporter, CSV, JSON, Polars with metadata
 - [Macro Indicators](docs/guides/macro-indicators.md) — INDEX:NDFI, USI:PCC, regime detection
@@ -119,6 +171,7 @@ Full documentation index → [docs/index.md](docs/index.md)
 ### Reference
 
 - [Chart API](docs/reference/chart/ohlcv.md) — OHLCV client: all methods, parameters, return types
+- [Authentication — tvkit.auth](docs/reference/auth/index.md) — AuthManager, TradingViewCredentials, TradingViewAccount
 - [Chart Utils](docs/reference/chart/utils.md) — Interval validation, timestamp utilities
 - [Scanner API](docs/reference/scanner/scanner.md) — ScannerService interface and filter syntax
 - [Markets](docs/reference/scanner/markets.md) — All 69 markets, regions, exchange identifiers
