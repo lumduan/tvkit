@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from tvkit.api.chart.models.ohlcv import OHLCVBar
-from tvkit.api.chart.ohlcv import OHLCV
+from tvkit.api.chart.ohlcv import OHLCV, _StreamingSession
 
 SYMBOL: str = "BINANCE:BTCUSDT"
 
@@ -115,9 +115,18 @@ def _make_client(messages: list[dict[str, Any]]) -> OHLCV:
     """Return an OHLCV client wired to a fake data stream with services mocked."""
     client: OHLCV = OHLCV()
     client._prepare_chart_session = AsyncMock()  # type: ignore[method-assign]
+    client._session = _StreamingSession(  # type: ignore[assignment]
+        symbol=SYMBOL,
+        interval="1D",
+        bars_count=100,
+        quote_session="qs_test",
+        chart_session="cs_test",
+    )
     client.connection_service = MagicMock()
     client.connection_service.get_data_stream = lambda: fake_stream(messages)
     client.connection_service.close = AsyncMock()
+    client.message_service = MagicMock()  # type: ignore[assignment]
+    client.message_service.send_message = AsyncMock()
     return client
 
 
@@ -131,7 +140,12 @@ class TestSeriesCompletedSignal:
 
     @pytest.mark.asyncio
     async def test_returns_partial_bars_on_series_completed(self) -> None:
-        """When series_completed arrives before bars_count is reached, return all collected bars."""
+        """When server exhausts history before bars_count is reached, return all collected bars.
+
+        After the first series_completed with 403 bars (< 500 requested), the client
+        sends request_more_data. The stream then ends (no more messages), so the loop
+        exits naturally and returns the 403 bars it collected.
+        """
         messages: list[dict[str, Any]] = [
             SERIES_LOADING_MSG,
             make_timescale_update(bars_count=403),
@@ -229,6 +243,116 @@ class TestSeriesCompletedSignal:
             )
 
         assert len(result) == 10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Class 1b: request_more_data — multi-chunk count mode pagination
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRequestMoreData:
+    """request_more_data is sent to fetch additional pages of older bars.
+
+    TradingView serves bars in server-sized chunks. After each series_completed,
+    if more bars are needed, the client sends request_more_data and the server
+    streams the next (older) chunk.
+    """
+
+    @pytest.mark.asyncio
+    async def test_request_more_data_sent_when_bars_needed(self) -> None:
+        """request_more_data is sent after series_completed when bars_count not yet reached."""
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=300),
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", bars_count=1000
+            )
+
+        client.message_service.send_message.assert_called_once_with(  # type: ignore[union-attr]
+            "request_more_data",
+            ["cs_test", "sds_1", 700],
+        )
+
+    @pytest.mark.asyncio
+    async def test_request_more_data_not_sent_when_bars_sufficient(self) -> None:
+        """request_more_data is NOT sent when bars_count is reached before series_completed."""
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=10),
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", bars_count=10
+            )
+
+        assert len(result) == 10
+        client.message_service.send_message.assert_not_called()  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_multi_chunk_fetch_accumulates_bars(self) -> None:
+        """Bars from multiple server pages are merged into one list."""
+        messages: list[dict[str, Any]] = [
+            # First chunk: 6000 bars → series_completed (need 9000 more)
+            make_timescale_update(bars_count=6000),
+            SERIES_COMPLETED_MSG,
+            # Second chunk (response to request_more_data): 5000 bars → series_completed
+            make_timescale_update(bars_count=5000, base_ts=500_000.0),
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", bars_count=20000
+            )
+
+        # Both chunks returned (total 11 000 < 20 000 but server exhausted after 2nd chunk)
+        assert len(result) == 11000
+
+    @pytest.mark.asyncio
+    async def test_multi_chunk_stops_when_bars_count_satisfied(self) -> None:
+        """Loop stops after the chunk that satisfies bars_count; no further request_more_data."""
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=6000),
+            SERIES_COMPLETED_MSG,
+            make_timescale_update(bars_count=5000, base_ts=500_000.0),
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", bars_count=9000
+            )
+
+        # First chunk: 6000 bars → send request_more_data(3000)
+        # Second chunk: 5000 bars → total 11000 >= 9000 → break
+        assert len(result) == 11000
+        # request_more_data was sent exactly once (after first chunk)
+        assert client.message_service.send_message.call_count == 1  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_stops_on_empty_chunk(self) -> None:
+        """Loop stops when server returns a series_completed with no new bars."""
+        messages: list[dict[str, Any]] = [
+            make_timescale_update(bars_count=300),
+            SERIES_COMPLETED_MSG,
+            # Empty chunk — server has no more data
+            SERIES_COMPLETED_MSG,
+        ]
+        client: OHLCV = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            result = await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL, interval="1D", bars_count=1000
+            )
+
+        assert len(result) == 300
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -742,12 +866,18 @@ class TestRangeMode:
 
     @pytest.mark.asyncio
     async def test_range_mode_returns_all_bars_until_series_completed(self) -> None:
-        """Range mode collects all bars and terminates on series_completed."""
+        """Range mode collects all bars and terminates on the second series_completed.
+
+        TradingView sends two series_completed events in range mode: the first for
+        create_series (recent bars, discarded) and the second for modify_series
+        (the requested historical range).
+        """
         messages: list[dict[str, Any]] = [
             SERIES_LOADING_MSG,
+            SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=10),
             make_range_timescale_update(bars_count=5),
-            SERIES_COMPLETED_MSG,
+            SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_client(messages)
 
@@ -762,8 +892,9 @@ class TestRangeMode:
     async def test_range_mode_passes_range_param_to_prepare_chart_session(self) -> None:
         """Range mode passes a non-empty range_param to _prepare_chart_session."""
         messages: list[dict[str, Any]] = [
+            SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=3),
-            SERIES_COMPLETED_MSG,
+            SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         prepare_mock: AsyncMock = AsyncMock()
         client: OHLCV = OHLCV()
@@ -789,8 +920,9 @@ class TestRangeMode:
         from tvkit.api.chart.utils import MAX_BARS_REQUEST
 
         messages: list[dict[str, Any]] = [
+            SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=3),
-            SERIES_COMPLETED_MSG,
+            SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         prepare_mock: AsyncMock = AsyncMock()
         client: OHLCV = OHLCV()
@@ -820,9 +952,10 @@ class TestRangeMode:
 
         # Produce more bars than MAX_BARS_REQUEST in a single batch
         messages: list[dict[str, Any]] = [
+            SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=MAX_BARS_REQUEST + 1),
             make_range_timescale_update(bars_count=2),
-            SERIES_COMPLETED_MSG,
+            SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_client(messages)
 
@@ -929,8 +1062,9 @@ class TestRangeMode:
         are returned than the window could theoretically contain.
         """
         messages: list[dict[str, Any]] = [
+            SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=2),
-            SERIES_COMPLETED_MSG,
+            SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_client(messages)
 
@@ -963,17 +1097,18 @@ class TestRangeMode:
         assert _HISTORICAL_RANGE_TIMEOUT_SECONDS == 180
 
         messages: list[dict[str, Any]] = [
+            SERIES_COMPLETED_MSG,  # 1st iteration: first series_completed — bars discarded
             make_range_timescale_update(bars_count=3),
-            SERIES_LOADING_MSG,  # 2nd iteration: time check → 31.0 s (no timeout)
-            SERIES_COMPLETED_MSG,  # 3rd iteration: clean exit via series_completed
+            SERIES_LOADING_MSG,  # 3rd iteration: time check → 31.0 s (no timeout)
+            SERIES_COMPLETED_MSG,  # 4th iteration: second series_completed — break
         ]
         client: OHLCV = _make_client(messages)
 
         mock_loop: MagicMock = MagicMock()
-        # start=0.0, check at msg-1=31.0 (31>180? NO), check at msg-2=32.0 (32>180? NO),
-        # check at msg-3=33.0 → series_completed breaks before timeout fires.
-        # Extra value pads against StopIteration if a future impl adds a loop.time() call.
-        mock_loop.time.side_effect = [0.0, 31.0, 32.0, 33.0, 34.0]
+        # start=0.0, check at msg-1=1.0, msg-2=31.0 (31>180? NO), msg-3=32.0 (NO),
+        # msg-4=33.0 → second series_completed breaks before timeout fires.
+        # Extra values pad against StopIteration.
+        mock_loop.time.side_effect = [0.0, 1.0, 31.0, 32.0, 33.0, 34.0]
 
         with (
             patch.multiple("tvkit.api.chart.ohlcv", **make_patches()),

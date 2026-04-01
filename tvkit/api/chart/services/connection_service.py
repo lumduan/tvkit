@@ -156,6 +156,7 @@ class ConnectionService:
             ping_interval=20,
             ping_timeout=10,
             close_timeout=10,
+            max_size=None,
         )
         self._ws = await connect(**ws_config.model_dump())
 
@@ -511,7 +512,7 @@ class ConnectionService:
             chart_session: The chart session identifier (e.g. "cs_abcdefghijkl").
             timeframe: The interval string (e.g. "1D", "60", "1H").
             bars_count: Number of bars to request. In range mode this is MAX_BARS_REQUEST
-                and is ignored by TradingView once modify_series applies the range.
+                and is overridden by the subsequent modify_series range constraint.
 
         Returns:
             List of 7 elements:

@@ -111,8 +111,9 @@ class TestRangePostFilter:
     async def test_filter_removes_future_bars(self) -> None:
         """Bars from 2026 are removed when range is 2025-01-01 to 2025-12-31."""
         messages: list[dict[str, Any]] = [
+            _SERIES_COMPLETED,  # First: create_series response — bars discarded
             _make_timescale_update([TS_2025_JAN_01, TS_2025_DEC_31, TS_2026_JAN_01]),
-            _SERIES_COMPLETED,
+            _SERIES_COMPLETED,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_range_client(messages)
 
@@ -131,8 +132,9 @@ class TestRangePostFilter:
     async def test_filter_removes_past_bars(self) -> None:
         """Bars from before start date are removed."""
         messages: list[dict[str, Any]] = [
+            _SERIES_COMPLETED,  # First: create_series response — bars discarded
             _make_timescale_update([TS_2024_DEC_31, TS_2025_JAN_01, TS_2025_DEC_31]),
-            _SERIES_COMPLETED,
+            _SERIES_COMPLETED,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_range_client(messages)
 
@@ -151,8 +153,9 @@ class TestRangePostFilter:
         """Bars at exactly start and end-of-day boundaries are kept."""
         eod_ts: int = end_of_day_timestamp("2025-12-31")
         messages: list[dict[str, Any]] = [
+            _SERIES_COMPLETED,  # First: create_series response — bars discarded
             _make_timescale_update([TS_2025_JAN_01, eod_ts]),
-            _SERIES_COMPLETED,
+            _SERIES_COMPLETED,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_range_client(messages)
 
@@ -170,8 +173,9 @@ class TestRangePostFilter:
     async def test_intraday_bars_on_end_day_are_kept(self) -> None:
         """Intraday bars on the last calendar day are included when end is date-only."""
         messages: list[dict[str, Any]] = [
+            _SERIES_COMPLETED,  # First: create_series response — bars discarded
             _make_timescale_update([TS_2025_JAN_01, TS_2025_DEC_31, TS_2025_DEC_31_16H]),
-            _SERIES_COMPLETED,
+            _SERIES_COMPLETED,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_range_client(messages)
 
@@ -193,8 +197,9 @@ class TestRangePostFilter:
         end_ts: int = to_unix_timestamp(end_str)
 
         messages: list[dict[str, Any]] = [
+            _SERIES_COMPLETED,  # First: create_series response — bars discarded
             _make_timescale_update([TS_2025_JAN_01, end_ts, TS_2025_DEC_31_16H]),
-            _SERIES_COMPLETED,
+            _SERIES_COMPLETED,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_range_client(messages)
 

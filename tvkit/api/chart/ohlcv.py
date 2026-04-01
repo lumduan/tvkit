@@ -67,6 +67,20 @@ _MONTHLY_WEEKLY_INTERVALS: frozenset[str] = frozenset(
     {"M", "1M", "2M", "3M", "6M", "W", "1W", "2W", "3W"}
 )
 
+# TradingView WebSocket protocol: datasource ID used in create_series and
+# request_more_data messages.  Keep in sync with
+# connection_service._SERIES_DATASOURCE_ID.
+_SERIES_DATASOURCE_ID: str = "sds_1"
+
+# WebSocket endpoints.
+# data.tradingview.com  — standard endpoint for anonymous / free accounts.
+# prodata.tradingview.com — premium endpoint; delivers the full account max_bars
+#   (e.g. 20,000 for pro_premium) in a single message batch.
+#   Authentication is identical: set_auth_token WebSocket message with the JWT.
+#   The URL path format is the same; only the subdomain differs.
+_STANDARD_WS_URL: str = "wss://data.tradingview.com/socket.io/websocket?from=chart%2F"
+_PRO_WS_URL: str = "wss://prodata.tradingview.com/socket.io/websocket?from=chart%2F"
+
 
 @dataclass(frozen=True)
 class _StreamingSession:
@@ -176,7 +190,7 @@ class OHLCV:
                 not ``"chrome"`` or ``"firefox"``; or if ``browser_profile`` is set
                 without a resolved ``browser``.
         """
-        self.ws_url: str = "wss://data.tradingview.com/socket.io/websocket?from=chart%2F"
+        self.ws_url: str = _STANDARD_WS_URL
         self.connection_service: ConnectionService | None = None
         self.message_service: MessageService | None = None
         self._max_attempts: int = max_attempts
@@ -234,6 +248,19 @@ class OHLCV:
             if self._auth_manager is not None
             else "unauthorized_user_token"
         )
+
+        # Switch to the premium endpoint for authenticated paid accounts.
+        # prodata.tradingview.com delivers the full account max_bars in a single
+        # large message batch (up to ~2 MB); data.tradingview.com caps at ~6,600
+        # bars regardless of account tier.
+        account = self._auth_manager.account if self._auth_manager is not None else None
+        if account is not None and account.tier != "free" and self.ws_url == _STANDARD_WS_URL:
+            self.ws_url = _PRO_WS_URL
+            logger.info(
+                "Authenticated as tier=%r — using premium WebSocket endpoint: %s",
+                account.tier,
+                _PRO_WS_URL,
+            )
 
         self.connection_service = ConnectionService(
             self.ws_url,
@@ -597,6 +624,12 @@ class OHLCV:
         loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         start_time: float = loop.time()
         series_completed_received: bool = False
+        # Range mode uses create_series + modify_series. TradingView sends two
+        # series_completed events: the first for create_series (recent bars we don't
+        # want) and the second for modify_series (the requested historical range).
+        # We discard everything accumulated before the first series_completed and
+        # only break on the second one, which carries the historical range bars.
+        series_completed_count: int = 0
 
         async for data in self.connection_service.get_data_stream():
             if loop.time() - start_time > _HISTORICAL_RANGE_TIMEOUT_SECONDS:
@@ -658,6 +691,19 @@ class OHLCV:
                     continue
 
                 elif message_type == "series_completed":
+                    series_completed_count += 1
+                    if series_completed_count == 1:
+                        # First completion is the create_series response (most-recent
+                        # bars). Discard and wait for the modify_series response which
+                        # carries the actual historical range data.
+                        logger.debug(
+                            "First series_completed (create_series) — discarding %d bars, "
+                            "waiting for modify_series response.",
+                            len(historical_bars),
+                        )
+                        historical_bars.clear()
+                        continue
+                    # Second series_completed is the modify_series response.
                     series_completed_received = True
                     logger.info(
                         "Series completed — received %d historical bars", len(historical_bars)
@@ -793,6 +839,13 @@ class OHLCV:
         loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         start_time: float = loop.time()
         series_completed_received: bool = False
+        # Set when bars_count is reached inside a timescale_update (large batch from
+        # prodata). In this case series_completed arrives later but we break early;
+        # the warning at the end of the loop must be suppressed.
+        bars_count_satisfied: bool = False
+        # Tracks bar count before each series_completed to detect empty chunks.
+        # TradingView sends bars in pages; request_more_data fetches earlier pages.
+        prev_bars_count: int = 0
 
         async for data in self.connection_service.get_data_stream():
             if loop.time() - start_time > _HISTORICAL_TIMEOUT_SECONDS:
@@ -821,7 +874,11 @@ class OHLCV:
                             logger.debug(f"Parsed OHLCV bar: {bar}")
                         historical_bars.extend(timescale_response.ohlcv_bars)
                         # In count mode, break early once enough bars are accumulated.
+                        # prodata delivers all bars in a single large message, so
+                        # series_completed may not have arrived yet — mark satisfied
+                        # so the post-loop warning is suppressed.
                         if len(historical_bars) >= bars_count:
+                            bars_count_satisfied = True
                             break
                     except ValidationError as e:
                         logger.warning(f"Failed to parse 'timescale_update' message: {e}")
@@ -857,10 +914,47 @@ class OHLCV:
 
                 elif message_type == "series_completed":
                     series_completed_received = True
+                    new_bars_this_chunk: int = len(historical_bars) - prev_bars_count
                     logger.info(
-                        "Series completed — received %d historical bars", len(historical_bars)
+                        "Series completed — %d new bars this chunk, %d total",
+                        new_bars_this_chunk,
+                        len(historical_bars),
                     )
-                    break
+
+                    if len(historical_bars) >= bars_count:
+                        break
+
+                    if new_bars_this_chunk == 0:
+                        # Server returned no new bars — history exhausted.
+                        logger.info(
+                            "No new bars in this chunk — server has exhausted available "
+                            "history at %d bars.",
+                            len(historical_bars),
+                        )
+                        break
+
+                    # More bars needed: request the next page of older history.
+                    prev_bars_count = len(historical_bars)
+                    remaining: int = bars_count - len(historical_bars)
+                    if self.message_service is not None and self._session is not None:
+                        logger.debug(
+                            "Requesting %d more bars via request_more_data",
+                            remaining,
+                        )
+                        await self.message_service.send_message(
+                            "request_more_data",
+                            [self._session.chart_session, _SERIES_DATASOURCE_ID, remaining],
+                        )
+                        # Reset the per-chunk timeout.
+                        start_time = loop.time()
+                    else:
+                        logger.warning(
+                            "Cannot send request_more_data — services unavailable. "
+                            "Returning %d bars.",
+                            len(historical_bars),
+                        )
+                        break
+                    continue
 
                 elif message_type == "study_completed":
                     logger.info("Study completed — terminating historical fetch")
@@ -898,7 +992,7 @@ class OHLCV:
                 )
                 continue
 
-        if not series_completed_received:
+        if not series_completed_received and not bars_count_satisfied:
             logger.warning(
                 "Stream ended without series_completed for %s (%s) — "
                 "data may be incomplete. Received %d bars.",

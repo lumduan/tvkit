@@ -71,3 +71,11 @@ class WebSocketConnection(BaseModel):
     ping_interval: int = Field(20, description="Ping interval in seconds")
     ping_timeout: int = Field(10, description="Ping timeout in seconds")
     close_timeout: int = Field(10, description="Close timeout in seconds")
+    max_size: int | None = Field(
+        None,
+        description=(
+            "Maximum WebSocket message size in bytes. None means unlimited. "
+            "The prodata.tradingview.com premium endpoint sends messages up to ~2 MB "
+            "per batch, so the websockets default of 1 MB must be lifted."
+        ),
+    )
