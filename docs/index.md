@@ -73,6 +73,7 @@ async with OHLCV() as client:
 - [Historical Data](guides/historical-data.md)
 - [Real-time Streaming](guides/realtime-streaming.md)
 - [Authenticated Sessions](guides/authenticated-sessions.md) — browser cookies, token injection, capability detection
+- [Google Colab / Hosted Notebooks](guides/notebook-colab.md) — export cookies from host and use in remote environments
 - [Scanner](guides/scanner.md)
 - [Exporting Data](guides/exporting.md)
 - [Macro Indicators](guides/macro-indicators.md)
