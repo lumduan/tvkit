@@ -126,6 +126,12 @@ Cookie extraction can fail due to:
 
 If browser extraction is unreliable in your environment, fall back to `cookies={...}` (inject a pre-extracted cookie dict) or `auth_token=...` (inject a direct token).
 
+### Direct Token Mode Does Not Use the Premium Endpoint
+
+When you authenticate via `OHLCV(auth_token=...)`, tvkit skips the profile fetch — `account` is `None` and the account tier is unknown. Without a confirmed tier, tvkit cannot switch to the `prodata.tradingview.com` premium endpoint. As a result, direct token sessions use the standard `data.tradingview.com` endpoint and are capped at 5,000 bars per segment, regardless of the actual account tier.
+
+To benefit from the premium endpoint (up to 10k–40k bars per fetch), use browser or cookie-dict mode instead, which performs a full profile fetch and populates `account.tier`.
+
 ### No Automatic Token Refresh
 
 For `auth_token=...` and `cookies={...}` modes, tvkit does not refresh the token or cookies automatically. If the token expires during a session, `AuthError` is raised. Re-enter the `OHLCV` context manager with a fresh token.

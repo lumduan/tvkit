@@ -102,11 +102,7 @@ class TokenProvider:
             )
 
         self._token = str(auth_token)
-        logger.info(
-            "TokenProvider: auth_token obtained: %s... (len=%d)",
-            self._token[:8],
-            len(self._token),
-        )
+        logger.info("TokenProvider: auth_token obtained (len=%d)", len(self._token))
         return profile
 
     async def get_valid_token(

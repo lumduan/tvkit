@@ -90,6 +90,20 @@ pending → success
 
 ---
 
+## Premium WebSocket Endpoint
+
+For authenticated accounts on a paid tier (`essential`, `pro`, `premium`, `ultimate`), tvkit automatically connects to `prodata.tradingview.com` instead of the standard `data.tradingview.com`. This endpoint delivers the full `max_bars` for your account in a single large message batch rather than requiring multiple paginated requests.
+
+| Session mode | WebSocket endpoint | Max bars per fetch |
+| --- | --- | --- |
+| Anonymous / free | `data.tradingview.com` | 5,000 |
+| Paid tier (browser / cookie-dict) | `prodata.tradingview.com` | Plan `max_bars` (10k–40k) |
+| Direct token (`auth_token=...`) | `data.tradingview.com` | 5,000 — no plan info available |
+
+> **Direct token limitation:** `auth_token=...` mode skips the profile fetch, so `account` is `None` and the tier is unknown. tvkit cannot switch to `prodata.tradingview.com` without a confirmed tier. Use browser or cookie-dict mode to benefit from the premium endpoint.
+
+---
+
 ## `wait_until_ready()`
 
 Call `wait_until_ready()` to block until the background probe finishes before issuing the first historical fetch:
