@@ -194,3 +194,6 @@ examples/tvkit_exports/
 
 # Override file for tvkit_exchange (keep local only)
 tvkit_exchange_overrides.yaml
+
+# Cookie files (keep local only)
+tv_cookies.json
