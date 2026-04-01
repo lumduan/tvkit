@@ -1,6 +1,6 @@
 [project]
 name = "tvkit"
-version = "0.6.0"
+version = "0.7.0"
 description = "tvkit is a Python library that fetches real-time stock data from TradingView, including price, market cap, P/E ratio, ROE, and more for stocks from multiple countries. Easily access and analyze financial metrics for global markets."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,6 +28,8 @@ dependencies = [
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
     "rich>=14.1.0",
+    "curl-cffi>=0.7.0",
+    "browser-cookie3>=0.20.1",
 ]
 
 [project.optional-dependencies]
@@ -98,3 +100,13 @@ indent-style = "space"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "strict"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17.1",
+    "pre-commit>=4.5.1",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.12.12",
+]

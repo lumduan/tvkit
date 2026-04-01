@@ -23,13 +23,13 @@ Separate from the per-request bar limit, TradingView imposes a server-side rolli
 
 Free/basic accounts can access approximately ≈5,000 bars backward from the current time. Paid tiers allow deeper history. The table below shows approximate accessible depth by interval and account tier:
 
-| Interval | Free / Basic | Essential / Plus | Premium | Expert | Ultimate |
-| -------- | ------------ | ---------------- | ------- | ------ | -------- |
-| 1 minute | ≈3.5 days | ≈17 days | ≈1 month | ≈3 months | ≈6 months |
-| 5 minutes | ≈17 days | ≈3 months | ≈6 months | ≈1 year | ≈2 years |
-| 15 minutes | ≈52 days | ≈9 months | ≈1.5 years | ≈3 years | ≈6 years |
-| 1 hour | ≈7 months | ≈3 years | ≈6 years | ≈12 years | ≈24 years |
-| 1 day | ≈27 years | Unlimited | Unlimited | Unlimited | Unlimited |
+| Interval | Basic (free) | Essential / Plus | Premium | Ultimate |
+| -------- | ------------ | ---------------- | ------- | -------- |
+| 1 minute | ≈3.5 days | ≈17 days | ≈1 month | ≈6 months |
+| 5 minutes | ≈17 days | ≈3 months | ≈6 months | ≈2 years |
+| 15 minutes | ≈52 days | ≈9 months | ≈1.5 years | ≈6 years |
+| 1 hour | ≈7 months | ≈3 years | ≈6 years | ≈24 years |
+| 1 day | ≈27 years | Unlimited | Unlimited | Unlimited |
 
 These are approximate, empirical values. TradingView does not publish official figures and limits may change.
 
@@ -59,7 +59,7 @@ TradingView does not publish official rate limit figures. The values below are e
 TradingView delivers data in two modes depending on your account:
 
 | Data Type | Free Account | Paid Account |
-|-----------|-------------|-------------|
+| --------- | ------------ | ------------ |
 | US equities | 15-minute delay | Real-time |
 | Most international equities | 15-minute delay | Real-time or exchange-dependent delay |
 | Crypto | Real-time | Real-time |
@@ -103,6 +103,52 @@ tvkit requires an `asyncio` event loop. It is not compatible with synchronous co
 TradingView aggregates data from multiple exchange feeds and providers. In rare cases, bars may differ slightly from exchange-native feeds or other data vendors due to this aggregation.
 
 tvkit does not modify or normalize TradingView data beyond structural parsing into typed `OHLCV` objects. What TradingView returns is what tvkit delivers.
+
+## Authentication Limitations
+
+The following limitations apply when using authenticated sessions (v0.7.0+). See [Authenticated Sessions Guide](guides/authenticated-sessions.md) for usage details and [Account Capabilities](concepts/capabilities.md) for the plan-to-limit mapping.
+
+### Browser Login Required Before Running tvkit
+
+In browser mode, you must be logged in to TradingView in Chrome or Firefox before calling `OHLCV(browser=...)`. tvkit reads your existing browser session — it does not perform a browser-based login itself. If the session is missing or expired, `BrowserCookieError` is raised.
+
+### Chrome and Firefox Only (v0.7.0)
+
+Only Chrome and Firefox are supported in v0.7.0. Safari, Edge, and Brave are not supported; support may be added in a future version. As a fallback, use `cookies={...}` or `auth_token=...`.
+
+### `browser_cookie3` Fragility
+
+Cookie extraction can fail due to:
+
+- Chrome or Firefox updates that change the cookie database format
+- macOS Keychain access prompts being dismissed
+- Browser database lock when the browser is running on some Linux setups
+
+If browser extraction is unreliable in your environment, fall back to `cookies={...}` (inject a pre-extracted cookie dict) or `auth_token=...` (inject a direct token).
+
+### Direct Token Mode Does Not Use the Premium Endpoint
+
+When you authenticate via `OHLCV(auth_token=...)`, tvkit skips the profile fetch — `account` is `None` and the account tier is unknown. Without a confirmed tier, tvkit cannot switch to the `prodata.tradingview.com` premium endpoint. As a result, direct token sessions use the standard `data.tradingview.com` endpoint and are capped at 5,000 bars per segment, regardless of the actual account tier.
+
+To benefit from the premium endpoint (up to 10k–40k bars per fetch), use browser or cookie-dict mode instead, which performs a full profile fetch and populates `account.tier`.
+
+### No Automatic Token Refresh
+
+For `auth_token=...` and `cookies={...}` modes, tvkit does not refresh the token or cookies automatically. If the token expires during a session, `AuthError` is raised. Re-enter the `OHLCV` context manager with a fresh token.
+
+### No Token Persistence Across Sessions
+
+tvkit never caches credentials to disk. Browser cookie extraction runs on every `OHLCV()` context manager entry. (The probe result cache stores only the confirmed `max_bars` integer, not credentials.)
+
+### Background Probe Timing
+
+The first historical fetch may use the plan-based `max_bars` estimate rather than the probe-confirmed value if the probe has not yet completed. Call `await client.wait_until_ready()` before the first fetch to guarantee a probe-confirmed segment size. See [Account Capabilities — wait_until_ready()](concepts/capabilities.md#wait_until_ready).
+
+### Homepage Bootstrap Parsing Fragility
+
+tvkit uses a 4-strategy fallback to extract the user profile from the TradingView homepage HTML. If TradingView changes its frontend structure, later strategies are tried automatically, but parsing may fail entirely and raise `ProfileFetchError`. Monitor `WARNING` log messages for strategy indices above `0` — these indicate a degraded extraction path that may break on the next TradingView frontend update.
+
+---
 
 ## See Also
 

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-04-01
+
+### Added
+
+- **Authentication module** (`tvkit.auth`) — authenticate with a TradingView account using browser cookie extraction (Chrome/Firefox) or direct token injection
+  - `OHLCV(browser="chrome")` / `OHLCV(browser="firefox")` — extracts session cookies from the user's already-logged-in browser
+  - `OHLCV(browser="chrome", browser_profile="Profile 2")` — multi-profile support
+  - `OHLCV(cookies={...})` — manual cookie dict injection for headless/CI environments
+  - `OHLCV(auth_token=...)` — direct token injection; bypasses all cookie steps
+  - `TVKIT_BROWSER` / `TVKIT_AUTH_TOKEN` environment variables as credential source
+  - 2FA transparent — browser session is already authenticated; tvkit inherits it
+- **Capability detection** — automatic account plan detection and background WebSocket probe
+  - Plan-based `max_bars` estimate available immediately after `__aenter__` (~200–500ms)
+  - Background probe on a dedicated short-lived connection confirms the actual server limit
+  - Adaptive probe: tries `bars_count` 50k → 40k → 20k; symbol fallback chain AAPL → BTCUSDT → SPX
+  - `account.max_bars` updated atomically under `asyncio.Lock`
+  - `account.probe_status`: `pending` → `success` / `throttled` / `failed`
+  - Optional probe result disk cache (`~/.cache/tvkit/capabilities.json`; 24h TTL)
+- **Premium WebSocket endpoint** — paid accounts (`tier != "free"`) automatically connect to `prodata.tradingview.com`, which delivers the full account `max_bars` (up to 40,000) in a single large message batch without requiring pagination. Authentication is identical: `set_auth_token` WebSocket message with the JWT.
+- **`request_more_data` pagination** — `get_historical_ohlcv()` now correctly fetches all requested bars across multiple server pages. TradingView serves bars in chunks; tvkit sends `request_more_data` after each `series_completed` until the requested count is satisfied or the server is exhausted.
+- **`OHLCV.wait_until_ready()`** — blocks until the background capability probe completes; never raises
+- **`OHLCV.account`** property — exposes `TradingViewAccount | None` with plan and capability data; `None` for anonymous and direct-token sessions
+- **`SegmentedFetchService`** now snapshots `auth_manager.account.max_bars` at each fetch start — stable segment boundaries even if the background probe updates `max_bars` mid-flight; `_needs_segmentation` threshold is also account-aware
+- **Typed exceptions**: `BrowserCookieError`, `ProfileFetchError`, `CapabilityProbeError` (all extend `AuthError`)
+
+### Changed
+
+- `ConnectionService.__init__` — new optional `auth_token` parameter (default: `"unauthorized_user_token"` — backward compatible); WebSocket auth errors now raise `AuthError` instead of triggering transparent re-extraction
+- `OHLCV.__init__` — new optional credential parameters: `browser`, `browser_profile`, `cookies`, `auth_token` (all default to `None` — backward compatible)
+- `WebSocketConnection.max_size` — set to `None` (unlimited) to handle large `prodata.tradingview.com` message batches (~1.9 MB for 20,000 bars)
+
+### Dependencies
+
+- `browser-cookie3>=0.20.1` — added for browser cookie extraction (Chrome/Firefox)
+
+---
+
 ## [0.6.0] - 2026-03-12
 
 ### Added

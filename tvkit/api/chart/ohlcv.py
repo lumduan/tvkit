@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import math
+import os
 import types
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from tvkit.api.chart.utils import (
     validate_interval,
 )
 from tvkit.api.utils import convert_symbol_format, validate_symbols
+from tvkit.auth import AuthManager, TradingViewAccount, TradingViewCredentials
 from tvkit.time import ensure_utc
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -64,6 +66,20 @@ def _normalize_input(dt: datetime | str) -> datetime:
 _MONTHLY_WEEKLY_INTERVALS: frozenset[str] = frozenset(
     {"M", "1M", "2M", "3M", "6M", "W", "1W", "2W", "3W"}
 )
+
+# TradingView WebSocket protocol: datasource ID used in create_series and
+# request_more_data messages.  Keep in sync with
+# connection_service._SERIES_DATASOURCE_ID.
+_SERIES_DATASOURCE_ID: str = "sds_1"
+
+# WebSocket endpoints.
+# data.tradingview.com  — standard endpoint for anonymous / free accounts.
+# prodata.tradingview.com — premium endpoint; delivers the full account max_bars
+#   (e.g. 20,000 for pro_premium) in a single message batch.
+#   Authentication is identical: set_auth_token WebSocket message with the JWT.
+#   The URL path format is the same; only the subdomain differs.
+_STANDARD_WS_URL: str = "wss://data.tradingview.com/socket.io/websocket?from=chart%2F"
+_PRO_WS_URL: str = "wss://prodata.tradingview.com/socket.io/websocket?from=chart%2F"
 
 
 @dataclass(frozen=True)
@@ -103,6 +119,20 @@ class OHLCV:
 
     This class provides async generators for streaming live market data including
     OHLCV bars, quote data, and trade information from TradingView.
+
+    Supports optional account authentication. Pass ``browser``, ``cookies``, or
+    ``auth_token`` (as keyword arguments) to use an authenticated session.  When
+    no explicit credential is provided *and* no ``TVKIT_BROWSER`` or
+    ``TVKIT_AUTH_TOKEN`` environment variable is set, the session runs in anonymous
+    mode (5,000-bar limit). If an env var is set, it is used automatically.
+
+    ``TVKIT_BROWSER`` and ``TVKIT_AUTH_TOKEN`` are mutually exclusive — setting
+    both without an explicit credential kwarg raises ``ValueError`` at construction.
+
+    Using ``async with`` is recommended — it guarantees the background capability
+    probe is cancelled on exit. Calling data methods without entering the context
+    manager is still supported; authentication is initialized lazily on the first
+    ``_setup_services`` call in that case.
     """
 
     def __init__(
@@ -110,12 +140,25 @@ class OHLCV:
         max_attempts: int = 5,
         base_backoff: float = 1.0,
         max_backoff: float = 30.0,
+        *,
+        browser: str | None = None,
+        browser_profile: str | None = None,
+        cookies: dict[str, str] | None = None,
+        auth_token: str | None = None,
     ) -> None:
         """
         Initializes the OHLCV client with WebSocket connection parameters.
 
         All retry parameters are optional with safe defaults. Existing call sites
-        require no changes — ``OHLCV()`` works identically to before.
+        require no changes — ``OHLCV()`` and ``OHLCV(3, 2.0, 60.0)`` work
+        identically to before. Authentication parameters are keyword-only.
+
+        Credential resolution order (applied once at construction):
+
+        1. Constructor kwargs (``browser``, ``cookies``, ``auth_token``)
+        2. Environment variables (``TVKIT_BROWSER``, ``TVKIT_AUTH_TOKEN``) — only
+           consulted when **no** explicit credential kwarg is provided
+        3. Anonymous mode (``"unauthorized_user_token"``)
 
         Args:
             max_attempts: Total WebSocket connection attempts before raising
@@ -125,36 +168,103 @@ class OHLCV:
                 (default: 1.0).
             max_backoff: Maximum retry delay cap in seconds. Applied before and
                 after jitter (default: 30.0).
+            browser: Browser to extract session cookies from. Must be
+                ``"chrome"`` or ``"firefox"``. Mutually exclusive with ``cookies``
+                and ``auth_token``. When ``None`` and no other credential kwarg is
+                provided, ``TVKIT_BROWSER`` is used as fallback.
+            browser_profile: Specific browser profile name (e.g. ``"Default"``,
+                ``"Profile 2"``). Must be paired with a resolved ``browser`` value
+                (from kwarg or ``TVKIT_BROWSER``). Raises ``ValueError`` if
+                ``browser_profile`` is set but no browser is resolved.
+            cookies: Pre-extracted cookie dict. Mutually exclusive with
+                ``browser`` and ``auth_token``.
+            auth_token: Pre-obtained TradingView auth token. Mutually exclusive
+                with ``browser`` and ``cookies``. When ``None`` and no other
+                credential kwarg is provided, ``TVKIT_AUTH_TOKEN`` is used as
+                fallback.
+
+        Raises:
+            ValueError: If more than one of ``browser``, ``cookies``, or
+                ``auth_token`` is provided (including via env vars — ``TVKIT_BROWSER``
+                and ``TVKIT_AUTH_TOKEN`` are mutually exclusive); if ``browser`` is
+                not ``"chrome"`` or ``"firefox"``; or if ``browser_profile`` is set
+                without a resolved ``browser``.
         """
-        self.ws_url: str = "wss://data.tradingview.com/socket.io/websocket?from=chart%2F"
+        self.ws_url: str = _STANDARD_WS_URL
         self.connection_service: ConnectionService | None = None
         self.message_service: MessageService | None = None
         self._max_attempts: int = max_attempts
         self._base_backoff: float = base_backoff
         self._max_backoff: float = max_backoff
         self._session: _StreamingSession | None = None
+        self._credentials: TradingViewCredentials = self._resolve_credentials(
+            browser, browser_profile, cookies, auth_token
+        )
+        self._auth_manager: AuthManager | None = None
 
     async def __aenter__(self) -> "OHLCV":
-        """Async context manager entry."""
+        """Async context manager entry. Authenticates and returns self.
+
+        If ``AuthManager`` was already lazily initialized by a prior
+        ``_setup_services`` call, the existing instance is reused — it is not
+        entered a second time and no new probe task is spawned.
+        """
+        if self._auth_manager is None:
+            self._auth_manager = AuthManager(self._credentials)
+            await self._auth_manager.__aenter__()
         return self
 
     async def __aexit__(
         self,
-        exc_type: type | None,
+        exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: types.TracebackType | None,
     ) -> None:
-        """Async context manager exit."""
+        """Async context manager exit. Cancels probe task and closes connection."""
         self._session = None
+        if self._auth_manager is not None:
+            await self._auth_manager.__aexit__(exc_type, exc_val, exc_tb)
+        self._auth_manager = None
         if self.connection_service:
             await self.connection_service.close()
 
     async def _setup_services(self) -> None:
-        """Initialize and connect the services, closing any existing connection first."""
+        """Initialize and connect the services, closing any existing connection first.
+
+        If credentials are configured and ``AuthManager`` has not been entered yet
+        (i.e. ``__aenter__`` was not called), authentication is initialized lazily
+        here. This preserves backward compatibility for callers that do not use
+        ``async with``.
+        """
         if self.connection_service is not None:
             await self.connection_service.close()
+
+        if not self._credentials.is_anonymous and self._auth_manager is None:
+            self._auth_manager = AuthManager(self._credentials)
+            await self._auth_manager.__aenter__()
+
+        auth_token: str = (
+            self._auth_manager.auth_token
+            if self._auth_manager is not None
+            else "unauthorized_user_token"
+        )
+
+        # Switch to the premium endpoint for authenticated paid accounts.
+        # prodata.tradingview.com delivers the full account max_bars in a single
+        # large message batch (up to ~2 MB); data.tradingview.com caps at ~6,600
+        # bars regardless of account tier.
+        account = self._auth_manager.account if self._auth_manager is not None else None
+        if account is not None and account.tier != "free" and self.ws_url == _STANDARD_WS_URL:
+            self.ws_url = _PRO_WS_URL
+            logger.info(
+                "Authenticated as tier=%r — using premium WebSocket endpoint: %s",
+                account.tier,
+                _PRO_WS_URL,
+            )
+
         self.connection_service = ConnectionService(
             self.ws_url,
+            auth_token=auth_token,
             max_attempts=self._max_attempts,
             base_backoff=self._base_backoff,
             max_backoff=self._max_backoff,
@@ -164,6 +274,104 @@ class OHLCV:
         if self.connection_service.ws is None:
             raise RuntimeError("WebSocket connection not established after connect()")
         self.message_service = MessageService(self.connection_service.ws)
+
+    def _resolve_credentials(
+        self,
+        browser: str | None,
+        browser_profile: str | None,
+        cookies: dict[str, str] | None,
+        auth_token: str | None,
+    ) -> TradingViewCredentials:
+        """Build TradingViewCredentials from constructor args + env vars.
+
+        Env vars are only consulted when no explicit credential source
+        (``browser``, ``cookies``, or ``auth_token``) was provided by the caller.
+        This prevents silent XOR violations when an env var is set alongside a
+        credential kwarg.
+
+        Args:
+            browser: Browser name or None.
+            browser_profile: Browser profile name or None.
+            cookies: Pre-extracted cookie dict or None.
+            auth_token: Direct token string or None.
+
+        Returns:
+            Resolved ``TradingViewCredentials`` instance.
+
+        Raises:
+            ValueError: If the resolved credential combination is invalid.
+        """
+        no_explicit_source = browser is None and cookies is None and auth_token is None
+        resolved_browser = browser or (
+            os.environ.get("TVKIT_BROWSER") if no_explicit_source else None
+        )
+        resolved_token = auth_token or (
+            os.environ.get("TVKIT_AUTH_TOKEN") if no_explicit_source else None
+        )
+        return TradingViewCredentials(
+            browser=resolved_browser,
+            browser_profile=browser_profile,
+            cookies=cookies,
+            auth_token=resolved_token,
+        )
+
+    @property
+    def account(self) -> TradingViewAccount | None:
+        """Authenticated account profile, or None.
+
+        Returns ``None`` when:
+
+        - Called before ``__aenter__`` or after ``__aexit__``.
+        - Session is anonymous (no credentials provided and no env vars set).
+        - Session uses direct token injection (no profile fetch performed).
+
+        Populated after ``__aenter__`` for browser and cookie-dict modes.
+
+        Returns:
+            ``TradingViewAccount`` with tier, max_bars, and probe status, or
+            ``None``.
+        """
+        if self._auth_manager is None:
+            return None
+        return self._auth_manager.account
+
+    async def wait_until_ready(self) -> None:
+        """Wait until the background capability probe completes.
+
+        Returns immediately if:
+
+        - No probe is running (anonymous session or direct token injection).
+        - Probe already finished (success or failure).
+        - Called before ``__aenter__``.
+
+        Swallows probe failure and probe-task cancellation (the expected shutdown
+        path when ``__aexit__`` cancels the probe). Caller-task cancellation is
+        re-raised so cooperative cancellation is preserved.
+
+        Use this when probe-confirmed ``max_bars`` is required before the first
+        fetch.
+
+        Example:
+            >>> async with OHLCV(browser="chrome") as client:
+            ...     await client.wait_until_ready()
+            ...     bars = await client.get_historical_ohlcv(
+            ...         "NASDAQ:AAPL", "1", bars_count=100_000
+            ...     )
+        """
+        if self._auth_manager is None:
+            return
+        probe_task = self._auth_manager._probe_task
+        if probe_task is None:
+            return
+        try:
+            await asyncio.shield(probe_task)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None and current.cancelling() > 0:
+                raise  # caller task was cancelled — propagate
+            return  # probe was cancelled (e.g. by __aexit__) — non-fatal
+        except Exception:
+            return  # probe failed — non-fatal
 
     async def _restore_session(self) -> None:
         """Re-establish the chart session after a WebSocket reconnect.
@@ -317,7 +525,12 @@ class OHLCV:
 
     def _needs_segmentation(self, start: datetime, end: datetime, interval: str) -> bool:
         """
-        Return True if the estimated bar count for the range exceeds MAX_BARS_REQUEST.
+        Return True if the estimated bar count for the range exceeds the effective threshold.
+
+        The threshold is ``auth_manager.account.max_bars`` for authenticated sessions
+        (probe-confirmed or plan estimate), and ``MAX_BARS_REQUEST`` (5000) for anonymous
+        sessions. This ensures that Premium users with ``max_bars=20000`` are not routed
+        to segmented fetch for ranges that fit within their actual account limit.
 
         Monthly and weekly intervals always return False — they never accumulate enough
         bars to require segmentation, and variable-length durations complicate segment
@@ -348,7 +561,12 @@ class OHLCV:
         if range_secs <= 0:
             return False  # start == end or start > end — zero or negative bars, no segmentation
         estimated_bars: int = math.ceil(range_secs / interval_secs)
-        return estimated_bars > MAX_BARS_REQUEST
+        threshold: int = (
+            self._auth_manager.account.max_bars
+            if self._auth_manager is not None and self._auth_manager.account is not None
+            else MAX_BARS_REQUEST
+        )
+        return estimated_bars > threshold
 
     async def _fetch_single_range(
         self,
@@ -406,6 +624,12 @@ class OHLCV:
         loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         start_time: float = loop.time()
         series_completed_received: bool = False
+        # Range mode uses create_series + modify_series. TradingView sends two
+        # series_completed events: the first for create_series (recent bars we don't
+        # want) and the second for modify_series (the requested historical range).
+        # We discard everything accumulated before the first series_completed and
+        # only break on the second one, which carries the historical range bars.
+        series_completed_count: int = 0
 
         async for data in self.connection_service.get_data_stream():
             if loop.time() - start_time > _HISTORICAL_RANGE_TIMEOUT_SECONDS:
@@ -467,6 +691,19 @@ class OHLCV:
                     continue
 
                 elif message_type == "series_completed":
+                    series_completed_count += 1
+                    if series_completed_count == 1:
+                        # First completion is the create_series response (most-recent
+                        # bars). Discard and wait for the modify_series response which
+                        # carries the actual historical range data.
+                        logger.debug(
+                            "First series_completed (create_series) — discarding %d bars, "
+                            "waiting for modify_series response.",
+                            len(historical_bars),
+                        )
+                        historical_bars.clear()
+                        continue
+                    # Second series_completed is the modify_series response.
                     series_completed_received = True
                     logger.info(
                         "Series completed — received %d historical bars", len(historical_bars)
@@ -602,6 +839,13 @@ class OHLCV:
         loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         start_time: float = loop.time()
         series_completed_received: bool = False
+        # Set when bars_count is reached inside a timescale_update (large batch from
+        # prodata). In this case series_completed arrives later but we break early;
+        # the warning at the end of the loop must be suppressed.
+        bars_count_satisfied: bool = False
+        # Tracks bar count before each series_completed to detect empty chunks.
+        # TradingView sends bars in pages; request_more_data fetches earlier pages.
+        prev_bars_count: int = 0
 
         async for data in self.connection_service.get_data_stream():
             if loop.time() - start_time > _HISTORICAL_TIMEOUT_SECONDS:
@@ -630,7 +874,11 @@ class OHLCV:
                             logger.debug(f"Parsed OHLCV bar: {bar}")
                         historical_bars.extend(timescale_response.ohlcv_bars)
                         # In count mode, break early once enough bars are accumulated.
+                        # prodata delivers all bars in a single large message, so
+                        # series_completed may not have arrived yet — mark satisfied
+                        # so the post-loop warning is suppressed.
                         if len(historical_bars) >= bars_count:
+                            bars_count_satisfied = True
                             break
                     except ValidationError as e:
                         logger.warning(f"Failed to parse 'timescale_update' message: {e}")
@@ -666,10 +914,47 @@ class OHLCV:
 
                 elif message_type == "series_completed":
                     series_completed_received = True
+                    new_bars_this_chunk: int = len(historical_bars) - prev_bars_count
                     logger.info(
-                        "Series completed — received %d historical bars", len(historical_bars)
+                        "Series completed — %d new bars this chunk, %d total",
+                        new_bars_this_chunk,
+                        len(historical_bars),
                     )
-                    break
+
+                    if len(historical_bars) >= bars_count:
+                        break
+
+                    if new_bars_this_chunk == 0:
+                        # Server returned no new bars — history exhausted.
+                        logger.info(
+                            "No new bars in this chunk — server has exhausted available "
+                            "history at %d bars.",
+                            len(historical_bars),
+                        )
+                        break
+
+                    # More bars needed: request the next page of older history.
+                    prev_bars_count = len(historical_bars)
+                    remaining: int = bars_count - len(historical_bars)
+                    if self.message_service is not None and self._session is not None:
+                        logger.debug(
+                            "Requesting %d more bars via request_more_data",
+                            remaining,
+                        )
+                        await self.message_service.send_message(
+                            "request_more_data",
+                            [self._session.chart_session, _SERIES_DATASOURCE_ID, remaining],
+                        )
+                        # Reset the per-chunk timeout.
+                        start_time = loop.time()
+                    else:
+                        logger.warning(
+                            "Cannot send request_more_data — services unavailable. "
+                            "Returning %d bars.",
+                            len(historical_bars),
+                        )
+                        break
+                    continue
 
                 elif message_type == "study_completed":
                     logger.info("Study completed — terminating historical fetch")
@@ -707,7 +992,7 @@ class OHLCV:
                 )
                 continue
 
-        if not series_completed_received:
+        if not series_completed_received and not bars_count_satisfied:
             logger.warning(
                 "Stream ended without series_completed for %s (%s) — "
                 "data may be incomplete. Received %d bars.",

@@ -3,6 +3,7 @@
 from datetime import datetime
 
 __all__ = [
+    "AuthError",
     "ChartError",
     "NoHistoricalDataError",
     "RangeTooLargeError",
@@ -13,6 +14,28 @@ __all__ = [
 
 class ChartError(Exception):
     """Base exception for all chart-related errors in tvkit."""
+
+
+class AuthError(ChartError):
+    """
+    Raised when TradingView rejects the authentication token over the WebSocket.
+
+    Detected by ``ConnectionService`` when an authentication error frame is received
+    (``error_code: "unauthorized_access"`` or a ``set_auth_token`` error response).
+    The connection is closed by the ``get_data_stream()`` ``finally`` block before
+    this exception propagates to the caller.
+
+    Callers must re-enter the OHLCV context manager with fresh credentials —
+    there is no transparent re-extraction.
+
+    Example:
+        >>> try:
+        ...     async for bar in client.get_ohlcv("NASDAQ:AAPL"):
+        ...         process(bar)
+        ... except AuthError:
+        ...     # Credentials expired — re-enter the context manager
+        ...     pass
+    """
 
 
 class NoHistoricalDataError(RuntimeError):

@@ -305,19 +305,22 @@ class TestConvertToTimezone:
 
     def test_idempotency_data_corruption(self, df_seconds: pl.DataFrame) -> None:
         """
-        Calling convert_to_timezone on an already-converted Datetime column silently
-        corrupts data rather than raising. Polars treats the Datetime column's internal
-        microsecond integer as a raw epoch value, producing timestamps so far in the future
-        they overflow Python's datetime range (OverflowError on value access).
+        Calling convert_to_timezone on an already-converted Datetime column must
+        not silently produce a usable result.
 
-        API contract: convert_to_timezone expects an integer/float epoch column.
-        Never call it twice on the same column.
+        Polars behaviour varies by version:
+        - Older Polars: pl.from_epoch treats the datetime's internal microsecond
+          integer as a raw epoch, silently producing a corrupted value that overflows
+          Python's datetime range (OverflowError on value access).
+        - Newer Polars: pl.from_epoch explicitly rejects the operation and raises
+          InvalidOperationError during the conversion itself.
+
+        Both outcomes satisfy the API contract: convert_to_timezone expects an
+        integer/float epoch column. Never call it twice on the same column.
         """
         converted = convert_to_timezone(df_seconds, "Asia/Bangkok")
-        corrupted = convert_to_timezone(converted, "Asia/Bangkok")
-        # The second conversion succeeds at the Polars level but the stored value
-        # is out of Python's representable datetime range
-        with pytest.raises(OverflowError):
+        with pytest.raises((OverflowError, pl.exceptions.InvalidOperationError)):
+            corrupted = convert_to_timezone(converted, "Asia/Bangkok")
             _ = corrupted["timestamp"][0]
 
 

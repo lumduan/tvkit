@@ -62,6 +62,7 @@ async with OHLCV() as client:
 - [Streaming vs Historical](concepts/streaming-vs-historical.md)
 - [Scanner Columns](concepts/scanner-columns.md)
 - [Timezones](concepts/timezones.md) — UTC internal model; how to convert OHLCV timestamps to exchange or local time
+- [Account Capabilities](concepts/capabilities.md) — TradingView plan tiers, bar limits, and capability detection
 
 ---
 
@@ -71,6 +72,7 @@ async with OHLCV() as client:
 
 - [Historical Data](guides/historical-data.md)
 - [Real-time Streaming](guides/realtime-streaming.md)
+- [Authenticated Sessions](guides/authenticated-sessions.md) — browser cookies, token injection, capability detection
 - [Scanner](guides/scanner.md)
 - [Exporting Data](guides/exporting.md)
 - [Macro Indicators](guides/macro-indicators.md)
@@ -82,6 +84,7 @@ async with OHLCV() as client:
 *Complete API specifications — method signatures, parameters, return types, and exceptions.*
 
 - [Chart API — OHLCV Client](reference/chart/ohlcv.md)
+- [Authentication — tvkit.auth](reference/auth/index.md)
 - [Scanner API](reference/scanner/scanner.md)
 - [Export API](reference/export/exporter.md)
 - [Timezone Utilities — tvkit.time](reference/time/index.md)
