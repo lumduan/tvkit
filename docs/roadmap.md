@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.7.0** — Authentication
 - **v0.6.0** — Timezone Handling
 - **v0.5.0** — Segmented Historical Fetch
 - **v0.4.0** — Connection retry with exponential backoff for `OHLCV` WebSocket client
@@ -20,13 +21,6 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 ---
 
 ## In Progress
-
-#### TradingView Account Authentication
-
-Accessing premium data requires a TradingView account. tvkit will support user authentication to enable features gated behind login, such as:
-
-- Extended historical data
-- Additional markets and indicators
 
 ---
 
