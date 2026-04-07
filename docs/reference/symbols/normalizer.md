@@ -1,7 +1,7 @@
 # `tvkit.symbols` — Symbol Normalization
 
 **Module:** `tvkit.symbols`
-**Phase:** 1 (exchange-aware inputs only)
+**Phase:** 2 (bare-ticker resolution + env var support)
 **Source:** `tvkit/symbols/`
 
 ---
@@ -9,7 +9,7 @@
 ## Overview
 
 `tvkit.symbols` provides a synchronous, pure-string normalization layer that converts any
-exchange-aware TradingView instrument reference to the canonical `EXCHANGE:SYMBOL` form
+TradingView instrument reference to the canonical `EXCHANGE:SYMBOL` form
 (uppercase, colon-separated).
 
 It is a **leaf module** — it imports nothing from `tvkit.api` or `tvkit.export`, so it can
@@ -34,7 +34,7 @@ normalize_symbol("  NASDAQ:AAPL  ")
 normalize_symbols(["NASDAQ:AAPL", "BINANCE:btcusdt"])
 # → ["NASDAQ:AAPL", "BINANCE:BTCUSDT"]
 
-# Error on bare ticker (no exchange prefix)
+# Error on bare ticker (no exchange prefix, no default_exchange configured)
 try:
     normalize_symbol("AAPL")
 except SymbolNormalizationError as exc:
@@ -42,6 +42,28 @@ except SymbolNormalizationError as exc:
     print(exc.original)  # AAPL
     print(exc.reason)    # no exchange prefix
 ```
+
+### Bare-ticker resolution (Phase 2)
+
+```python
+from tvkit.symbols import NormalizationConfig, normalize_symbol
+
+# Via explicit config
+config = NormalizationConfig(default_exchange="NASDAQ")
+normalize_symbol("AAPL", config=config)   # → "NASDAQ:AAPL"
+normalize_symbol("aapl", config=config)   # → "NASDAQ:AAPL"
+
+# Via environment variable TVKIT_DEFAULT_EXCHANGE
+# (set before calling — read lazily at NormalizationConfig() construction time)
+import os
+os.environ["TVKIT_DEFAULT_EXCHANGE"] = "NASDAQ"
+config = NormalizationConfig()            # reads env var
+normalize_symbol("AAPL", config=config)   # → "NASDAQ:AAPL"
+```
+
+> **Note:** Exchange-aware symbols (colon or dash notation) are **never** overridden by
+> `default_exchange`. `normalize_symbol("BINANCE:BTCUSDT", config=config)` always returns
+> `"BINANCE:BTCUSDT"` regardless of `default_exchange`.
 
 ---
 
@@ -53,6 +75,7 @@ Rules are applied in the following order:
 |------|------|
 | 1 | Strip leading/trailing whitespace (`config.strip_whitespace=True` by default) |
 | 2 | Raise `SymbolNormalizationError` if empty after strip |
+| 2b | If no `:` **and** no `-` **and** `config.default_exchange` is set: prepend exchange |
 | 3 | Uppercase entire string |
 | 4 | If no `:` **and** exactly one `-`: replace `-` with `:` |
 | 5 | Validate against `^[A-Z0-9_]+:[A-Z0-9._!]+$` |
@@ -78,12 +101,14 @@ Rules are applied in the following order:
 | `"NYSE:BRK.B"` | `"NYSE:BRK.B"` | none |
 | `"CME_MINI:ES1!"` | `"CME_MINI:ES1!"` | none |
 | `"BINANCE:btcusdt"` | `"BINANCE:BTCUSDT"` | uppercase |
+| `"AAPL"` + `default_exchange="NASDAQ"` | `"NASDAQ:AAPL"` | default exchange |
+| `"aapl"` + `default_exchange="NASDAQ"` | `"NASDAQ:AAPL"` | default exchange + uppercase |
 
 ### Invalid inputs (examples)
 
 | Input | Reason |
 |-------|--------|
-| `"AAPL"` | no exchange prefix |
+| `"AAPL"` (no `default_exchange`) | no exchange prefix |
 | `""` | symbol must not be empty |
 | `"   "` | symbol must not be empty after stripping whitespace |
 | `"INVALID SYMBOL"` | symbol must not contain internal whitespace |
@@ -115,7 +140,8 @@ Normalize a single symbol. Returns the canonical string directly.
 
 **Args:**
 - `symbol` — symbol string in any supported variant. Must be a `str`.
-- `config` — optional `NormalizationConfig`. Defaults to `NormalizationConfig()`.
+- `config` — optional `NormalizationConfig`. When `None`, a fresh `NormalizationConfig()` is
+  instantiated at call time (reads env vars lazily).
 
 **Returns:** `str` — canonical `EXCHANGE:SYMBOL`.
 
@@ -139,7 +165,8 @@ removed. Raises on the first invalid element.
 **Args:**
 - `symbols` — must be a `list`. Passing a plain `str` raises `SymbolNormalizationError`
   to avoid silent character-by-character iteration.
-- `config` — optional `NormalizationConfig`.
+- `config` — optional `NormalizationConfig`. When `None`, a fresh `NormalizationConfig()` is
+  instantiated once and shared across all elements in the batch.
 
 **Returns:** `list[str]` — same length and order as input.
 
@@ -175,7 +202,7 @@ preferred.
 **Example:**
 
 ```python
-from tvkit.symbols import normalize_symbol_detailed, NormalizationType
+from tvkit.symbols import normalize_symbol_detailed, NormalizationType, NormalizationConfig
 
 result = normalize_symbol_detailed("NASDAQ-AAPL")
 print(result.canonical)          # "NASDAQ:AAPL"
@@ -187,6 +214,9 @@ print(result.normalization_type) # NormalizationType.DASH_TO_COLON
 result2 = normalize_symbol_detailed("  nasdaq:aapl  ")
 print(result2.normalization_type) # NormalizationType.WHITESPACE_STRIP
 # Whitespace strip takes precedence even though uppercase was also applied.
+
+result3 = normalize_symbol_detailed("AAPL", config=NormalizationConfig(default_exchange="NASDAQ"))
+print(result3.normalization_type) # NormalizationType.DEFAULT_EXCHANGE
 ```
 
 ---
@@ -221,7 +251,7 @@ class NormalizationType(str, Enum):
     DASH_TO_COLON     = "dash_to_colon"
     UPPERCASE_ONLY    = "uppercase_only"
     WHITESPACE_STRIP  = "whitespace_strip"
-    DEFAULT_EXCHANGE  = "default_exchange"   # Phase 2 placeholder
+    DEFAULT_EXCHANGE  = "default_exchange"
 ```
 
 Records the **primary** transformation applied. When multiple transforms are applied,
@@ -230,44 +260,56 @@ the highest-priority one is recorded:
 | Priority | Type | When assigned |
 |----------|------|---------------|
 | 1 | `WHITESPACE_STRIP` | Input had leading or trailing whitespace |
-| 2 | `DASH_TO_COLON` | Dash replaced with colon |
-| 3 | `UPPERCASE_ONLY` | Only case-folding applied |
-| 4 | `ALREADY_CANONICAL` | No change needed |
-
-`DEFAULT_EXCHANGE` is reserved for Phase 2 bare-ticker resolution.
+| 2 | `DEFAULT_EXCHANGE` | Exchange prefix was supplied via `default_exchange` |
+| 3 | `DASH_TO_COLON` | Dash replaced with colon |
+| 4 | `UPPERCASE_ONLY` | Only case-folding applied |
+| 5 | `ALREADY_CANONICAL` | No change needed |
 
 ---
 
 ### `NormalizationConfig`
 
 ```python
-class NormalizationConfig(BaseModel):
+class NormalizationConfig(BaseSettings):
     default_exchange: str | None = None
     strip_whitespace: bool = True
 ```
 
-Frozen model that controls normalization behaviour. This is a **function-behaviour model**,
-not environment-backed runtime settings — it does not read from environment variables
-and is not equivalent to application configuration.
+Pydantic Settings model that controls normalization behaviour. Reads field values from
+environment variables using the `TVKIT_` prefix:
 
-> **Phase 1 temporary deviation:** CLAUDE.md requires all configuration to use Pydantic
-> Settings. `NormalizationConfig` uses plain `BaseModel` because `pydantic-settings` is not
-> yet declared in `pyproject.toml`. Phase 2 upgrades it to `BaseSettings` with
-> `env_prefix="TVKIT_"` — same field names, no breaking change.
+| Field | Environment variable | Default |
+|-------|---------------------|---------|
+| `default_exchange` | `TVKIT_DEFAULT_EXCHANGE` | `None` |
+| `strip_whitespace` | `TVKIT_STRIP_WHITESPACE` | `True` |
+
+This model is frozen (immutable after construction).
+
+**Env var reading is lazy** — `NormalizationConfig()` reads the environment at construction
+time. When `config=None` is passed to any normalization function, a fresh
+`NormalizationConfig()` is instantiated on each call. Set `TVKIT_DEFAULT_EXCHANGE` before
+calling, not just before importing.
+
+> **Recommendation:** Pass an explicit `config` object in library code for predictable
+> behavior. Reserve env var reading for application entry points and scripts.
+
+```python
+# Explicit config (recommended for library code)
+config = NormalizationConfig(default_exchange="NASDAQ")
+normalize_symbol("AAPL", config=config)  # → "NASDAQ:AAPL"
+
+# Env var (suitable for scripts and applications)
+# $ export TVKIT_DEFAULT_EXCHANGE=NASDAQ
+config = NormalizationConfig()           # reads env var at construction
+normalize_symbol("AAPL", config=config)  # → "NASDAQ:AAPL"
+```
 
 **`strip_whitespace=False`** — whitespace is not stripped; symbols with leading/trailing
 whitespace raise `SymbolNormalizationError` with a message explaining how to fix the input.
 
-**`default_exchange`** — accepted in Phase 1 but bare-ticker resolution is not active until
-Phase 2. Must be a valid uppercase exchange identifier when provided (e.g. `"NASDAQ"`,
-`"FX_IDC"`). An empty string or whitespace-only value raises a `ValidationError`.
-
-```python
-# Phase 1: default_exchange is accepted but has no effect on bare tickers
-config = NormalizationConfig(default_exchange="NASDAQ")
-normalize_symbol("AAPL", config=config)
-# → SymbolNormalizationError: Cannot normalize 'AAPL': no exchange prefix
-```
+**`default_exchange` validation** — must be a valid uppercase exchange identifier when
+provided (e.g. `"NASDAQ"`, `"FX_IDC"`). An empty string, whitespace-only value, or
+lowercase string raises a `ValidationError`.
 
 ---
 
@@ -287,7 +329,7 @@ Subclass of `ValueError`. Always raised with both `original` and `reason`.
 |-----------|-----------------|
 | Empty string | `"symbol must not be empty"` |
 | Whitespace-only | `"symbol must not be empty after stripping whitespace"` |
-| No exchange prefix | `"no exchange prefix"` |
+| No exchange prefix (no `default_exchange`) | `"no exchange prefix"` |
 | Multiple `:` | `"symbol contains multiple ':' separators"` |
 | Internal whitespace | `"symbol must not contain internal whitespace"` |
 | Leading/trailing whitespace with `strip_whitespace=False` | `"symbol has leading or trailing whitespace; set strip_whitespace=True or strip the input before normalizing"` |
@@ -304,8 +346,8 @@ Subclass of `ValueError`. Always raised with both `original` and `reason`.
 | Feature | Status |
 |---------|--------|
 | Exchange-aware symbol normalization | **Phase 1 — available** |
-| Bare-ticker resolution via `default_exchange` | Phase 2 |
-| `TVKIT_DEFAULT_EXCHANGE` env var support | Phase 2 |
-| Crypto slash-pair normalization (`BTC/USDT`) | Phase 2 |
+| Bare-ticker resolution via `default_exchange` | **Phase 2 — available** |
+| `TVKIT_DEFAULT_EXCHANGE` env var support | **Phase 2 — available** |
+| Crypto slash-pair normalization (`BTC/USDT`) | Phase 3+ |
 | Integration into `ohlcv.py` call sites | Phase 3 |
 | Deprecation of `convert_symbol_format` | Phase 3 |

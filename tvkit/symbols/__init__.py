@@ -17,7 +17,8 @@ Public API::
     )
 
 Phase 1 handles exchange-aware symbol variants (colon, dash, lowercase, whitespace).
-Bare-ticker resolution and env-var config support are Phase 2 features.
+Phase 2 adds bare-ticker resolution via ``NormalizationConfig.default_exchange`` and
+``TVKIT_DEFAULT_EXCHANGE`` environment variable support.
 """
 
 from .exceptions import SymbolNormalizationError

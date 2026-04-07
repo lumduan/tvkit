@@ -6,6 +6,7 @@ import re
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ---------------------------------------------------------------------------
 # Regex constants — shared with normalizer.py via import from this module.
@@ -55,7 +56,7 @@ class NormalizationType(str, Enum):
     """Leading or trailing whitespace was stripped (e.g., ``'  NASDAQ:AAPL  '`` → ``NASDAQ:AAPL``)."""
 
     DEFAULT_EXCHANGE = "default_exchange"
-    """Exchange prefix was supplied via ``NormalizationConfig.default_exchange`` (Phase 2)."""
+    """Exchange prefix was supplied via ``NormalizationConfig.default_exchange``."""
 
 
 class NormalizedSymbol(BaseModel):
@@ -135,43 +136,61 @@ class NormalizedSymbol(BaseModel):
         return self
 
 
-class NormalizationConfig(BaseModel):
+class NormalizationConfig(BaseSettings):
     """
     Configuration for symbol normalization behaviour.
 
-    .. admonition:: Architectural exception — Phase 1
+    This class uses Pydantic Settings (``BaseSettings``) so that field values can be read
+    from environment variables. The ``TVKIT_`` prefix maps each field to a corresponding
+    environment variable:
 
-       CLAUDE.md requires all configuration to use Pydantic Settings (``BaseSettings``).
-       This class deliberately uses plain ``BaseModel`` because ``pydantic-settings`` is not
-       yet declared in ``pyproject.toml`` and Phase 1 adds no new runtime dependencies.
+    +------------------------------+----------------------------+
+    | Field                        | Environment variable       |
+    +==============================+============================+
+    | ``default_exchange``         | ``TVKIT_DEFAULT_EXCHANGE`` |
+    +------------------------------+----------------------------+
+    | ``strip_whitespace``         | ``TVKIT_STRIP_WHITESPACE`` |
+    +------------------------------+----------------------------+
 
-       **Phase 2 migration (no breaking change to the public API):**
+    **Env var usage (Phase 2):**
 
-       1. Add ``pydantic-settings>=2.0.0`` to ``pyproject.toml``
-       2. Change base class from ``BaseModel`` to ``BaseSettings``
-       3. Add ``model_config = SettingsConfigDict(env_prefix="TVKIT_")``
+    .. code-block:: bash
 
-       This enables ``TVKIT_DEFAULT_EXCHANGE`` env var support with no field renames.
+        export TVKIT_DEFAULT_EXCHANGE=NASDAQ
 
-    **Phase 1 behaviour with** ``default_exchange=None`` **(the default):** bare tickers
-    (e.g. ``"AAPL"``) raise ``SymbolNormalizationError`` — the ``default_exchange`` field is a
-    placeholder; its resolution logic is activated in Phase 2.
+    .. code-block:: python
+
+        from tvkit.symbols import NormalizationConfig, normalize_symbol
+
+        config = NormalizationConfig()          # reads TVKIT_DEFAULT_EXCHANGE from env
+        normalize_symbol("AAPL", config=config) # → "NASDAQ:AAPL"
+
+    .. warning::
+
+        ``TVKIT_DEFAULT_EXCHANGE`` is read **lazily at call time** — set the env var before
+        calling ``normalize_symbol``. Passing an explicit ``config`` object is always the most
+        predictable approach and is preferred for library code.
+
+    **Behaviour with** ``default_exchange=None`` **(the default):** bare tickers (e.g.
+    ``"AAPL"``) raise ``SymbolNormalizationError`` regardless of exchange presence.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = SettingsConfigDict(env_prefix="TVKIT_", frozen=True)
 
     default_exchange: str | None = Field(
         default=None,
         description=(
             "Exchange to use when no prefix is present in the symbol (e.g. 'NASDAQ'). "
             "Must be a non-empty string containing only uppercase letters, digits, and underscores. "
-            "Phase 1: field is accepted but bare-ticker resolution raises SymbolNormalizationError. "
-            "Phase 2: activates bare-ticker resolution + TVKIT_DEFAULT_EXCHANGE env var support."
+            "Also readable from the TVKIT_DEFAULT_EXCHANGE environment variable."
         ),
     )
     strip_whitespace: bool = Field(
         default=True,
-        description="Strip leading and trailing whitespace before normalization.",
+        description=(
+            "Strip leading and trailing whitespace before normalization. "
+            "Also readable from the TVKIT_STRIP_WHITESPACE environment variable."
+        ),
     )
 
     @field_validator("default_exchange")
