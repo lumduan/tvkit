@@ -27,7 +27,7 @@ from tvkit.validation.models import ValidationResult, Violation, ViolationType
 # - pl.Datetime entries are handled via isinstance() in _require_ohlcv_schema because
 #   Datetime is parameterised (time_unit, time_zone) and equality against the bare
 #   class always returns False for instantiated variants like Datetime('us', None).
-_REQUIRED_COLUMNS: dict[str, tuple[pl.PolarsDataType, ...]] = {
+_REQUIRED_COLUMNS: dict[str, tuple[type[pl.DataType], ...]] = {
     "timestamp": (pl.Float64, pl.Int64, pl.Date),  # Datetime handled via isinstance
     "open": (pl.Float64, pl.Float32),
     "high": (pl.Float64, pl.Float32),

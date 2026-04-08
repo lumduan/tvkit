@@ -31,7 +31,7 @@ def _safe_float(value: Any) -> float | None:
 def _timestamp_diff_seconds(
     a: Any,
     b: Any,
-    dtype: pl.PolarsDataType,
+    dtype: pl.DataType,
 ) -> int:
     """
     Return the difference (b - a) in whole seconds.
@@ -300,7 +300,7 @@ def check_gaps(df: pl.DataFrame, interval: str) -> list[Violation]:
 
     for i in range(len(ts_list) - 1):
         actual_seconds = _timestamp_diff_seconds(ts_list[i], ts_list[i + 1], dtype)
-        if actual_seconds != expected_seconds:
+        if actual_seconds > expected_seconds:
             violations.append(
                 Violation(
                     check=ViolationType.GAP_DETECTED,
