@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.8.0** —  Symbol Normalization 
 - **v0.7.0** — Authentication
 - **v0.6.0** — Timezone Handling
 - **v0.5.0** — Segmented Historical Fetch
@@ -21,40 +22,6 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 ---
 
 ## In Progress
-
----
-
-
----
-
-## Planned
-
-These are confirmed improvements that will transform tvkit from a simple data client into a **robust, reliable data infrastructure layer**.
-
-### Core Data Infrastructure
-
-These features establish deterministic, consistent data handling across the entire library.
-
-#### Symbol Normalization Layer
-
-Canonical symbol formatting across tvkit.
-
-TradingView instruments can appear in multiple forms:
-
-- `AAPL`
-- `NASDAQ:AAPL`
-- `BTCUSDT`
-- `BINANCE:BTCUSDT`
-- `btc/usdt`
-
-The normalization layer ensures every symbol is represented consistently across cache keys, storage paths, batch downloads, and validation systems.
-
-Proposed module: `tvkit.symbols`
-
-```python
-normalize_symbol("aapl")      # → "NASDAQ:AAPL"
-normalize_symbol("btc/usdt")  # → "BINANCE:BTCUSDT"
-```
 
 ---
 
@@ -77,6 +44,14 @@ validate_ohlcv(df)
 ```
 
 ---
+
+## Planned
+
+These are confirmed improvements that will transform tvkit from a simple data client into a **robust, reliable data infrastructure layer**.
+
+### Core Data Infrastructure
+
+These features establish deterministic, consistent data handling across the entire library.
 
 #### Data Caching Layer
 
