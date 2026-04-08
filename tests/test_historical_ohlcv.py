@@ -106,7 +106,7 @@ def make_patches() -> dict[str, Any]:
     """Return fresh mock instances for module-level dependencies (per-test isolation)."""
     return {
         "validate_symbols": AsyncMock(return_value=True),
-        "convert_symbol_format": MagicMock(return_value=MagicMock(converted_symbol=SYMBOL)),
+        "normalize_symbol": MagicMock(return_value=SYMBOL),
         "validate_interval": MagicMock(),
     }
 
@@ -583,19 +583,23 @@ class TestErrorHandling:
                 )
 
     @pytest.mark.asyncio
-    async def test_convert_symbol_format_raises_propagated(self) -> None:
-        """convert_symbol_format failure propagates before stream starts."""
+    async def test_normalize_symbol_raises_propagated(self) -> None:
+        """normalize_symbol failure propagates before stream starts."""
+        from tvkit.symbols import SymbolNormalizationError
+
         messages: list[dict[str, Any]] = []
         client: OHLCV = _make_client(messages)
 
         patches: dict[str, Any] = {
             **make_patches(),
-            "convert_symbol_format": MagicMock(side_effect=ValueError("Bad symbol format")),
+            "normalize_symbol": MagicMock(
+                side_effect=SymbolNormalizationError(original="AAPL", reason="no exchange prefix")
+            ),
         }
         with patch.multiple("tvkit.api.chart.ohlcv", **patches):
-            with pytest.raises(ValueError, match="Bad symbol format"):
+            with pytest.raises(SymbolNormalizationError, match="no exchange prefix"):
                 await client.get_historical_ohlcv(
-                    exchange_symbol="BAD-FORMAT", interval="1D", bars_count=10
+                    exchange_symbol="AAPL", interval="1D", bars_count=10
                 )
 
     @pytest.mark.asyncio
@@ -786,7 +790,7 @@ class TestSessionLifecycle:
 
     @pytest.mark.asyncio
     async def test_prepare_chart_session_called_with_correct_args(self) -> None:
-        """_prepare_chart_session is called once with (converted_symbol, interval, bars_count)."""
+        """_prepare_chart_session is called once with (canonical_symbol, interval, bars_count)."""
         messages: list[dict[str, Any]] = [
             make_timescale_update(bars_count=5),
             SERIES_COMPLETED_MSG,
@@ -801,8 +805,8 @@ class TestSessionLifecycle:
         )
 
     @pytest.mark.asyncio
-    async def test_validate_symbols_called_with_original_symbol(self) -> None:
-        """validate_symbols is called with the original (unconverted) exchange_symbol."""
+    async def test_validate_symbols_called_with_canonical_symbol(self) -> None:
+        """validate_symbols is called with the canonical symbol returned by normalize_symbol."""
         messages: list[dict[str, Any]] = [
             make_timescale_update(bars_count=5),
             SERIES_COMPLETED_MSG,

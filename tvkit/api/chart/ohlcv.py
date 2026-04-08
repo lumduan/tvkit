@@ -32,8 +32,9 @@ from tvkit.api.chart.utils import (
     to_unix_timestamp,
     validate_interval,
 )
-from tvkit.api.utils import convert_symbol_format, validate_symbols
+from tvkit.api.utils import validate_symbols
 from tvkit.auth import AuthManager, TradingViewAccount, TradingViewCredentials
+from tvkit.symbols import normalize_symbol, normalize_symbols
 from tvkit.time import ensure_utc
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -607,14 +608,13 @@ class OHLCV:
                 it as an empty result, not a failure.
             ValueError: If the symbol or interval is invalid.
         """
-        await validate_symbols(exchange_symbol)
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
+        canonical: str = normalize_symbol(exchange_symbol)
+        await validate_symbols(canonical)
         validate_interval(interval)
 
         range_param: str = build_range_param(start, end)
         await self._prepare_chart_session(
-            converted_symbol, interval, MAX_BARS_REQUEST, range_param=range_param
+            canonical, interval, MAX_BARS_REQUEST, range_param=range_param
         )
 
         if self.connection_service is None:
@@ -756,7 +756,7 @@ class OHLCV:
             logger.warning(
                 "Stream ended without series_completed for %s (%s) — "
                 "data may be incomplete. Received %d bars.",
-                converted_symbol,
+                canonical,
                 interval,
                 len(historical_bars),
             )
@@ -786,15 +786,13 @@ class OHLCV:
             )
 
         if not historical_bars:
-            logger.warning(f"No historical bars received for symbol {converted_symbol}")
-            raise NoHistoricalDataError(
-                f"No historical data received for symbol {converted_symbol}"
-            )
+            logger.warning(f"No historical bars received for symbol {canonical}")
+            raise NoHistoricalDataError(f"No historical data received for symbol {canonical}")
 
         logger.info(
             "Successfully fetched %d historical OHLCV bars for %s",
             len(historical_bars),
-            converted_symbol,
+            canonical,
         )
         return historical_bars
 
@@ -825,12 +823,11 @@ class OHLCV:
             RuntimeError: If no bars are received from TradingView.
             ValueError:   If the symbol or interval is invalid.
         """
-        await validate_symbols(exchange_symbol)
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
+        canonical: str = normalize_symbol(exchange_symbol)
+        await validate_symbols(canonical)
         validate_interval(interval)
 
-        await self._prepare_chart_session(converted_symbol, interval, bars_count, range_param="")
+        await self._prepare_chart_session(canonical, interval, bars_count, range_param="")
 
         if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
@@ -996,7 +993,7 @@ class OHLCV:
             logger.warning(
                 "Stream ended without series_completed for %s (%s) — "
                 "data may be incomplete. Received %d bars.",
-                converted_symbol,
+                canonical,
                 interval,
                 len(historical_bars),
             )
@@ -1005,8 +1002,8 @@ class OHLCV:
         historical_bars.sort(key=lambda bar: bar.timestamp)
 
         if not historical_bars:
-            logger.warning(f"No historical bars received for symbol {converted_symbol}")
-            raise RuntimeError(f"No historical data received for symbol {converted_symbol}")
+            logger.warning(f"No historical bars received for symbol {canonical}")
+            raise RuntimeError(f"No historical data received for symbol {canonical}")
 
         if len(historical_bars) < bars_count:
             logger.info(
@@ -1019,7 +1016,7 @@ class OHLCV:
         logger.info(
             "Successfully fetched %d historical OHLCV bars for %s",
             len(historical_bars),
-            converted_symbol,
+            canonical,
         )
         return historical_bars
 
@@ -1050,11 +1047,10 @@ class OHLCV:
             ...     async for bar in client.get_ohlcv("BINANCE:BTCUSDT", interval="5"):
             ...         print(f"Close: ${bar.close}, Volume: {bar.volume}")
         """
-        await validate_symbols(exchange_symbol)
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
+        canonical: str = normalize_symbol(exchange_symbol)
+        await validate_symbols(canonical)
         validate_interval(interval)
-        await self._prepare_chart_session(converted_symbol, interval, bars_count)
+        await self._prepare_chart_session(canonical, interval, bars_count)
 
         if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
@@ -1095,7 +1091,7 @@ class OHLCV:
                         current_price: float | None = quote_data.current_price
                         if current_price is not None:
                             logger.info(
-                                f"Quote data for {converted_symbol}: Current price = ${current_price}"
+                                f"Quote data for {exchange_symbol}: Current price = ${current_price}"
                             )
                         logger.debug(f"Quote symbol data: {quote_data.symbol_info}")
                     except ValidationError as e:
@@ -1284,11 +1280,10 @@ class OHLCV:
             ...     async for quote in client.get_quote_data("NASDAQ:AAPL", interval="5"):
             ...         print(f"Price: ${quote.current_price}")
         """
-        await validate_symbols(exchange_symbol)
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
+        canonical: str = normalize_symbol(exchange_symbol)
+        await validate_symbols(canonical)
         validate_interval(interval)
-        await self._prepare_chart_session(converted_symbol, interval, bars_count)
+        await self._prepare_chart_session(canonical, interval, bars_count)
 
         if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
@@ -1376,11 +1371,10 @@ class OHLCV:
             ...     async for raw_data in client.get_ohlcv_raw("BINANCE:BTCUSDT", interval="5"):
             ...         print(f"Raw message: {raw_data}")
         """
-        await validate_symbols(exchange_symbol)
-        symbol_result = convert_symbol_format(exchange_symbol)
-        converted_symbol: str = symbol_result.converted_symbol  # type: ignore
+        canonical: str = normalize_symbol(exchange_symbol)
+        await validate_symbols(canonical)
         validate_interval(interval)
-        await self._prepare_chart_session(converted_symbol, interval, bars_count)
+        await self._prepare_chart_session(canonical, interval, bars_count)
 
         if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
@@ -1415,9 +1409,8 @@ class OHLCV:
             ...     async for trade_info in client.get_latest_trade_info(symbols):
             ...         print(f"Trade info: {trade_info}")
         """
-        await validate_symbols(exchange_symbol)
-        symbol_results = convert_symbol_format(exchange_symbol)
-        converted_symbols = [result.converted_symbol for result in symbol_results]  # type: ignore
+        canonical_symbols: list[str] = normalize_symbols(exchange_symbol)
+        await validate_symbols(canonical_symbols)
         await self._setup_services()
 
         if not self.connection_service or not self.message_service:
@@ -1432,7 +1425,7 @@ class OHLCV:
             quote_session, chart_session, send_message_func
         )
         await self.connection_service.add_multiple_symbols_to_sessions(
-            quote_session, converted_symbols, send_message_func
+            quote_session, canonical_symbols, send_message_func
         )
 
         async for data in self.connection_service.get_data_stream():

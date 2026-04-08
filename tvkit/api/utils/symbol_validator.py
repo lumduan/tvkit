@@ -7,6 +7,7 @@ API to ensure they follow the correct format and exist in TradingView's system.
 
 import asyncio
 import logging
+import warnings
 
 import httpx
 
@@ -138,6 +139,13 @@ def convert_symbol_format(
         >>> print(results[1].converted_symbol)  # "NASDAQ:AAPL"
         >>> print(results[1].is_converted)      # False (already in correct format)
     """
+    warnings.warn(
+        "convert_symbol_format is deprecated and will be removed in a future major version. "
+        "Use tvkit.symbols.normalize_symbol instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     if not exchange_symbol:
         raise ValueError("exchange_symbol cannot be empty")
 

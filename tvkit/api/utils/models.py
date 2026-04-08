@@ -76,7 +76,14 @@ class StudyPayload(BaseModel):
 
 
 class SymbolConversionResult(BaseModel):
-    """Pydantic model for symbol format conversion result."""
+    """
+    Pydantic model for symbol format conversion result.
+
+    .. deprecated::
+        Use ``tvkit.symbols.NormalizedSymbol`` instead.
+        ``SymbolConversionResult`` will be removed in a future major version.
+        See ``docs/development/migration-symbol-normalization.md`` for the migration guide.
+    """
 
     original_symbol: str = Field(..., description="Original symbol in EXCHANGE-SYMBOL format")
     converted_symbol: str = Field(..., description="Converted symbol in EXCHANGE:SYMBOL format")
