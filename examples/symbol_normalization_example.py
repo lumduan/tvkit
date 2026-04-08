@@ -1,15 +1,18 @@
 """
 Symbol normalization examples — tvkit.symbols.
 
-Demonstrates Phase 1 (exchange-aware normalization) and Phase 2 (bare-ticker resolution
-via NormalizationConfig and TVKIT_DEFAULT_EXCHANGE env var).
+Demonstrates Phase 1 (exchange-aware normalization), Phase 2 (bare-ticker resolution
+via NormalizationConfig and TVKIT_DEFAULT_EXCHANGE env var), and Phase 3 (integration
+pattern with the OHLCV client).
 
 Run:
     uv run python examples/symbol_normalization_example.py
 """
 
+import asyncio
 import logging
 import os
+import unittest.mock
 
 from tvkit.symbols import (
     NormalizationConfig,
@@ -136,6 +139,52 @@ def error_handling() -> None:
             logger.info("  %-20s (%s): %s", repr(sym), description, exc)
 
 
+def phase3_ohlcv_integration_pattern() -> None:
+    """
+    Phase 3: demonstrate the normalize → validate ordering used inside OHLCV methods.
+
+    OHLCV client methods call normalize_symbol before validate_symbols, so lowercase,
+    dash-format, and whitespace-padded inputs all work. This function shows the same
+    pattern in isolation — validate_symbols is mocked so no live network call is made.
+    """
+    logger.info("\n--- Phase 3: normalize → validate integration pattern ---")
+
+    # Patch validate_symbols so we can demonstrate the pattern without a network call
+    mock_validate = unittest.mock.AsyncMock(return_value=None)
+
+    with unittest.mock.patch("tvkit.api.utils.validate_symbols", mock_validate):
+
+        async def _demo() -> None:
+            from tvkit.api.utils import validate_symbols
+
+            # All three raw inputs normalize to the same canonical symbol before validation
+            raw_inputs = ["nasdaq:aapl", "NASDAQ-AAPL", "  NASDAQ:AAPL  "]
+            for raw in raw_inputs:
+                canonical = normalize_symbol(raw)
+                await validate_symbols(canonical)
+                logger.info(
+                    "  raw=%-24r  canonical=%s  validated=True",
+                    raw,
+                    canonical,
+                )
+
+            # SymbolNormalizationError is raised before any I/O for invalid input
+            try:
+                normalize_symbol("AAPL")  # bare ticker, no default_exchange
+            except SymbolNormalizationError as exc:
+                logger.info("  SymbolNormalizationError raised before I/O: %s", exc)
+
+        asyncio.run(_demo())
+
+    # Confirm validate_symbols received only canonical forms
+    calls = mock_validate.call_args_list
+    canonical_args = [str(call.args[0]) for call in calls]
+    assert all(arg == "NASDAQ:AAPL" for arg in canonical_args), (
+        f"Expected all validate_symbols calls to receive 'NASDAQ:AAPL', got {canonical_args}"
+    )
+    logger.info("  All %d validate_symbols calls received canonical form ✓", len(calls))
+
+
 if __name__ == "__main__":
     phase1_exchange_aware()
     phase1_detailed_result()
@@ -143,3 +192,4 @@ if __name__ == "__main__":
     phase2_explicit_config()
     phase2_env_var()
     error_handling()
+    phase3_ohlcv_integration_pattern()

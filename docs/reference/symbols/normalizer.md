@@ -1,7 +1,7 @@
 # `tvkit.symbols` — Symbol Normalization
 
 **Module:** `tvkit.symbols`
-**Phase:** 2 (bare-ticker resolution + env var support)
+**Phase:** 3 (ohlcv.py integration + deprecations)
 **Source:** `tvkit/symbols/`
 
 ---
@@ -349,5 +349,5 @@ Subclass of `ValueError`. Always raised with both `original` and `reason`.
 | Bare-ticker resolution via `default_exchange` | **Phase 2 — available** |
 | `TVKIT_DEFAULT_EXCHANGE` env var support | **Phase 2 — available** |
 | Crypto slash-pair normalization (`BTC/USDT`) | Phase 3+ |
-| Integration into `ohlcv.py` call sites | Phase 3 |
-| Deprecation of `convert_symbol_format` | Phase 3 |
+| Integration into `ohlcv.py` call sites | Phase 3 — complete |
+| Deprecation of `convert_symbol_format` | Phase 3 — complete |

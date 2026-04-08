@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-04-08
+
+### Added
+
+- **`tvkit.symbols` module** — synchronous, pure-string symbol normalization layer that
+  converts any TradingView instrument reference to canonical `EXCHANGE:SYMBOL` form
+  (uppercase, colon-separated) before any network call:
+  - `normalize_symbol(symbol, *, config)` — normalize a single symbol; returns `str`
+  - `normalize_symbols(symbols, *, config)` — batch normalization; returns `list[str]`,
+    preserves input order, raises on first invalid element
+  - `normalize_symbol_detailed(symbol, *, config)` — returns `NormalizedSymbol` with
+    exchange, ticker, original input, and `NormalizationType` metadata
+  - `NormalizedSymbol` — frozen Pydantic model for detailed normalization results
+  - `NormalizationType` — enum recording the primary transformation applied
+    (`ALREADY_CANONICAL`, `UPPERCASE_ONLY`, `DASH_TO_COLON`, `WHITESPACE_STRIP`,
+    `DEFAULT_EXCHANGE`)
+  - `NormalizationConfig` — Pydantic Settings model; reads `TVKIT_DEFAULT_EXCHANGE` and
+    `TVKIT_STRIP_WHITESPACE` from environment variables
+  - `SymbolNormalizationError` — subclass of `ValueError` with `original` and `reason`
+    attributes; always raised before any I/O for malformed inputs
+- **Bare-ticker resolution** — `normalize_symbol("AAPL", config=NormalizationConfig(default_exchange="NASDAQ"))` returns `"NASDAQ:AAPL"`; also readable via `TVKIT_DEFAULT_EXCHANGE` env var
+- **`pydantic-settings>=2.0.0`** — new dependency added to support `NormalizationConfig`
+  env var reading
+
+### Changed
+
+- `OHLCV` client methods (`get_historical_ohlcv`, `get_ohlcv`, `get_ohlcv_raw`,
+  `get_quote_data`, `get_latest_trade_info`) now normalize symbols via
+  `tvkit.symbols.normalize_symbol` before calling `validate_symbols`.
+  The new call ordering is: `normalize_symbol(raw)` → `validate_symbols(canonical)`.
+  Lowercased symbols (`nasdaq:aapl`), dash-format symbols (`NASDAQ-AAPL`), and
+  whitespace-padded inputs are now accepted without errors by all `OHLCV` methods.
+
+### Deprecated
+
+- **`tvkit.api.utils.convert_symbol_format`** — use `tvkit.symbols.normalize_symbol` (single)
+  or `tvkit.symbols.normalize_symbols` (batch) instead. A `DeprecationWarning` is emitted on
+  every call. Will be removed in the next major version.
+- **`tvkit.api.utils.SymbolConversionResult`** — use `tvkit.symbols.NormalizedSymbol` instead.
+  Will be removed in the next major version.
+
+See [Migration Guide: Symbol Normalization](docs/development/migration-symbol-normalization.md)
+for before/after examples and field mapping.
+
+---
+
 ## [0.7.0] — 2026-04-01
 
 ### Added

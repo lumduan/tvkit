@@ -32,34 +32,79 @@ The colon separator is required. TradingView's WebSocket API rejects symbols tha
 | Macro Indicator | `USI:PCC` | Put/Call Ratio |
 | Thai Equity | `SET:PTT` | Country-specific exchanges supported |
 
-## Dash-to-Colon Automatic Conversion
+## Symbol Normalization
 
-tvkit automatically converts dash-format symbols to colon format before sending them to TradingView. This means `USI-PCC` and `USI:PCC` are treated identically by all tvkit methods.
-
-The conversion is one-way: if the symbol already contains a colon, it is not modified.
+tvkit automatically normalizes symbols to the canonical `EXCHANGE:SYMBOL` form (uppercase,
+colon-separated) before any API call. Normalization is synchronous, involves no network I/O,
+and runs before validation.
 
 ```python
-# Both of these are equivalent:
-await client.get_historical_ohlcv("USI:PCC", "1D", 100)
-await client.get_historical_ohlcv("USI-PCC", "1D", 100)
+from tvkit.symbols import normalize_symbol
+
+# All of these produce "NASDAQ:AAPL"
+normalize_symbol("nasdaq:aapl")       # lowercase
+normalize_symbol("NASDAQ-AAPL")       # dash separator
+normalize_symbol("  NASDAQ:AAPL  ")   # whitespace padding
+normalize_symbol("NASDAQ:AAPL")       # already canonical — returned unchanged
 ```
 
-Prefer the colon format in your code. The dash format is provided for compatibility with data sources that use a different convention.
+Supported input variants:
+
+| Input | Canonical output |
+|-------|-----------------|
+| `NASDAQ:AAPL` | `NASDAQ:AAPL` |
+| `nasdaq:aapl` | `NASDAQ:AAPL` |
+| `NASDAQ-AAPL` | `NASDAQ:AAPL` |
+| `  NASDAQ:AAPL  ` | `NASDAQ:AAPL` |
+| `BINANCE:btcusdt` | `BINANCE:BTCUSDT` |
+| `FX_IDC:eurusd` | `FX_IDC:EURUSD` |
+| `CME_MINI:ES1!` | `CME_MINI:ES1!` |
+
+### Bare-ticker resolution
+
+Symbols without an exchange prefix (e.g. `AAPL`) require a `default_exchange` to be configured:
+
+```python
+from tvkit.symbols import normalize_symbol, NormalizationConfig
+
+config = NormalizationConfig(default_exchange="NASDAQ")
+normalize_symbol("AAPL", config=config)   # → "NASDAQ:AAPL"
+```
+
+Or via the `TVKIT_DEFAULT_EXCHANGE` environment variable:
+
+```bash
+export TVKIT_DEFAULT_EXCHANGE=NASDAQ
+```
+
+See [Symbol Normalization guide](../guides/symbol-normalization.md) and the
+[`tvkit.symbols` reference](../reference/symbols/normalizer.md) for the full API.
 
 ## Validation
 
-tvkit does not validate symbol existence before sending a request. If a symbol is invalid, TradingView returns no data. Use `validate_symbols()` from `tvkit.api.utils` to check symbol validity before use:
+tvkit validates symbol existence before sending WebSocket requests. The call ordering is:
+
+1. `normalize_symbol(raw)` — pure-string transformation, raises `SymbolNormalizationError` for
+   malformed inputs (no network call)
+2. `validate_symbols(canonical)` — HTTP check against TradingView, raises `ValueError` if the
+   symbol does not exist
+
+Use `validate_symbols()` from `tvkit.api.utils` to check symbol existence before use:
 
 ```python
+from tvkit.symbols import normalize_symbol
 from tvkit.api.utils import validate_symbols
 
-result = await validate_symbols(["NASDAQ:AAPL", "BOGUS:XYZ"])
+canonical = normalize_symbol("nasdaq:aapl")          # → "NASDAQ:AAPL"
+await validate_symbols(canonical)                    # raises ValueError if not found
 ```
 
 See [tvkit.api.utils reference](../reference/chart/utils.md) for full parameter documentation.
 
 ## See Also
 
+- [Symbol Normalization guide](../guides/symbol-normalization.md) — step-by-step normalization workflows
+- [`tvkit.symbols` reference](../reference/symbols/normalizer.md) — full API reference
 - [Intervals](intervals.md) — timeframe strings used alongside symbols
 - [Historical Data guide](../guides/historical-data.md) — fetching bars for a symbol
 - [Real-time Streaming guide](../guides/realtime-streaming.md) — streaming a symbol live
