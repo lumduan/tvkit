@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.9.0** — Data Integrity Validation (`tvkit.validation`: duplicate/monotonic/OHLC/volume/gap checks; `DataExporter` integration with `validate`, `strict`, `interval` parameters)
 - **v0.8.0** —  Symbol Normalization 
 - **v0.7.0** — Authentication
 - **v0.6.0** — Timezone Handling
@@ -22,26 +23,6 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 ---
 
 ## In Progress
-
----
-
-#### Data Integrity Validation
-
-Validation utilities to guarantee OHLCV data consistency before caching, exporting, or analysis.
-
-Checks may include:
-
-- Monotonic timestamps
-- Duplicate bars
-- OHLC consistency (`low ≤ open ≤ close ≤ high`)
-- Non-negative volume
-- Gap detection
-
-Proposed module: `tvkit.validation`
-
-```python
-validate_ohlcv(df)
-```
 
 ---
 

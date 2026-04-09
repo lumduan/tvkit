@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-04-09
+
+### Added
+
+- **`tvkit.validation` module** — data integrity validation layer for OHLCV Polars DataFrames:
+  - `validate_ohlcv(df, *, interval, checks)` — composite validator; runs all applicable checks
+    in deterministic order and returns a structured `ValidationResult`
+  - `ValidationResult` — Pydantic model with `is_valid`, `violations`, `bars_checked`,
+    `checks_run` fields; `.errors` and `.warnings` convenience properties
+  - `Violation` — typed Pydantic model per violation: `check`, `severity`, `message`,
+    `affected_rows`, `context`
+  - `ViolationType` — `StrEnum` for all check types: `DUPLICATE_TIMESTAMP`,
+    `NON_MONOTONIC_TIMESTAMP`, `OHLC_INCONSISTENCY`, `NEGATIVE_VOLUME`, `GAP_DETECTED`
+  - `DataIntegrityError` — public exception raised by `DataExporter` in strict mode;
+    carries the full `ValidationResult` at `.result`
+  - `ContextValue`, `ViolationContext` — type aliases for structured violation context dicts
+- **Five built-in OHLCV checks** (all pure functions; `list[Violation]` return type):
+  - `check_duplicate_timestamps(df)` — detects bars sharing a timestamp (ERROR)
+  - `check_monotonic_timestamps(df)` — detects out-of-order timestamp pairs (ERROR)
+  - `check_ohlc_consistency(df)` — detects `low > open/close`, `open/close > high`, and NaN in
+    price columns (ERROR)
+  - `check_volume_non_negative(df)` — detects `volume < 0` or NaN volume (ERROR)
+  - `check_gaps(df, interval)` — detects timestamp gaps larger than the expected interval cadence
+    (WARNING); raises `ValueError` when called without a valid `interval`
+- **`DataExporter` validation integration** — `to_csv()` and `to_json()` now accept three
+  keyword-only parameters:
+  - `validate: bool = False` — when `True`, runs `validate_ohlcv()` before exporting and logs
+    each violation at `WARNING` level; export always proceeds in this mode
+  - `strict: bool = False` — when `True` alongside `validate=True`, raises `DataIntegrityError`
+    on ERROR violations and does not write the output file; WARNING-only results never raise
+  - `interval: str | None = None` — passed through to `validate_ohlcv()` for gap detection
+
+### Notes
+
+- Gap detection in Phase 1 is cadence-only (not calendar-aware). For daily equity bars (`"1D"`),
+  weekends and public holidays are reported as `GAP_DETECTED` WARNING violations. This is
+  intentional: WARNING violations do not affect `is_valid` and do not block exports. Calendar-aware
+  gap detection is planned as a future enhancement.
+- Validation is non-destructive — it never mutates the DataFrame. Check functions are pure with
+  zero side effects.
+- Scanner data passed to `DataExporter` silently skips validation (only `list[OHLCVBar]` input
+  triggers the validation path).
+
 ## [0.8.0] — 2026-04-08
 
 ### Added
