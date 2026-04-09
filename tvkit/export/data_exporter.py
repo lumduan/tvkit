@@ -9,8 +9,11 @@ import logging
 from pathlib import Path
 from typing import Any, cast, overload
 
+import polars as pl
+
 from ..api.chart.models.ohlcv import OHLCVBar
 from ..api.scanner.models import StockData
+from ..validation import DataIntegrityError, ValidationResult, validate_ohlcv
 from .formatters import BaseFormatter, CSVFormatter, JSONFormatter, PolarsFormatter
 from .models import (
     ExportConfig,
@@ -208,6 +211,10 @@ class DataExporter:
         data: list[OHLCVBar] | list[StockData],
         file_path: Path | str,
         include_metadata: bool = True,
+        *,
+        validate: bool = False,
+        strict: bool = False,
+        interval: str | None = None,
         **json_options: Any,
     ) -> Path:
         """
@@ -217,10 +224,24 @@ class DataExporter:
             data: OHLCV bars or scanner data
             file_path: Output file path
             include_metadata: Whether to include metadata in JSON
+            validate: If True, run validate_ohlcv() before writing.
+                Violations are logged at WARNING level. Does not affect
+                export behavior unless strict=True. Only applies to OHLCV
+                data; scanner data silently skips validation.
+            strict: If True and validate=True, raise DataIntegrityError if
+                any ERROR-level violations are found. The file is NOT written.
+                WARNING-only results do not raise.
+            interval: Passed to validate_ohlcv() for gap detection.
+                Only relevant when validate=True.
             **json_options: Additional JSON formatting options
 
         Returns:
             Path to the created JSON file
+
+        Raises:
+            DataIntegrityError: If validate=True, strict=True, and ERROR
+                violations are found.
+            RuntimeError: If the export fails or produces no file path.
 
         Example:
             >>> exporter = DataExporter()
@@ -230,6 +251,9 @@ class DataExporter:
             ...     indent=4
             ... )
         """
+        if validate:
+            self._run_ohlcv_validation(data, strict=strict, interval=interval)
+
         config: ExportConfig = ExportConfig(
             format=ExportFormat.JSON,
             include_metadata=include_metadata,
@@ -264,6 +288,10 @@ class DataExporter:
         data: list[OHLCVBar] | list[StockData],
         file_path: Path | str,
         include_metadata: bool = True,
+        *,
+        validate: bool = False,
+        strict: bool = False,
+        interval: str | None = None,
         **csv_options: Any,
     ) -> Path:
         """
@@ -273,10 +301,24 @@ class DataExporter:
             data: OHLCV bars or scanner data
             file_path: Output file path
             include_metadata: Whether to include metadata file
+            validate: If True, run validate_ohlcv() before writing.
+                Violations are logged at WARNING level. Does not affect
+                export behavior unless strict=True. Only applies to OHLCV
+                data; scanner data silently skips validation.
+            strict: If True and validate=True, raise DataIntegrityError if
+                any ERROR-level violations are found. The file is NOT written.
+                WARNING-only results do not raise.
+            interval: Passed to validate_ohlcv() for gap detection.
+                Only relevant when validate=True.
             **csv_options: Additional CSV formatting options
 
         Returns:
             Path to the created CSV file
+
+        Raises:
+            DataIntegrityError: If validate=True, strict=True, and ERROR
+                violations are found.
+            RuntimeError: If the export fails or produces no file path.
 
         Example:
             >>> exporter = DataExporter()
@@ -287,6 +329,9 @@ class DataExporter:
             ...     timestamp_format="iso"
             ... )
         """
+        if validate:
+            self._run_ohlcv_validation(data, strict=strict, interval=interval)
+
         config: ExportConfig = ExportConfig(
             format=ExportFormat.CSV,
             include_metadata=include_metadata,
@@ -315,6 +360,55 @@ class DataExporter:
             raise RuntimeError("Export did not produce a file path")
 
         return result.file_path
+
+    def _run_ohlcv_validation(
+        self,
+        data: list[OHLCVBar] | list[StockData],
+        *,
+        strict: bool,
+        interval: str | None,
+    ) -> None:
+        """
+        Run OHLCV data integrity validation if data contains OHLCV bars.
+
+        Silently skips validation for scanner (StockData) inputs and empty lists.
+        Logs all violations at WARNING level using structured extra fields.
+        Raises DataIntegrityError only when strict=True and ERROR-level violations
+        are found. WARNING-only results never raise.
+
+        Args:
+            data: OHLCV bars or scanner data. Validation applies to OHLCVBar only.
+            strict: If True, raise DataIntegrityError on ERROR violations.
+            interval: Passed to validate_ohlcv() for gap detection.
+
+        Raises:
+            DataIntegrityError: If strict=True and ERROR-level violations are found.
+        """
+        if not data or not isinstance(data[0], OHLCVBar):
+            return
+
+        ohlcv_bars: list[OHLCVBar] = cast(list[OHLCVBar], data)
+        df: pl.DataFrame = pl.DataFrame(
+            {
+                "timestamp": [bar.timestamp for bar in ohlcv_bars],
+                "open": [bar.open for bar in ohlcv_bars],
+                "high": [bar.high for bar in ohlcv_bars],
+                "low": [bar.low for bar in ohlcv_bars],
+                "close": [bar.close for bar in ohlcv_bars],
+                "volume": [bar.volume for bar in ohlcv_bars],
+            }
+        )
+
+        result: ValidationResult = validate_ohlcv(df, interval=interval)
+
+        for violation in result.violations:
+            logger.warning(
+                violation.message,
+                extra={"check": violation.check.value, "rows": violation.affected_rows},
+            )
+
+        if strict and result.errors:
+            raise DataIntegrityError(result)
 
     def add_formatter(
         self, format_type: ExportFormat, formatter_class: type[BaseFormatter]

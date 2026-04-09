@@ -224,6 +224,10 @@ async def to_json(
     data: list[OHLCVBar] | list[StockData],
     file_path: Path | str,
     include_metadata: bool = True,
+    *,
+    validate: bool = False,
+    strict: bool = False,
+    interval: str | None = None,
     **json_options: Any,
 ) -> Path: ...
 ```
@@ -235,6 +239,9 @@ async def to_json(
 | `data` | `list[OHLCVBar] \| list[StockData]` | required | Data to export |
 | `file_path` | `Path \| str` | required | Output JSON file path |
 | `include_metadata` | `bool` | `True` | Embed export metadata in the JSON output |
+| `validate` | `bool` | `False` | If `True`, run `validate_ohlcv()` before writing. Violations are logged at `WARNING` level. Only applies to OHLCV data; scanner data silently skips validation. |
+| `strict` | `bool` | `False` | If `True` and `validate=True`, raise `DataIntegrityError` on ERROR violations. The file is **not** written. WARNING-only results do not raise. |
+| `interval` | `str \| None` | `None` | Passed to `validate_ohlcv()` for gap detection. Only relevant when `validate=True`. |
 | `**json_options` | `Any` | — | Additional options passed to the JSON formatter (e.g., `indent=4`) |
 
 #### Returns
@@ -245,6 +252,7 @@ async def to_json(
 
 | Exception | When |
 |-----------|------|
+| `DataIntegrityError` | `validate=True`, `strict=True`, and ERROR violations found |
 | `RuntimeError` | Export failed or formatter did not produce a file |
 
 #### Example
@@ -255,6 +263,11 @@ from tvkit.export import DataExporter
 exporter = DataExporter()
 path = await exporter.to_json(bars, "aapl.json", indent=2)
 print(path)  # PosixPath('aapl.json')
+
+# With validation
+path = await exporter.to_json(
+    bars, "aapl.json", validate=True, strict=True, interval="1D"
+)
 ```
 
 ---
@@ -269,6 +282,10 @@ async def to_csv(
     data: list[OHLCVBar] | list[StockData],
     file_path: Path | str,
     include_metadata: bool = True,
+    *,
+    validate: bool = False,
+    strict: bool = False,
+    interval: str | None = None,
     **csv_options: Any,
 ) -> Path: ...
 ```
@@ -280,6 +297,9 @@ async def to_csv(
 | `data` | `list[OHLCVBar] \| list[StockData]` | required | Data to export |
 | `file_path` | `Path \| str` | required | Output CSV file path |
 | `include_metadata` | `bool` | `True` | Write a `<filename>.metadata.txt` sidecar file alongside the CSV |
+| `validate` | `bool` | `False` | If `True`, run `validate_ohlcv()` before writing. Violations are logged at `WARNING` level. Only applies to OHLCV data; scanner data silently skips validation. |
+| `strict` | `bool` | `False` | If `True` and `validate=True`, raise `DataIntegrityError` on ERROR violations. The file is **not** written. WARNING-only results do not raise. |
+| `interval` | `str \| None` | `None` | Passed to `validate_ohlcv()` for gap detection. Only relevant when `validate=True`. |
 | `**csv_options` | `Any` | — | Additional options passed to the CSV formatter (e.g., `delimiter=";"`, `timestamp_format="iso"`) |
 
 #### Returns
@@ -290,6 +310,7 @@ async def to_csv(
 
 | Exception | When |
 |-----------|------|
+| `DataIntegrityError` | `validate=True`, `strict=True`, and ERROR violations found |
 | `RuntimeError` | Export failed or formatter did not produce a file |
 
 #### Example
@@ -300,6 +321,11 @@ from tvkit.export import DataExporter
 exporter = DataExporter()
 path = await exporter.to_csv(bars, "aapl.csv", timestamp_format="iso")
 # Writes: aapl.csv and aapl.csv.metadata.txt
+
+# With validation
+path = await exporter.to_csv(
+    bars, "aapl.csv", validate=True, strict=True, interval="1D"
+)
 ```
 
 ---
