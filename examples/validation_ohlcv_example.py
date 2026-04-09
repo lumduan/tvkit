@@ -1,30 +1,37 @@
 """
-Data Integrity Validation Example
+OHLCV Data Integrity Validation Example
 
-Demonstrates tvkit.validation usage patterns:
-  1. Standalone validate_ohlcv() — inspect violations directly
-  2. DataExporter.to_csv(validate=True, strict=False) — logging mode: violations logged,
-     export proceeds even when ERROR violations are found
-  3. DataExporter.to_csv(validate=True, strict=True) — strict mode: errors block export,
-     file is not written
-  4. Programmatic violation handling
+Comprehensive walkthrough of every tvkit.validation feature:
 
-Note on OHLCVBar and OHLC validation:
-  OHLCVBar validates only the timestamp field at construction time. It does NOT enforce
-  OHLC constraints (low <= open/close <= high). These structural checks are the
-  responsibility of tvkit.validation, which is why they are caught at the DataExporter
-  level rather than during bar construction.
+  1. Clean data  — all checks pass, zero violations
+  2. Duplicate timestamps  — ERROR: reconnect-replay scenario
+  3. Non-monotonic timestamps  — ERROR: out-of-order bars
+  4. OHLC inconsistency  — ERROR: open > high / close < low
+  5. Negative volume  — ERROR: corrupt volume field
+  6. Gap detection  — WARNING: missing bars (is_valid stays True)
+  7. DataExporter logging mode  — validate=True, strict=False
+  8. DataExporter strict mode  — validate=True, strict=True (blocks on ERROR)
+  9. Selective checks  — run a specific subset
 
-Prerequisites:
-  uv run python examples/validation_ohlcv_example.py
+Note on OHLCVBar construction:
+  OHLCVBar does NOT enforce OHLC constraints at construction time.
+  Structural integrity is the responsibility of tvkit.validation.
+
+Run:
+    uv run python examples/validation_ohlcv_example.py
 """
 
 import asyncio
-import logging
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.export import DataExporter
@@ -35,22 +42,97 @@ from tvkit.validation import (
     validate_ohlcv,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(name)s: %(message)s")
-logger = logging.getLogger(__name__)
+console: Console = Console()
 
-BASE_TS = 1_672_531_200.0  # 2023-01-01 UTC
+_BASE_TS: float = 1_672_531_200.0  # 2023-01-01 00:00:00 UTC
+_ONE_DAY: float = 86_400.0
+_ONE_HOUR: float = 3_600.0
 
 
 # ---------------------------------------------------------------------------
-# Shared bar factories
+# Output helpers
 # ---------------------------------------------------------------------------
 
 
-def make_clean_bars(n: int = 10) -> list[OHLCVBar]:
-    """Valid OHLCV bars: monotonic timestamps, valid OHLC, positive volume."""
+def _section(number: int, title: str, subtitle: str = "") -> None:
+    """Print a rich panel header for each demo section."""
+    header: Text = Text()
+    header.append(f"Demo {number}  ", style="bold cyan")
+    header.append(title, style="bold white")
+    if subtitle:
+        header.append(f"\n{subtitle}", style="dim")
+    console.print(Panel(header, box=box.ROUNDED, border_style="cyan", padding=(0, 2)))
+
+
+def _print_result(result: ValidationResult, label: str = "") -> None:
+    """Render a ValidationResult as a rich table."""
+    status_text: Text = (
+        Text("✔  VALID", style="bold green")
+        if result.is_valid
+        else Text("✘  INVALID", style="bold red")
+    )
+
+    summary: Table = Table(box=box.SIMPLE_HEAD, show_header=False, padding=(0, 1))
+    summary.add_column(style="dim")
+    summary.add_column()
+    if label:
+        summary.add_row("Dataset", label)
+    summary.add_row("Status", status_text)
+    summary.add_row("Bars checked", str(result.bars_checked))
+    summary.add_row("Errors", Text(str(len(result.errors)), style="bold red"))
+    summary.add_row("Warnings", Text(str(len(result.warnings)), style="bold yellow"))
+    summary.add_row(
+        "Checks run",
+        ", ".join(c.value for c in result.checks_run),
+    )
+    console.print(summary)
+
+    if result.violations:
+        vtable: Table = Table(
+            "Severity",
+            "Check",
+            "Message",
+            "Affected rows",
+            box=box.MINIMAL_DOUBLE_HEAD,
+            border_style="dim",
+            show_lines=False,
+        )
+        for v in result.violations:
+            sev_style: str = "bold red" if v.severity == "ERROR" else "bold yellow"
+            vtable.add_row(
+                Text(v.severity, style=sev_style),
+                v.check.value,
+                v.message,
+                str(v.affected_rows),
+            )
+        console.print(vtable)
+    console.print()
+
+
+def _bars_to_df(bars: list[OHLCVBar]) -> pl.DataFrame:
+    """Convert a list of OHLCVBars to a Polars DataFrame."""
+    return pl.DataFrame(
+        {
+            "timestamp": [b.timestamp for b in bars],
+            "open": [b.open for b in bars],
+            "high": [b.high for b in bars],
+            "low": [b.low for b in bars],
+            "close": [b.close for b in bars],
+            "volume": [b.volume for b in bars],
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bar factories
+# ---------------------------------------------------------------------------
+
+
+def _make_clean_bars(n: int = 10) -> list[OHLCVBar]:
+    """Valid bars: monotonic timestamps, valid OHLC, positive volume."""
     return [
         OHLCVBar(
-            timestamp=BASE_TS + i * 86_400.0,
+            timestamp=_BASE_TS + i * _ONE_DAY,
             open=100.0 + i,
             high=110.0 + i,
             low=90.0 + i,
@@ -61,26 +143,48 @@ def make_clean_bars(n: int = 10) -> list[OHLCVBar]:
     ]
 
 
-def make_ohlc_error_bars(n: int = 10) -> list[OHLCVBar]:
-    """
-    OHLCV bars where some bars have open > high (OHLC_INCONSISTENCY ERROR).
+def _make_duplicate_ts_bars() -> list[OHLCVBar]:
+    """Bars where bar 4 repeats bar 3's timestamp (WebSocket reconnect replay)."""
+    bars: list[OHLCVBar] = _make_clean_bars(8)
+    bars[4] = OHLCVBar(
+        timestamp=_BASE_TS + 3 * _ONE_DAY,  # duplicate of bar 3
+        open=104.0,
+        high=114.0,
+        low=94.0,
+        close=109.0,
+        volume=10_400.0,
+    )
+    return bars
 
-    OHLCVBar does not enforce OHLC constraints at construction time — that is
-    the job of tvkit.validation. These bars are created without error here.
-    """
-    bars = make_clean_bars(n)
-    # Inject violations: open > high on bars 2 and 7
+
+def _make_nonmonotonic_bars() -> list[OHLCVBar]:
+    """Bars where bar 5 has a timestamp earlier than bar 4 (out-of-order arrival)."""
+    bars: list[OHLCVBar] = _make_clean_bars(8)
+    bars[5] = OHLCVBar(
+        timestamp=_BASE_TS + 2 * _ONE_DAY,  # older than bar 4
+        open=105.0,
+        high=115.0,
+        low=95.0,
+        close=110.0,
+        volume=10_500.0,
+    )
+    return bars
+
+
+def _make_ohlc_error_bars() -> list[OHLCVBar]:
+    """Bars where open > high on two rows — OHLC_INCONSISTENCY ERROR."""
+    bars: list[OHLCVBar] = _make_clean_bars(10)
     bars[2] = OHLCVBar(
-        timestamp=BASE_TS + 2 * 86_400.0,
-        open=130.0,  # exceeds high=112.0 → OHLC ERROR
+        timestamp=_BASE_TS + 2 * _ONE_DAY,
+        open=130.0,  # exceeds high=112.0
         high=112.0,
         low=92.0,
         close=107.0,
         volume=10_200.0,
     )
     bars[7] = OHLCVBar(
-        timestamp=BASE_TS + 7 * 86_400.0,
-        open=130.0,  # exceeds high=117.0 → OHLC ERROR
+        timestamp=_BASE_TS + 7 * _ONE_DAY,
+        open=130.0,  # exceeds high=117.0
         high=117.0,
         low=97.0,
         close=112.0,
@@ -89,291 +193,259 @@ def make_ohlc_error_bars(n: int = 10) -> list[OHLCVBar]:
     return bars
 
 
-def make_gapped_bars() -> list[OHLCVBar]:
-    """
-    OHLCV bars with a 3-day gap between bar 3 and bar 4.
-    Produces GAP_DETECTED WARNING (not ERROR). is_valid stays True.
-    """
+def _make_negative_volume_bars() -> list[OHLCVBar]:
+    """Bars where bar 3 has volume = -500 — NEGATIVE_VOLUME ERROR."""
+    bars: list[OHLCVBar] = _make_clean_bars(8)
+    bars[3] = OHLCVBar(
+        timestamp=_BASE_TS + 3 * _ONE_DAY,
+        open=103.0,
+        high=113.0,
+        low=93.0,
+        close=108.0,
+        volume=-500.0,  # invalid
+    )
+    return bars
+
+
+def _make_gapped_bars() -> list[OHLCVBar]:
+    """Daily bars with a 3-day gap between bar 2 and bar 3 — GAP_DETECTED WARNING."""
+    timestamps: list[float] = [
+        _BASE_TS + 0 * _ONE_DAY,
+        _BASE_TS + 1 * _ONE_DAY,
+        _BASE_TS + 2 * _ONE_DAY,
+        _BASE_TS + 5 * _ONE_DAY,  # 3-day jump
+        _BASE_TS + 6 * _ONE_DAY,
+    ]
     return [
         OHLCVBar(
-            timestamp=BASE_TS + 0 * 86_400.0,
-            open=100.0,
-            high=110.0,
-            low=90.0,
-            close=105.0,
-            volume=10_000.0,
-        ),
-        OHLCVBar(
-            timestamp=BASE_TS + 1 * 86_400.0,
-            open=101.0,
-            high=111.0,
-            low=91.0,
-            close=106.0,
-            volume=10_100.0,
-        ),
-        OHLCVBar(
-            timestamp=BASE_TS + 2 * 86_400.0,
-            open=102.0,
-            high=112.0,
-            low=92.0,
-            close=107.0,
-            volume=10_200.0,
-        ),
-        # 3-day gap here → GAP_DETECTED WARNING
-        OHLCVBar(
-            timestamp=BASE_TS + 5 * 86_400.0,
-            open=105.0,
-            high=115.0,
-            low=95.0,
-            close=110.0,
-            volume=10_500.0,
-        ),
-        OHLCVBar(
-            timestamp=BASE_TS + 6 * 86_400.0,
-            open=106.0,
-            high=116.0,
-            low=96.0,
-            close=111.0,
-            volume=10_600.0,
-        ),
+            timestamp=ts,
+            open=100.0 + i,
+            high=110.0 + i,
+            low=90.0 + i,
+            close=105.0 + i,
+            volume=10_000.0 + i * 100,
+        )
+        for i, ts in enumerate(timestamps)
     ]
 
 
 # ---------------------------------------------------------------------------
-# 1. Standalone validate_ohlcv()
+# Demo 1 — Clean data
 # ---------------------------------------------------------------------------
 
 
-def demo_standalone_validation() -> None:
-    """Demonstrate using validate_ohlcv() directly on a Polars DataFrame."""
-    logger.info("=" * 60)
-    logger.info("DEMO 1: Standalone validate_ohlcv()")
-    logger.info("=" * 60)
-
-    # --- Clean data ---
-    bars = make_clean_bars()
-    df = pl.DataFrame(
-        {
-            "timestamp": [b.timestamp for b in bars],
-            "open": [b.open for b in bars],
-            "high": [b.high for b in bars],
-            "low": [b.low for b in bars],
-            "close": [b.close for b in bars],
-            "volume": [b.volume for b in bars],
-        }
-    )
-    result: ValidationResult = validate_ohlcv(df, interval="1D")
-    logger.info(
-        "Clean DataFrame: is_valid=%s, bars_checked=%d, violations=%d",
-        result.is_valid,
-        result.bars_checked,
-        len(result.violations),
-    )
+def demo_clean_data() -> None:
+    _section(1, "Clean data", "All checks pass — zero violations expected")
+    bars: list[OHLCVBar] = _make_clean_bars(10)
+    result: ValidationResult = validate_ohlcv(_bars_to_df(bars), interval="1D")
+    _print_result(result, label="10 clean daily bars")
     assert result.is_valid
     assert result.violations == []
 
-    # --- OHLC error data ---
-    bars = make_ohlc_error_bars()
-    df = pl.DataFrame(
-        {
-            "timestamp": [b.timestamp for b in bars],
-            "open": [b.open for b in bars],
-            "high": [b.high for b in bars],
-            "low": [b.low for b in bars],
-            "close": [b.close for b in bars],
-            "volume": [b.volume for b in bars],
-        }
+
+# ---------------------------------------------------------------------------
+# Demo 2 — Duplicate timestamps
+# ---------------------------------------------------------------------------
+
+
+def demo_duplicate_timestamps() -> None:
+    _section(
+        2,
+        "Duplicate timestamps",
+        "Bar 4 repeats bar 3's timestamp (WebSocket reconnect replay scenario)",
     )
-    result = validate_ohlcv(df)
-    logger.info(
-        "OHLC-error DataFrame: is_valid=%s, errors=%d",
-        result.is_valid,
-        len(result.errors),
-    )
-    for v in result.errors:
-        logger.info(
-            "  [%s] %s — rows: %s, context: %s",
-            v.check.value,
-            v.message,
-            v.affected_rows,
-            v.context,
-        )
+    bars: list[OHLCVBar] = _make_duplicate_ts_bars()
+    result: ValidationResult = validate_ohlcv(_bars_to_df(bars))
+    _print_result(result, label="8 bars — 1 duplicate timestamp injected")
     assert not result.is_valid
-    # Bars 2 and 7 are affected — check by row index, not by count (count is implementation detail)
-    error_rows = {row for v in result.errors for row in v.affected_rows}
-    assert 2 in error_rows, f"Expected row 2 in error rows, got {error_rows}"
-    assert 7 in error_rows, f"Expected row 7 in error rows, got {error_rows}"
-    assert any(v.check == ViolationType.OHLC_INCONSISTENCY for v in result.errors)
-
-    # --- Gap warning (WARNING-only, is_valid stays True) ---
-    bars = make_gapped_bars()
-    df = pl.DataFrame(
-        {
-            "timestamp": [b.timestamp for b in bars],
-            "open": [b.open for b in bars],
-            "high": [b.high for b in bars],
-            "low": [b.low for b in bars],
-            "close": [b.close for b in bars],
-            "volume": [b.volume for b in bars],
-        }
-    )
-    result = validate_ohlcv(df, interval="1D")
-    logger.info(
-        "Gapped DataFrame: is_valid=%s, warnings=%d",
-        result.is_valid,
-        len(result.warnings),
-    )
-    assert result.is_valid  # WARNING does not affect is_valid
-    assert any(v.check == ViolationType.GAP_DETECTED for v in result.warnings)
-
-    logger.info("Demo 1 complete.\n")
+    assert any(v.check == ViolationType.DUPLICATE_TIMESTAMP for v in result.errors)
 
 
 # ---------------------------------------------------------------------------
-# 2. DataExporter.to_csv(validate=True, strict=False) — logging mode
+# Demo 3 — Non-monotonic timestamps
+# ---------------------------------------------------------------------------
+
+
+def demo_nonmonotonic_timestamps() -> None:
+    _section(
+        3,
+        "Non-monotonic timestamps",
+        "Bar 5 has an earlier timestamp than bar 4 (late-arriving WebSocket frame)",
+    )
+    bars: list[OHLCVBar] = _make_nonmonotonic_bars()
+    result: ValidationResult = validate_ohlcv(_bars_to_df(bars))
+    _print_result(result, label="8 bars — 1 out-of-order timestamp injected")
+    assert not result.is_valid
+    assert any(v.check == ViolationType.NON_MONOTONIC_TIMESTAMP for v in result.errors)
+
+
+# ---------------------------------------------------------------------------
+# Demo 4 — OHLC inconsistency
+# ---------------------------------------------------------------------------
+
+
+def demo_ohlc_inconsistency() -> None:
+    _section(
+        4,
+        "OHLC inconsistency",
+        "Bars 2 and 7 have open > high — violates low ≤ open/close ≤ high",
+    )
+    bars: list[OHLCVBar] = _make_ohlc_error_bars()
+    result: ValidationResult = validate_ohlcv(_bars_to_df(bars))
+    _print_result(result, label="10 bars — open > high on rows 2 and 7")
+    assert not result.is_valid
+    error_rows: set[int] = {row for v in result.errors for row in v.affected_rows}
+    assert 2 in error_rows
+    assert 7 in error_rows
+
+
+# ---------------------------------------------------------------------------
+# Demo 5 — Negative volume
+# ---------------------------------------------------------------------------
+
+
+def demo_negative_volume() -> None:
+    _section(5, "Negative volume", "Bar 3 has volume = -500 — corrupt data from API")
+    bars: list[OHLCVBar] = _make_negative_volume_bars()
+    result: ValidationResult = validate_ohlcv(_bars_to_df(bars))
+    _print_result(result, label="8 bars — negative volume on row 3")
+    assert not result.is_valid
+    assert any(v.check == ViolationType.NEGATIVE_VOLUME for v in result.errors)
+
+
+# ---------------------------------------------------------------------------
+# Demo 6 — Gap detection
+# ---------------------------------------------------------------------------
+
+
+def demo_gap_detection() -> None:
+    _section(
+        6,
+        "Gap detection  (WARNING — is_valid stays True)",
+        "3-day jump between bar 2→3; interval='1D' enables cadence check",
+    )
+    bars: list[OHLCVBar] = _make_gapped_bars()
+    result: ValidationResult = validate_ohlcv(_bars_to_df(bars), interval="1D")
+    _print_result(result, label="5 daily bars — 3-day gap injected")
+    assert result.is_valid  # WARNING does not affect is_valid
+    assert any(v.check == ViolationType.GAP_DETECTED for v in result.warnings)
+
+    console.print(
+        "[dim]Note: daily equity data will also trigger GAP_DETECTED on weekends/holidays "
+        "— this is intentional (Phase 1 is cadence-only, not calendar-aware).[/dim]\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Demo 7 — DataExporter logging mode (strict=False)
 # ---------------------------------------------------------------------------
 
 
 async def demo_export_logging_mode() -> None:
-    """
-    validate=True, strict=False (default):
-    Violations are logged at WARNING level, but the export always proceeds.
-    Even ERROR violations do not block the file write.
-    """
-    logger.info("=" * 60)
-    logger.info("DEMO 2: to_csv(validate=True, strict=False) — logging mode")
-    logger.info("=" * 60)
-
-    # Use bars WITH OHLC errors — violations will be logged, but file is written anyway
-    bars = make_ohlc_error_bars()
-    exporter = DataExporter()
+    _section(
+        7,
+        "DataExporter — logging mode  (validate=True, strict=False)",
+        "Violations are logged at WARNING; export always proceeds",
+    )
+    bars: list[OHLCVBar] = _make_ohlc_error_bars()
+    exporter: DataExporter = DataExporter()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        out = await exporter.to_csv(
+        out: Path = await exporter.to_csv(
             bars,
             Path(tmpdir) / "ohlc_errors.csv",
             validate=True,
-            strict=False,  # violations logged, export proceeds
+            strict=False,
         )
-        # File is written despite ERROR violations
-        assert out.exists(), "File must be written in non-strict mode"
-        logger.info(
-            "Export succeeded (strict=False): %s — violations logged above as WARNING",
-            out.name,
+        assert out.exists()
+        console.print(
+            f"  [green]✔[/green]  File written despite ERROR violations: [bold]{out.name}[/bold]"
         )
-
-    logger.info("Demo 2 complete.\n")
+        console.print("  [dim]Violations were logged at WARNING level above.[/dim]\n")
 
 
 # ---------------------------------------------------------------------------
-# 3. DataExporter.to_csv(validate=True, strict=True) — strict mode
+# Demo 8 — DataExporter strict mode (strict=True)
 # ---------------------------------------------------------------------------
 
 
 async def demo_export_strict_mode() -> None:
-    """
-    validate=True, strict=True:
-    DataIntegrityError is raised on ERROR violations. The file is NOT written.
-    """
-    logger.info("=" * 60)
-    logger.info("DEMO 3: to_csv(validate=True, strict=True) — strict mode")
-    logger.info("=" * 60)
-
-    # OHLCVBar does not validate OHLC constraints at construction time.
-    # These bars are created successfully; OHLC errors are caught by validate_ohlcv().
-    bars = make_ohlc_error_bars()
-    exporter = DataExporter()
+    _section(
+        8,
+        "DataExporter — strict mode  (validate=True, strict=True)",
+        "DataIntegrityError raised on ERROR violations; file is NOT written",
+    )
+    bars: list[OHLCVBar] = _make_ohlc_error_bars()
+    exporter: DataExporter = DataExporter()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        out_path = Path(tmpdir) / "should_not_exist.csv"
+        out_path: Path = Path(tmpdir) / "should_not_exist.csv"
         try:
-            await exporter.to_csv(
-                bars,
-                out_path,
-                validate=True,
-                strict=True,
+            await exporter.to_csv(bars, out_path, validate=True, strict=True)
+            raise AssertionError("Expected DataIntegrityError")
+        except DataIntegrityError as exc:
+            r: ValidationResult = exc.result
+            blocked_table: Table = Table(
+                "Field", "Value", box=box.SIMPLE_HEAD, show_header=False, padding=(0, 1)
             )
-            raise AssertionError("Expected DataIntegrityError — should not reach here")
-        except DataIntegrityError as e:
-            logger.info(
-                "Export blocked (strict=True): %d error(s) in %d bars",
-                len(e.result.errors),
-                e.result.bars_checked,
-            )
-            for v in e.result.errors:
-                logger.info(
-                    "  [%s] %s — rows: %s",
-                    v.check.value,
-                    v.message,
-                    v.affected_rows,
-                )
-            assert not out_path.exists(), (
-                "File must NOT be written when DataIntegrityError is raised"
-            )
-            logger.info("Confirmed: output file was NOT written.")
+            blocked_table.add_row("Export blocked", Text("Yes", style="bold red"))
+            blocked_table.add_row("Errors found", str(len(r.errors)))
+            blocked_table.add_row("Bars checked", str(r.bars_checked))
+            console.print(blocked_table)
 
-    logger.info("Demo 3 complete.\n")
+            vtable: Table = Table("Check", "Message", "Rows", box=box.MINIMAL, border_style="red")
+            for v in r.errors:
+                vtable.add_row(v.check.value, v.message, str(v.affected_rows))
+            console.print(vtable)
+
+            assert not out_path.exists()
+            console.print(
+                "\n  [green]✔[/green]  Confirmed: output file was [bold]NOT[/bold] written.\n"
+            )
 
 
 # ---------------------------------------------------------------------------
-# 4. Programmatic violation handling
+# Demo 9 — Selective checks
 # ---------------------------------------------------------------------------
 
 
-def demo_programmatic_handling() -> None:
-    """
-    Use validate_ohlcv() directly for custom handling:
-    - Separate errors from warnings
-    - Extract affected row indices for downstream repair
-    - Check specific violation types
-    - Inspect serialized form (model_dump excludes .errors / .warnings properties)
-    """
-    logger.info("=" * 60)
-    logger.info("DEMO 4: Programmatic violation handling")
-    logger.info("=" * 60)
-
-    bars = make_ohlc_error_bars()
-    df = pl.DataFrame(
-        {
-            "timestamp": [b.timestamp for b in bars],
-            "open": [b.open for b in bars],
-            "high": [b.high for b in bars],
-            "low": [b.low for b in bars],
-            "close": [b.close for b in bars],
-            "volume": [b.volume for b in bars],
-        }
+def demo_selective_checks() -> None:
+    _section(
+        9,
+        "Selective checks",
+        "Run only DUPLICATE_TIMESTAMP + OHLC_INCONSISTENCY + NEGATIVE_VOLUME",
     )
-    result = validate_ohlcv(
-        df,
+    bars: list[OHLCVBar] = _make_ohlc_error_bars()
+    result: ValidationResult = validate_ohlcv(
+        _bars_to_df(bars),
         checks=[
             ViolationType.DUPLICATE_TIMESTAMP,
             ViolationType.OHLC_INCONSISTENCY,
             ViolationType.NEGATIVE_VOLUME,
         ],
     )
+    _print_result(result, label="10 bars — subset of checks only")
 
-    # Separate by severity
-    logger.info("Errors: %d, Warnings: %d", len(result.errors), len(result.warnings))
-
-    # Collect all affected rows across all ERROR violations
-    error_rows = sorted({row for v in result.errors for row in v.affected_rows})
-    logger.info("Rows with errors: %s", error_rows)
-
-    # Check for a specific violation type
-    has_ohlc_errors = any(v.check == ViolationType.OHLC_INCONSISTENCY for v in result.errors)
-    logger.info("OHLC violations present: %s", has_ohlc_errors)
-    assert has_ohlc_errors
-
-    # model_dump() for serialization — .errors and .warnings are @property, not serialized
-    dump = result.model_dump()
-    logger.info("Serialized keys: %s", list(dump.keys()))
-    assert "errors" not in dump, "errors must not appear in model_dump()"
-    assert "warnings" not in dump, "warnings must not appear in model_dump()"
-
-    # Checks run are in deterministic order (subset of _CHECK_ORDER)
-    logger.info("Checks run: %s", [c.value for c in result.checks_run])
-
-    logger.info("Demo 4 complete.\n")
+    # model_dump() does NOT include .errors / .warnings (@property — not serialised)
+    dump: dict[str, object] = result.model_dump()
+    skipped_table: Table = Table(
+        "Key", "Included in model_dump()", box=box.SIMPLE_HEAD, show_header=False, padding=(0, 1)
+    )
+    for key in ("violations", "bars_checked", "checks_run"):
+        skipped_table.add_row(key, Text("✔", style="green"))
+    for key in ("errors", "warnings"):
+        present: bool = key in dump
+        skipped_table.add_row(
+            key,
+            Text(
+                "✔" if present else "✘  (computed @property — not serialised)",
+                style="green" if present else "dim",
+            ),
+        )
+    console.print(skipped_table)
+    assert "errors" not in dump
+    assert "warnings" not in dump
+    console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -382,11 +454,43 @@ def demo_programmatic_handling() -> None:
 
 
 async def main() -> None:
-    demo_standalone_validation()
+    started_at: datetime = datetime.now(tz=UTC)
+
+    console.print(
+        Panel(
+            Text.assemble(
+                ("tvkit.validation", "bold magenta"),
+                (" — OHLCV Data Integrity Validation\n", "bold white"),
+                ("Covers all 5 checks · DataExporter integration · selective checks", "dim"),
+            ),
+            box=box.DOUBLE_EDGE,
+            border_style="magenta",
+            padding=(1, 4),
+        )
+    )
+
+    demo_clean_data()
+    demo_duplicate_timestamps()
+    demo_nonmonotonic_timestamps()
+    demo_ohlc_inconsistency()
+    demo_negative_volume()
+    demo_gap_detection()
     await demo_export_logging_mode()
     await demo_export_strict_mode()
-    demo_programmatic_handling()
-    logger.info("All demos complete.")
+    demo_selective_checks()
+
+    elapsed: float = (datetime.now(tz=UTC) - started_at).total_seconds()
+    console.print(
+        Panel(
+            Text.assemble(
+                ("✔  All 9 demos completed", "bold green"),
+                (f"  ·  {elapsed:.2f}s", "dim"),
+            ),
+            box=box.ROUNDED,
+            border_style="green",
+            padding=(0, 2),
+        )
+    )
 
 
 if __name__ == "__main__":
