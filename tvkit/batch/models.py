@@ -244,7 +244,7 @@ class BatchDownloadRequest(BaseModel):
             "Signature: (result: SymbolResult, completed: int, total: int) -> None. "
             "Called after both successes and failures. completed is 1-based. "
             "Async callables are rejected — this callback must be synchronous. "
-            "Exceptions raised by the callback propagate immediately out of batch_download()."
+            "Exceptions raised by the callback are logged and swallowed — a bad callback does not abort the batch."
         ),
         exclude=True,  # not JSON-serializable — excluded from model_dump()
     )

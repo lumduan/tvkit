@@ -11,8 +11,18 @@ Covers:
 - Non-retryable NoHistoricalDataError (no retry)
 - on_progress callback behavior
 - BatchDownloadRequest mutual-exclusivity validation
+Phase 2 additions:
+- Full BatchDownloadRequest validation (interval, browser, concurrency, max_attempts,
+  date-range order, invalid ISO 8601, empty symbols)
+- auth_token SecretStr: repr() and log non-disclosure
+- ErrorInfo.exception_type and ErrorInfo.attempt correctness (non-retryable, exhaustion,
+  catch-all paths)
+- Structured logging LogRecord field assertions (WARNING per-attempt, WARNING non-retryable,
+  ERROR catch-all with exc_info, INFO batch-complete)
+- catch-all handler converts unexpected exception to SymbolResult failure
 """
 
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -380,3 +390,343 @@ async def test_on_progress_callback_exception_swallowed(mock_bars: list[OHLCVBar
     # Batch completes successfully despite the callback raising
     assert summary.success_count == 1
     assert summary.failure_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: BatchDownloadRequest validation
+# ---------------------------------------------------------------------------
+
+
+def test_empty_symbols_raises() -> None:
+    """Empty symbols list raises ValidationError (min_length=1 on symbols field)."""
+    with pytest.raises(ValidationError):
+        BatchDownloadRequest(symbols=[], interval="1D", bars_count=1)
+
+
+def test_invalid_interval_raises() -> None:
+    """Unrecognised interval string raises ValidationError."""
+    with pytest.raises(ValidationError, match="[Ii]nterval"):
+        BatchDownloadRequest(symbols=["NASDAQ:AAPL"], interval="INVALID", bars_count=1)
+
+
+def test_invalid_browser_raises() -> None:
+    """Unsupported browser string raises ValidationError."""
+    with pytest.raises(ValidationError, match="[Bb]rowser"):
+        BatchDownloadRequest(
+            symbols=["NASDAQ:AAPL"],
+            interval="1D",
+            bars_count=1,
+            browser="safari",
+        )
+
+
+def test_invalid_concurrency_zero_raises() -> None:
+    """concurrency=0 raises ValidationError (ge=1)."""
+    with pytest.raises(ValidationError):
+        BatchDownloadRequest(
+            symbols=["NASDAQ:AAPL"],
+            interval="1D",
+            bars_count=1,
+            concurrency=0,
+        )
+
+
+def test_invalid_max_attempts_zero_raises() -> None:
+    """max_attempts=0 raises ValidationError (ge=1)."""
+    with pytest.raises(ValidationError):
+        BatchDownloadRequest(
+            symbols=["NASDAQ:AAPL"],
+            interval="1D",
+            bars_count=1,
+            max_attempts=0,
+        )
+
+
+def test_end_before_start_raises() -> None:
+    """end <= start raises ValidationError from validate_fetch_mode."""
+    with pytest.raises(ValidationError, match="[Ee]nd"):
+        BatchDownloadRequest(
+            symbols=["NASDAQ:AAPL"],
+            interval="1D",
+            start="2024-06-01",
+            end="2024-01-01",
+        )
+
+
+def test_invalid_iso_datetime_raises() -> None:
+    """Unparseable start string raises ValidationError."""
+    with pytest.raises(ValidationError):
+        BatchDownloadRequest(
+            symbols=["NASDAQ:AAPL"],
+            interval="1D",
+            start="not-a-date",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: auth_token SecretStr non-disclosure
+# ---------------------------------------------------------------------------
+
+
+def test_auth_token_secret_str_repr() -> None:
+    """repr() of a BatchDownloadRequest never exposes the raw auth_token value."""
+    secret = "super_secret_token_12345"
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        bars_count=1,
+        auth_token=secret,
+    )
+    assert secret not in repr(request)
+
+
+@pytest.mark.asyncio
+async def test_auth_token_not_in_logs(
+    mock_bars: list[OHLCVBar],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The raw auth_token value never appears in any log record after a batch run."""
+    secret = "super_secret_token_67890"
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        bars_count=1,
+        auth_token=secret,
+    )
+    with caplog.at_level(logging.DEBUG, logger="tvkit.batch.downloader"):
+        with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+            await batch_download(request)
+
+    all_log_text = " ".join(r.getMessage() for r in caplog.records)
+    assert secret not in all_log_text
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: ErrorInfo correctness (exception_type + attempt)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_error_info_on_non_retryable_exception_type() -> None:
+    """Non-retryable ValueError: error.exception_type contains 'ValueError', attempt==1."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(ValueError("bad input")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=3,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is False
+    assert result.error is not None
+    assert "ValueError" in result.error.exception_type
+    assert result.error.attempt == 1  # no retries
+
+
+@pytest.mark.asyncio
+async def test_error_info_on_retry_exhaustion_exception_type() -> None:
+    """Retry exhaustion: error.exception_type contains 'StreamConnectionError', attempt==max_attempts."""
+    max_attempts = 3
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(StreamConnectionError("dropped")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=max_attempts,
+                base_backoff=0.0001,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is False
+    assert result.error is not None
+    assert "StreamConnectionError" in result.error.exception_type
+    assert result.error.attempt == max_attempts
+
+
+@pytest.mark.asyncio
+async def test_error_info_on_catch_all_exception_type() -> None:
+    """Unexpected KeyError: caught by broad handler → error.exception_type contains 'KeyError'."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(KeyError("unexpected")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=2,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is False
+    assert result.error is not None
+    assert "KeyError" in result.error.exception_type
+    assert result.error.attempt >= 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Structured logging — LogRecord field assertions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retryable_warning_log_fields(caplog: pytest.LogCaptureFixture) -> None:
+    """WARNING log on retryable failure includes symbol, attempt, max_attempts, exception_type."""
+    with caplog.at_level(logging.WARNING, logger="tvkit.batch.downloader"):
+        with patch(
+            "tvkit.batch.downloader.OHLCV",
+            return_value=_make_failing_client(StreamConnectionError("dropped")),
+        ):
+            await batch_download(
+                BatchDownloadRequest(
+                    symbols=["NASDAQ:AAPL"],
+                    interval="1D",
+                    bars_count=1,
+                    max_attempts=2,
+                    base_backoff=0.0001,
+                )
+            )
+
+    # Find a WARNING record from the retryable path
+    retry_records = [
+        r for r in caplog.records if r.levelno == logging.WARNING and "will retry" in r.getMessage()
+    ]
+    assert retry_records, "Expected at least one WARNING with 'will retry'"
+    rec = retry_records[0]
+    assert rec.symbol == "NASDAQ:AAPL"  # type: ignore[attr-defined]
+    assert rec.attempt == 1  # type: ignore[attr-defined]
+    assert rec.max_attempts == 2  # type: ignore[attr-defined]
+    assert "StreamConnectionError" in rec.exception_type  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_warning_log_fields(caplog: pytest.LogCaptureFixture) -> None:
+    """WARNING log on non-retryable failure includes symbol, attempt, exception_type."""
+    with caplog.at_level(logging.WARNING, logger="tvkit.batch.downloader"):
+        with patch(
+            "tvkit.batch.downloader.OHLCV",
+            return_value=_make_failing_client(ValueError("bad")),
+        ):
+            await batch_download(
+                BatchDownloadRequest(
+                    symbols=["NASDAQ:AAPL"],
+                    interval="1D",
+                    bars_count=1,
+                    max_attempts=3,
+                )
+            )
+
+    non_retryable_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "non-retryable" in r.getMessage()
+    ]
+    assert non_retryable_records, "Expected at least one WARNING with 'non-retryable'"
+    rec = non_retryable_records[0]
+    assert rec.symbol == "NASDAQ:AAPL"  # type: ignore[attr-defined]
+    assert rec.attempt == 1  # type: ignore[attr-defined]
+    assert "ValueError" in rec.exception_type  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_unexpected_exception_error_log(caplog: pytest.LogCaptureFixture) -> None:
+    """Unexpected exception is logged at ERROR level with exc_info and correct fields."""
+    with caplog.at_level(logging.ERROR, logger="tvkit.batch.downloader"):
+        with patch(
+            "tvkit.batch.downloader.OHLCV",
+            return_value=_make_failing_client(KeyError("unexpected")),
+        ):
+            summary = await batch_download(
+                BatchDownloadRequest(
+                    symbols=["NASDAQ:AAPL"],
+                    interval="1D",
+                    bars_count=1,
+                    max_attempts=1,
+                )
+            )
+
+    # Batch still returns a summary — exception was absorbed
+    assert summary.failure_count == 1
+
+    error_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.ERROR and "unexpected" in r.getMessage().lower()
+    ]
+    assert error_records, "Expected at least one ERROR log for unexpected exception"
+    rec = error_records[0]
+    assert rec.exc_info is not None  # exc_info=True was passed
+    assert rec.symbol == "NASDAQ:AAPL"  # type: ignore[attr-defined]
+    assert "KeyError" in rec.exception_type  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_batch_complete_info_log_fields(
+    mock_bars: list[OHLCVBar],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """INFO 'Batch download complete' log includes total, success, failure, elapsed fields."""
+    with caplog.at_level(logging.INFO, logger="tvkit.batch.downloader"):
+        with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+            summary = await batch_download(
+                BatchDownloadRequest(
+                    symbols=["NASDAQ:AAPL", "NASDAQ:MSFT"],
+                    interval="1D",
+                    bars_count=1,
+                )
+            )
+
+    complete_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.INFO and "complete" in r.getMessage().lower()
+    ]
+    assert complete_records, "Expected at least one INFO log with 'complete'"
+    rec = complete_records[0]
+    assert rec.total == summary.total_count  # type: ignore[attr-defined]
+    assert rec.success == summary.success_count  # type: ignore[attr-defined]
+    assert rec.failure == summary.failure_count  # type: ignore[attr-defined]
+    assert rec.elapsed >= 0.0  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: catch-all handler converts unexpected exception to failure
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unexpected_exception_converted_to_failure() -> None:
+    """KeyError from inside OHLCV is caught by the broad handler → SymbolResult failure."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(KeyError("internal oops")),
+    ):
+        # batch_download must NOT raise — the exception is absorbed
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=1,
+            )
+        )
+
+    assert summary.failure_count == 1
+    assert summary.success_count == 0
+    result = summary.results[0]
+    assert result.success is False
+    assert result.bars == []
+    assert result.error is not None
