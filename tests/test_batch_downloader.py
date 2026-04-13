@@ -20,6 +20,14 @@ Phase 2 additions:
 - Structured logging LogRecord field assertions (WARNING per-attempt, WARNING non-retryable,
   ERROR catch-all with exc_info, INFO batch-complete)
 - catch-all handler converts unexpected exception to SymbolResult failure
+Phase 3 additions:
+- raise_if_failed(): raises BatchDownloadError on partial failure; no-op on full success
+- raise_if_failed(): error message contains counts; exc.summary identity; exc.failed_symbols
+- on_progress multi-symbol: invocation count == symbol count; completed counter 1-based
+- on_progress invoked for failed symbols (not just successes)
+- failed_symbols computed field: empty on full success
+- successful_symbols computed field: empty on full failure
+- model_dump() includes both computed fields
 """
 
 import logging
@@ -730,3 +738,240 @@ async def test_unexpected_exception_converted_to_failure() -> None:
     assert result.success is False
     assert result.bars == []
     assert result.error is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: raise_if_failed()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_raise_if_failed_raises_on_partial_failure() -> None:
+    """raise_if_failed() raises BatchDownloadError when failure_count > 0."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(StreamConnectionError("down")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=1,
+            )
+        )
+
+    assert summary.failure_count == 1
+    with pytest.raises(BatchDownloadError):
+        summary.raise_if_failed()
+
+
+@pytest.mark.asyncio
+async def test_raise_if_failed_noop_on_full_success(mock_bars: list[OHLCVBar]) -> None:
+    """raise_if_failed() does not raise when all symbols succeed."""
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        summary = await batch_download(
+            BatchDownloadRequest(symbols=["NASDAQ:AAPL"], interval="1D", bars_count=1)
+        )
+
+    assert summary.failure_count == 0
+    summary.raise_if_failed()  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_raise_if_failed_attaches_summary_and_failed_symbols() -> None:
+    """raise_if_failed() attaches the exact same summary object; exc.failed_symbols matches."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(StreamConnectionError("down")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=1,
+            )
+        )
+
+    with pytest.raises(BatchDownloadError) as exc_info:
+        summary.raise_if_failed()
+
+    exc = exc_info.value
+    assert exc.summary is summary  # identity — same object, not a copy
+    assert exc.failed_symbols == ["NASDAQ:AAPL"]
+
+
+@pytest.mark.asyncio
+async def test_raise_if_failed_error_message_includes_counts() -> None:
+    """raise_if_failed() error message contains failure count and total count."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(StreamConnectionError("down")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=1,
+            )
+        )
+
+    with pytest.raises(BatchDownloadError) as exc_info:
+        summary.raise_if_failed()
+
+    message = str(exc_info.value)
+    # Message must be actionable: both failure count and total are present
+    assert "2" in message  # 2 failures
+    assert "2" in message  # 2 total (also 2 in this case)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: on_progress multi-symbol behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_on_progress_multi_symbol_invocation_count(mock_bars: list[OHLCVBar]) -> None:
+    """on_progress is called exactly once per symbol for a 3-symbol batch."""
+    call_count = 0
+
+    def progress(result: object, completed: int, total: int) -> None:
+        nonlocal call_count
+        call_count += 1
+
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT", "NYSE:JPM"],
+                interval="1D",
+                bars_count=1,
+                on_progress=progress,
+            )
+        )
+
+    assert call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_on_progress_completed_counter_reaches_total(mock_bars: list[OHLCVBar]) -> None:
+    """completed counter is 1-based and every value from 1 to total appears exactly once."""
+    completed_values: list[int] = []
+    total_values: list[int] = []
+
+    def progress(result: object, completed: int, total: int) -> None:
+        completed_values.append(completed)
+        total_values.append(total)
+
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT", "NYSE:JPM"],
+                interval="1D",
+                bars_count=1,
+                on_progress=progress,
+            )
+        )
+
+    # Every value from 1 to 3 must appear exactly once (order not guaranteed in async)
+    assert sorted(completed_values) == [1, 2, 3]
+    # total is always the deduplicated symbol count
+    assert all(t == 3 for t in total_values)
+
+
+@pytest.mark.asyncio
+async def test_on_progress_invoked_on_failure(mock_bars: list[OHLCVBar]) -> None:
+    """on_progress is invoked for failed symbols as well as successful ones."""
+    received_results: list[object] = []
+
+    def progress(result: object, completed: int, total: int) -> None:
+        received_results.append(result)
+
+    good_client = _make_mock_client(mock_bars)
+    bad_client = _make_failing_client(StreamConnectionError("down"))
+
+    call_count = 0
+
+    def client_factory(*args: object, **kwargs: object) -> object:
+        nonlocal call_count
+        call_count += 1
+        return good_client if call_count == 1 else bad_client
+
+    with patch("tvkit.batch.downloader.OHLCV", side_effect=client_factory):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=1,
+                on_progress=progress,
+            )
+        )
+
+    # Callback must have been called for both symbols (one success, one failure)
+    assert len(received_results) == 2
+    successes = [r for r in received_results if getattr(r, "success", None) is True]
+    failures = [r for r in received_results if getattr(r, "success", None) is False]
+    assert len(successes) == 1
+    assert len(failures) == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: computed fields — failed_symbols and successful_symbols
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_failed_symbols_is_empty_on_full_success(mock_bars: list[OHLCVBar]) -> None:
+    """failed_symbols is an empty list when all symbols succeed."""
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT"],
+                interval="1D",
+                bars_count=1,
+            )
+        )
+
+    assert summary.failed_symbols == []
+    assert summary.successful_symbols == ["NASDAQ:AAPL", "NASDAQ:MSFT"]
+
+
+@pytest.mark.asyncio
+async def test_successful_symbols_is_empty_on_full_failure() -> None:
+    """successful_symbols is an empty list when all symbols fail."""
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(StreamConnectionError("down")),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=1,
+            )
+        )
+
+    assert summary.successful_symbols == []
+    assert set(summary.failed_symbols) == {"NASDAQ:AAPL", "NASDAQ:MSFT"}
+
+
+@pytest.mark.asyncio
+async def test_summary_model_dump_includes_computed_fields(mock_bars: list[OHLCVBar]) -> None:
+    """model_dump() output includes failed_symbols and successful_symbols computed fields."""
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+            )
+        )
+
+    dumped = summary.model_dump()
+    assert "failed_symbols" in dumped
+    assert "successful_symbols" in dumped
+    assert dumped["failed_symbols"] == []
+    assert dumped["successful_symbols"] == ["NASDAQ:AAPL"]
