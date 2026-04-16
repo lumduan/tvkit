@@ -10,6 +10,7 @@ import websockets.exceptions
 
 from tvkit.api.chart.exceptions import NoHistoricalDataError, StreamConnectionError
 from tvkit.api.chart.ohlcv import OHLCV
+from tvkit.api.utils.symbol_validator import validate_symbol_detailed
 from tvkit.batch.exceptions import BatchDownloadError
 from tvkit.batch.models import (
     BatchDownloadRequest,
@@ -20,6 +21,10 @@ from tvkit.batch.models import (
 from tvkit.symbols import normalize_symbols
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+# Pre-flight validation constants
+PRE_FLIGHT_WARNING_THRESHOLD: int = 200
+SYMBOL_VALIDATION_ERROR_TYPE: str = "SymbolValidationError"
 
 # Exceptions that indicate a transient failure — safe to retry.
 # Intentionally narrow — only exceptions with a clear transient signal:
@@ -37,6 +42,79 @@ _RETRYABLE: tuple[type[BaseException], ...] = (
     websockets.exceptions.WebSocketException,
     TimeoutError,
 )
+
+
+async def _preflight_validate(
+    symbols: list[str],
+) -> tuple[list[str], list[SymbolResult]]:
+    """Pre-validate symbols via TradingView HTTP API before the concurrent fetch phase.
+
+    Symbols confirmed invalid (HTTP 404) are rejected immediately as
+    ``SymbolResult(success=False, attempts=0, error=ErrorInfo(attempt=0))``.
+    Symbols that pass or whose validation is indeterminate (transport/server failure)
+    proceed to ``_fetch_one()`` unchanged — validation fails open to avoid dropping
+    symbols due to validator unavailability.
+
+    A WARNING is emitted if the batch exceeds ``PRE_FLIGHT_WARNING_THRESHOLD`` symbols,
+    because validation is serial and adds one HTTP call per symbol.
+
+    Args:
+        symbols: Deduplicated canonical symbols to validate (order-preserving).
+
+    Returns:
+        Tuple of:
+        - ``valid_symbols``: Symbols that passed or had indeterminate validation.
+        - ``prefailed``: ``SymbolResult`` entries for confirmed-invalid symbols.
+    """
+    if len(symbols) > PRE_FLIGHT_WARNING_THRESHOLD:
+        logger.warning(
+            "validate_symbols_before_fetch enabled for large batch — "
+            "this adds one HTTP call per symbol before any fetch begins",
+            extra={"symbol_count": len(symbols)},
+        )
+
+    valid: list[str] = []
+    prefailed: list[SymbolResult] = []
+
+    for symbol in symbols:
+        t0 = time.monotonic()
+        outcome = await validate_symbol_detailed(symbol)
+
+        if outcome.is_valid:
+            valid.append(symbol)
+            continue
+
+        if outcome.is_known_invalid:
+            logger.warning(
+                "Symbol failed pre-flight validation — skipping fetch",
+                extra={"symbol": symbol, "reason": outcome.message},
+            )
+            prefailed.append(
+                SymbolResult(
+                    symbol=symbol,
+                    bars=[],
+                    success=False,
+                    error=ErrorInfo(
+                        message=(
+                            outcome.message or f"Symbol '{symbol}' failed pre-flight validation"
+                        ),
+                        exception_type=SYMBOL_VALIDATION_ERROR_TYPE,
+                        attempt=0,
+                    ),
+                    attempts=0,
+                    elapsed_seconds=time.monotonic() - t0,
+                )
+            )
+            continue
+
+        # Indeterminate — transport or server failure; fail open
+        logger.warning(
+            "Pre-flight validation unavailable — allowing symbol to proceed to fetch",
+            extra={"symbol": symbol, "reason": outcome.message},
+        )
+        valid.append(symbol)
+
+    return valid, prefailed
 
 
 async def _fetch_one(
@@ -194,8 +272,16 @@ async def batch_download(request: BatchDownloadRequest) -> BatchDownloadSummary:
         BatchDownloadError: If strict=True and one or more symbols fail.
     """
     # Normalize then deduplicate — order-preserving via dict.fromkeys
-    canonical: list[str] = list(dict.fromkeys(normalize_symbols(request.symbols)))
-    total = len(canonical)
+    original_canonical: list[str] = list(dict.fromkeys(normalize_symbols(request.symbols)))
+    # total is based on deduplicated input *before* pre-flight filtering
+    total = len(original_canonical)
+
+    # Phase 4: opt-in pre-flight symbol validation
+    prefailed: list[SymbolResult] = []
+    canonical: list[str] = list(original_canonical)
+    if request.validate_symbols_before_fetch:
+        canonical, prefailed = await _preflight_validate(canonical)
+
     semaphore = asyncio.Semaphore(request.concurrency)
     t0_batch = time.monotonic()
 
@@ -239,7 +325,11 @@ async def batch_download(request: BatchDownloadRequest) -> BatchDownloadSummary:
         )
         return result
 
-    results: list[SymbolResult] = list(await asyncio.gather(*(_task(s) for s in canonical)))
+    fetch_results: list[SymbolResult] = list(await asyncio.gather(*(_task(s) for s in canonical)))
+
+    # Merge pre-flight failures with fetch results, preserving original input order
+    symbol_to_result: dict[str, SymbolResult] = {r.symbol: r for r in prefailed + fetch_results}
+    results: list[SymbolResult] = [symbol_to_result[s] for s in original_canonical]
 
     success_count = sum(1 for r in results if r.success)
     summary = BatchDownloadSummary(

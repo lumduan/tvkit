@@ -975,3 +975,439 @@ async def test_summary_model_dump_includes_computed_fields(mock_bars: list[OHLCV
     assert "successful_symbols" in dumped
     assert dumped["failed_symbols"] == []
     assert dumped["successful_symbols"] == ["NASDAQ:AAPL"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Pre-flight symbol validation
+# ---------------------------------------------------------------------------
+
+from tvkit.api.utils.symbol_validator import SymbolValidationOutcome  # noqa: E402
+
+
+def _valid_outcome(symbol: str) -> SymbolValidationOutcome:
+    return SymbolValidationOutcome(symbol=symbol, is_valid=True, is_known_invalid=False)
+
+
+def _invalid_outcome(symbol: str) -> SymbolValidationOutcome:
+    return SymbolValidationOutcome(
+        symbol=symbol,
+        is_valid=False,
+        is_known_invalid=True,
+        message=f"Symbol '{symbol}' not found (HTTP 404)",
+    )
+
+
+def _indeterminate_outcome(symbol: str) -> SymbolValidationOutcome:
+    return SymbolValidationOutcome(
+        symbol=symbol,
+        is_valid=False,
+        is_known_invalid=False,
+        message=f"Validation unavailable for '{symbol}' after 3 attempts",
+    )
+
+
+@pytest.mark.asyncio
+async def test_preflight_disabled_by_default(mock_bars: list[OHLCVBar]) -> None:
+    """validate_symbols_before_fetch=False (default) — validate_symbol_detailed never called."""
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+        ) as mock_validate,
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(symbols=["NASDAQ:AAPL"], interval="1D", bars_count=1)
+        )
+
+    mock_validate.assert_not_called()
+    assert summary.success_count == 1
+
+
+@pytest.mark.asyncio
+async def test_preflight_all_valid(mock_bars: list[OHLCVBar]) -> None:
+    """All symbols valid — all proceed to _fetch_one(); summary shows full success."""
+    symbols = ["NASDAQ:AAPL", "NASDAQ:MSFT"]
+    outcomes = [_valid_outcome(s) for s in symbols]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=symbols,
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    assert summary.success_count == 2
+    assert summary.failure_count == 0
+    assert summary.total_count == 2
+
+
+@pytest.mark.asyncio
+async def test_preflight_mixed(mock_bars: list[OHLCVBar]) -> None:
+    """Mixed valid/invalid — invalid symbol skipped, valid symbol fetched."""
+    outcomes = [_valid_outcome("NASDAQ:AAPL"), _invalid_outcome("NASDAQ:FAKE")]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:FAKE"],
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    assert summary.total_count == 2
+    assert summary.success_count == 1
+    assert summary.failure_count == 1
+    assert "NASDAQ:FAKE" in summary.failed_symbols
+    assert "NASDAQ:AAPL" in summary.successful_symbols
+
+
+@pytest.mark.asyncio
+async def test_preflight_all_invalid() -> None:
+    """All symbols invalid — zero fetch calls made; all results are pre-flight failures."""
+    symbols = ["NASDAQ:FAKE1", "NASDAQ:FAKE2"]
+    outcomes = [_invalid_outcome(s) for s in symbols]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV") as mock_ohlcv,
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=symbols,
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    mock_ohlcv.assert_not_called()
+    assert summary.success_count == 0
+    assert summary.failure_count == 2
+
+
+@pytest.mark.asyncio
+async def test_preflight_attempt_is_zero() -> None:
+    """Pre-flight-rejected symbol has SymbolResult.attempts == 0 and error.attempt == 0."""
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            return_value=_invalid_outcome("NASDAQ:FAKE"),
+        ),
+        patch("tvkit.batch.downloader.OHLCV"),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:FAKE"],
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is False
+    assert result.attempts == 0
+    assert result.error is not None
+    assert result.error.attempt == 0
+    assert result.error.exception_type == "SymbolValidationError"
+
+
+@pytest.mark.asyncio
+async def test_preflight_warning_logged(caplog: pytest.LogCaptureFixture) -> None:
+    """WARNING log emitted per skipped symbol with 'symbol' and 'reason' structured fields."""
+    with caplog.at_level(logging.WARNING, logger="tvkit.batch.downloader"):
+        with (
+            patch(
+                "tvkit.batch.downloader.validate_symbol_detailed",
+                return_value=_invalid_outcome("NASDAQ:FAKE"),
+            ),
+            patch("tvkit.batch.downloader.OHLCV"),
+        ):
+            await batch_download(
+                BatchDownloadRequest(
+                    symbols=["NASDAQ:FAKE"],
+                    interval="1D",
+                    bars_count=1,
+                    validate_symbols_before_fetch=True,
+                )
+            )
+
+    skip_records = [
+        r
+        for r in caplog.records
+        if "pre-flight" in r.getMessage().lower() and "skipping" in r.getMessage().lower()
+    ]
+    assert skip_records, "Expected WARNING log about skipped symbol"
+    rec = skip_records[0]
+    assert rec.symbol == "NASDAQ:FAKE"  # type: ignore[attr-defined]
+    assert rec.reason is not None  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_preflight_large_batch_warning(
+    mock_bars: list[OHLCVBar],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """WARNING logged when validate_symbols_before_fetch=True and batch > 200 symbols."""
+    symbols = [f"NASDAQ:SYM{i:04d}" for i in range(201)]
+    outcomes = [_valid_outcome(s) for s in symbols]
+
+    with caplog.at_level(logging.WARNING, logger="tvkit.batch.downloader"):
+        with (
+            patch(
+                "tvkit.batch.downloader.validate_symbol_detailed",
+                side_effect=outcomes,
+            ),
+            patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+        ):
+            await batch_download(
+                BatchDownloadRequest(
+                    symbols=symbols,
+                    interval="1D",
+                    bars_count=1,
+                    validate_symbols_before_fetch=True,
+                )
+            )
+
+    large_batch_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "large batch" in r.getMessage().lower()
+    ]
+    assert large_batch_records, "Expected WARNING about large batch"
+    assert large_batch_records[0].symbol_count == 201  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_preflight_validation_transport_failure_fails_open(
+    mock_bars: list[OHLCVBar],
+) -> None:
+    """Indeterminate validation outcome — symbol still reaches _fetch_one()."""
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            return_value=_indeterminate_outcome("NASDAQ:AAPL"),
+        ),
+        patch(
+            "tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)
+        ) as mock_ohlcv,
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    # Symbol was allowed through to fetch despite validation being unavailable
+    mock_ohlcv.assert_called_once()
+    assert summary.success_count == 1
+
+
+@pytest.mark.asyncio
+async def test_preflight_validation_transport_failure_warning_logged(
+    mock_bars: list[OHLCVBar],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """WARNING log emitted when validation cannot determine symbol status."""
+    with caplog.at_level(logging.WARNING, logger="tvkit.batch.downloader"):
+        with (
+            patch(
+                "tvkit.batch.downloader.validate_symbol_detailed",
+                return_value=_indeterminate_outcome("NASDAQ:AAPL"),
+            ),
+            patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+        ):
+            await batch_download(
+                BatchDownloadRequest(
+                    symbols=["NASDAQ:AAPL"],
+                    interval="1D",
+                    bars_count=1,
+                    validate_symbols_before_fetch=True,
+                )
+            )
+
+    unavailable_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "unavailable" in r.getMessage().lower()
+    ]
+    assert unavailable_records, "Expected WARNING when validation is unavailable"
+    rec = unavailable_records[0]
+    assert rec.symbol == "NASDAQ:AAPL"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_preflight_summary_counts_correct(mock_bars: list[OHLCVBar]) -> None:
+    """success_count and failure_count are correct after mixed pre-flight results."""
+    symbols = ["NASDAQ:AAPL", "NASDAQ:FAKE", "NASDAQ:MSFT"]
+    outcomes = [
+        _valid_outcome("NASDAQ:AAPL"),
+        _invalid_outcome("NASDAQ:FAKE"),
+        _valid_outcome("NASDAQ:MSFT"),
+    ]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=symbols,
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    assert summary.total_count == 3
+    assert summary.success_count == 2
+    assert summary.failure_count == 1
+
+
+@pytest.mark.asyncio
+async def test_preflight_order_preserved(mock_bars: list[OHLCVBar]) -> None:
+    """Pre-failed symbols appear at their original positions in summary.results."""
+    symbols = ["NASDAQ:AAPL", "NASDAQ:FAKE", "NASDAQ:MSFT"]
+    outcomes = [
+        _valid_outcome("NASDAQ:AAPL"),
+        _invalid_outcome("NASDAQ:FAKE"),
+        _valid_outcome("NASDAQ:MSFT"),
+    ]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=symbols,
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    assert summary.results[0].symbol == "NASDAQ:AAPL"
+    assert summary.results[1].symbol == "NASDAQ:FAKE"
+    assert summary.results[2].symbol == "NASDAQ:MSFT"
+    assert summary.results[1].success is False
+    assert summary.results[1].attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_preflight_total_count_unchanged() -> None:
+    """total_count reflects deduplicated input length, not post-preflight count."""
+    outcomes = [_invalid_outcome("NASDAQ:FAKE1"), _invalid_outcome("NASDAQ:FAKE2")]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV"),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:FAKE1", "NASDAQ:FAKE2"],
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    # Both symbols rejected at pre-flight — total_count is still 2, not 0
+    assert summary.total_count == 2
+
+
+@pytest.mark.asyncio
+async def test_preflight_dedup_and_order_with_mixed_results(mock_bars: list[OHLCVBar]) -> None:
+    """Duplicates removed first; then mixed invalid/valid results preserve deduped order."""
+    # Input has a duplicate of AAPL; after dedup: [AAPL, FAKE]
+    symbols = ["NASDAQ:AAPL", "nasdaq:aapl", "NASDAQ:FAKE"]
+    outcomes = [_valid_outcome("NASDAQ:AAPL"), _invalid_outcome("NASDAQ:FAKE")]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=symbols,
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+            )
+        )
+
+    assert summary.total_count == 2  # deduplicated
+    assert summary.results[0].symbol == "NASDAQ:AAPL"
+    assert summary.results[1].symbol == "NASDAQ:FAKE"
+    assert summary.results[0].success is True
+    assert summary.results[1].success is False
+
+
+@pytest.mark.asyncio
+async def test_preflight_progress_total_uses_original_deduped_count(
+    mock_bars: list[OHLCVBar],
+) -> None:
+    """on_progress(..., total) stays aligned with original deduplicated input size."""
+    total_values: list[int] = []
+
+    def progress(result: object, completed: int, total: int) -> None:
+        total_values.append(total)
+
+    # One valid, one invalid — total after pre-flight would be 1, but total must stay 2
+    outcomes = [_valid_outcome("NASDAQ:AAPL"), _invalid_outcome("NASDAQ:FAKE")]
+
+    with (
+        patch(
+            "tvkit.batch.downloader.validate_symbol_detailed",
+            side_effect=outcomes,
+        ),
+        patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)),
+    ):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:FAKE"],
+                interval="1D",
+                bars_count=1,
+                validate_symbols_before_fetch=True,
+                on_progress=progress,
+            )
+        )
+
+    # on_progress is only called for fetch tasks (not pre-flight rejections)
+    # AAPL proceeds to fetch → callback called once with total=2
+    assert total_values == [2]

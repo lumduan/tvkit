@@ -30,7 +30,12 @@ from .models import (
     SymbolConversionResult,
 )
 from .retry import calculate_backoff_delay
-from .symbol_validator import convert_symbol_format, validate_symbols
+from .symbol_validator import (
+    SymbolValidationOutcome,
+    convert_symbol_format,
+    validate_symbol_detailed,
+    validate_symbols,
+)
 from .timestamp import convert_timestamp_to_iso
 
 __all__ = [
@@ -38,7 +43,9 @@ __all__ = [
     "calculate_backoff_delay",
     "convert_timestamp_to_iso",
     "validate_symbols",
+    "validate_symbol_detailed",
     "convert_symbol_format",
+    "SymbolValidationOutcome",
     "fetch_tradingview_indicators",
     "display_and_select_indicator",
     "fetch_indicator_metadata",

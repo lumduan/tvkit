@@ -37,7 +37,14 @@ class ErrorInfo(BaseModel):
 
     message: str = Field(description="Human-readable error message")
     exception_type: str = Field(description="Fully qualified exception class name")
-    attempt: int = Field(description="Attempt number on which this error occurred", ge=1)
+    attempt: int = Field(
+        description=(
+            "Attempt number on which this error occurred. "
+            "0 = rejected at pre-flight validation (never fetched). "
+            "1+ = fetch attempt number."
+        ),
+        ge=0,
+    )
 
 
 class SymbolResult(BaseModel):
@@ -62,8 +69,12 @@ class SymbolResult(BaseModel):
         description="Structured error detail if success is False, else None",
     )
     attempts: int = Field(
-        description="Number of fetch attempts made (1 = succeeded on first try)",
-        ge=1,
+        description=(
+            "Number of fetch attempts made. "
+            "0 = rejected at pre-flight (no fetch attempted). "
+            "1+ = number of fetch attempts made."
+        ),
+        ge=0,
     )
     elapsed_seconds: float = Field(
         description="Wall-clock seconds spent across all attempts for this symbol",
@@ -247,6 +258,17 @@ class BatchDownloadRequest(BaseModel):
             "Exceptions raised by the callback are logged and swallowed — a bad callback does not abort the batch."
         ),
         exclude=True,  # not JSON-serializable — excluded from model_dump()
+    )
+    validate_symbols_before_fetch: bool = Field(
+        default=False,
+        description=(
+            "Pre-validate all symbols via TradingView HTTP API before fetching. "
+            "Symbols confirmed invalid (HTTP 404) become SymbolResult(success=False, attempts=0) "
+            "immediately — no WebSocket connection is opened for them. "
+            "Validation failures due to transport or server errors fail open: the symbol "
+            "proceeds to _fetch_one() unchanged. "
+            "Not recommended for batches > 200 symbols — adds one HTTP call per symbol."
+        ),
     )
     strict: bool = Field(
         default=False,
