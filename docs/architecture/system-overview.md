@@ -9,38 +9,40 @@ tvkit/
 ├── tvkit.api.chart          # Real-time WebSocket streaming
 ├── tvkit.api.scanner        # HTTP-based market scanner
 ├── tvkit.api.utils          # Shared utilities (symbols, timestamps, indicators)
+├── tvkit.batch              # Async high-throughput batch OHLCV downloader
 └── tvkit.export             # Multi-format data export
 ```
 
 ## Component Diagram
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                        Your Application                          │
-└───────────┬──────────────┬──────────────┬────────────────────────┘
-            │              │              │
-            ▼              ▼              ▼
-   ┌────────────────┐ ┌──────────────┐ ┌───────────────┐
-   │  tvkit.api.    │ │ tvkit.api.   │ │ tvkit.export  │
-   │  chart         │ │ scanner      │ │               │
-   │  ──────────    │ │ ──────────── │ │ ─────────────  │
-   │  OHLCV client  │ │ ScannerSvc   │ │ DataExporter  │
-   │  ConnectionSvc │ │ 69 markets   │ │ PolarsFormatter│
-   │  MessageSvc    │ │ 100+ cols    │ │ JSONFormatter │
-   │  SegmentedFetch│ │              │ │ CSVFormatter  │
-   └───────┬────────┘ └──────┬───────┘ └───────┬───────┘
-           │                 │                 │
-           │ WebSocket       │ HTTPS           │
-           ▼                 ▼                 │
-   ┌──────────────────────────────────┐        │
-   │       TradingView APIs           │        │
-   │  wss://data.tradingview.com/...  │        │
-   │  https://scanner.tradingview.com │        │
-   └──────────────────────────────────┘        │
-                                               ▼
-                                    ┌────────────────────┐
-                                    │  Polars / JSON / CSV│
-                                    └────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            Your Application                              │
+└───────────┬──────────────┬──────────────┬──────────────┬────────────────┘
+            │              │              │              │
+            ▼              ▼              ▼              ▼
+   ┌────────────────┐ ┌──────────────┐ ┌─────────────┐ ┌───────────────┐
+   │  tvkit.api.    │ │ tvkit.api.   │ │ tvkit.batch │ │ tvkit.export  │
+   │  chart         │ │ scanner      │ │             │ │               │
+   │  ──────────    │ │ ──────────── │ │ ─────────── │ │ ─────────────  │
+   │  OHLCV client  │ │ ScannerSvc   │ │ batch_      │ │ DataExporter  │
+   │  ConnectionSvc │ │ 69 markets   │ │ download()  │ │ PolarsFormatter│
+   │  MessageSvc    │ │ 100+ cols    │ │ Semaphore   │ │ JSONFormatter │
+   │  SegmentedFetch│ │              │ │ retry/backoff│ │ CSVFormatter  │
+   └───────┬────────┘ └──────┬───────┘ └──────┬──────┘ └───────┬───────┘
+           │                 │                │                 │
+           │ WebSocket       │ HTTPS          │ WebSocket       │
+           │                 │                │ (one per symbol)│
+           ▼                 ▼                ▼                 │
+   ┌──────────────────────────────────────────────────┐         │
+   │                  TradingView APIs                │         │
+   │  wss://data.tradingview.com/...                  │         │
+   │  https://scanner.tradingview.com                 │         │
+   └──────────────────────────────────────────────────┘         │
+                                                                ▼
+                                                     ┌────────────────────┐
+                                                     │  Polars / JSON / CSV│
+                                                     └────────────────────┘
 ```
 
 ## Module Descriptions

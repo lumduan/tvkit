@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.10.0** — Async Batch Downloader (`tvkit.batch`: `batch_download()`, bounded concurrency via semaphore, per-symbol retry with exponential backoff, `BatchDownloadSummary`, partial failure model, opt-in pre-flight symbol validation)
 - **v0.9.0** — Data Integrity Validation (`tvkit.validation`: duplicate/monotonic/OHLC/volume/gap checks; `DataExporter` integration with `validate`, `strict`, `interval` parameters)
 - **v0.8.0** —  Symbol Normalization 
 - **v0.7.0** — Authentication
@@ -75,26 +76,6 @@ Benefits:
 - Compatibility with data lake tooling
 
 ---
-
-#### Async Batch Downloader
-
-High-throughput historical downloader capable of fetching large symbol sets concurrently.
-
-Features may include:
-
-- Bounded concurrency
-- Retry with exponential backoff
-- Cache integration
-- Partial progress recovery
-
-```python
-await batch_download(
-    symbols=[...],
-    interval="1D",
-    bars_count=500,
-    concurrency=5,
-)
-```
 
 ---
 

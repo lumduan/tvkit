@@ -10,8 +10,36 @@ import logging
 import warnings
 
 import httpx
+from pydantic import BaseModel, Field
 
 from .models import SymbolConversionResult
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+
+class SymbolValidationOutcome(BaseModel):
+    """Structured result of a single-symbol validation check.
+
+    Three possible outcomes:
+    - ``is_valid=True``: TradingView confirmed the symbol exists (HTTP 200/301).
+    - ``is_known_invalid=True``: TradingView explicitly rejected the symbol (HTTP 404).
+    - Both ``False``: validation could not determine status (transport/server failure).
+
+    Callers should treat the third case as fail-open — proceed to fetch rather than
+    reject, because the uncertainty is due to infrastructure, not the symbol itself.
+    """
+
+    symbol: str = Field(description="Canonical symbol that was validated")
+    is_valid: bool = Field(
+        description="True only when TradingView confirms the symbol is valid (HTTP 200/301)"
+    )
+    is_known_invalid: bool = Field(
+        description="True only when TradingView explicitly rejects the symbol (HTTP 404)"
+    )
+    message: str | None = Field(
+        default=None,
+        description="Optional reason for invalid or indeterminate validation outcome",
+    )
 
 
 async def validate_symbols(exchange_symbol: str | list[str]) -> bool:
@@ -104,6 +132,96 @@ async def validate_symbols(exchange_symbol: str | list[str]) -> bool:
                         ) from exc
 
     return True
+
+
+async def validate_symbol_detailed(symbol: str) -> SymbolValidationOutcome:
+    """Validate a single symbol and return a structured outcome.
+
+    Makes up to 3 HTTP attempts against TradingView's symbol URL. Unlike
+    ``validate_symbols()``, this function never raises — transport and server
+    failures are returned as an indeterminate outcome so the caller can
+    distinguish explicit invalidity from transient unavailability.
+
+    Outcome semantics:
+
+    - HTTP 200 or 301  → ``is_valid=True``, ``is_known_invalid=False``
+    - HTTP 404         → ``is_valid=False``, ``is_known_invalid=True``
+    - Any other error  → ``is_valid=False``, ``is_known_invalid=False``
+
+    Args:
+        symbol: TradingView symbol to validate (e.g. ``"NASDAQ:AAPL"``).
+
+    Returns:
+        SymbolValidationOutcome describing whether the symbol is valid, explicitly
+        invalid, or indeterminate.
+    """
+    validate_url: str = "https://www.tradingview.com/symbols/{exchange_symbol}"
+    retries: int = 3
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for attempt in range(retries):
+            try:
+                response: httpx.Response = await client.get(
+                    url=validate_url.format(exchange_symbol=symbol)
+                )
+                if response.status_code in (200, 301):
+                    return SymbolValidationOutcome(
+                        symbol=symbol,
+                        is_valid=True,
+                        is_known_invalid=False,
+                    )
+                if response.status_code == 404:
+                    return SymbolValidationOutcome(
+                        symbol=symbol,
+                        is_valid=False,
+                        is_known_invalid=True,
+                        message=f"Symbol '{symbol}' not found (HTTP 404)",
+                    )
+                # Other HTTP error — treat as transient
+                logger.warning(
+                    "Unexpected HTTP status validating symbol",
+                    extra={
+                        "symbol": symbol,
+                        "attempt": attempt + 1,
+                        "status_code": response.status_code,
+                    },
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    return SymbolValidationOutcome(
+                        symbol=symbol,
+                        is_valid=False,
+                        is_known_invalid=True,
+                        message=f"Symbol '{symbol}' not found (HTTP 404)",
+                    )
+                logger.warning(
+                    "HTTP error validating symbol",
+                    extra={
+                        "symbol": symbol,
+                        "attempt": attempt + 1,
+                        "error": str(exc),
+                    },
+                )
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "Transport error validating symbol",
+                    extra={
+                        "symbol": symbol,
+                        "attempt": attempt + 1,
+                        "error": str(exc),
+                    },
+                )
+
+            if attempt < retries - 1:
+                await asyncio.sleep(1.0)
+
+    # All attempts exhausted without an explicit valid/invalid response
+    return SymbolValidationOutcome(
+        symbol=symbol,
+        is_valid=False,
+        is_known_invalid=False,
+        message=f"Validation unavailable for '{symbol}' after {retries} attempts",
+    )
 
 
 def convert_symbol_format(

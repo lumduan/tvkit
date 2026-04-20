@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-04-20
+
+### Added
+
+- **`tvkit.batch` module** — high-throughput async batch downloader for historical OHLCV data:
+  - `batch_download(request)` — async function that fetches historical OHLCV bars for a list of
+    symbols concurrently; returns `BatchDownloadSummary` with one `SymbolResult` per symbol
+  - `BatchDownloadRequest` — Pydantic-validated input model; supports bar-count mode
+    (`bars_count`) and date-range mode (`start`/`end`); `auth_token` stored as `SecretStr`
+  - `BatchDownloadSummary` — aggregated result with `success_count`, `failure_count`,
+    `elapsed_seconds`, `interval`, and `@computed_field` properties `failed_symbols` /
+    `successful_symbols` (appear in `model_dump()`)
+  - `SymbolResult` — per-symbol result with `bars`, `success`, `error`, `attempts`,
+    `elapsed_seconds`; invariants enforced by `@model_validator`
+  - `ErrorInfo` — structured error record with `message`, `exception_type`, `attempt`
+    (`attempt=0` for pre-flight rejections, `1+` for fetch attempts)
+  - `BatchDownloadError` — raised in `strict=True` mode or by `raise_if_failed()`; carries
+    the full `BatchDownloadSummary` including partial successes on `.summary`
+  - `BatchDownloadSummary.raise_if_failed()` — deferred strict-mode check callable after
+    the fact; useful for pipelines that inspect before deciding whether failures are fatal
+- **Bounded concurrency** — `asyncio.Semaphore` acquired **per network attempt**, not per retry
+  loop; backoff sleep never occupies a concurrency slot
+- **Per-symbol retry with exponential backoff** — `StreamConnectionError`,
+  `websockets.WebSocketException`, `TimeoutError` are retried up to `max_attempts` times;
+  `ValueError` and `NoHistoricalDataError` are not retried
+- **Partial failure model** — failed symbols are collected in `BatchDownloadSummary` by default;
+  no exception raised unless `strict=True`; `raise_if_failed()` provides deferred raise
+- **Symbol normalization and deduplication** — all inputs normalized via `tvkit.symbols` and
+  deduplicated (order-preserving) before dispatch; `total_count` reflects deduplicated count
+- **Opt-in pre-flight symbol validation** — `validate_symbols_before_fetch=True` validates all
+  symbols via TradingView HTTP API before any WebSocket fetch; confirmed-invalid symbols become
+  `SymbolResult(success=False, attempts=0)` immediately; transport failures fail open
+- **Progress callback** — `on_progress: Callable[[SymbolResult, int, int], None]` invoked once
+  per symbol after its terminal result; async callables rejected at construction
+- **`SymbolValidationOutcome` model** — added to `tvkit.api.utils.symbol_validator` to support
+  pre-flight validation; exposes `is_valid`, `is_known_invalid`, and `message` fields
+- **`validate_symbol_detailed()`** — new async function in `tvkit.api.utils.symbol_validator`
+  returning `SymbolValidationOutcome`; exposed via `tvkit.api.utils`
+
+### Notes
+
+- `tvkit.batch` is a consumer of `tvkit.api.chart.OHLCV` — it instantiates one `OHLCV` client
+  per in-flight attempt. WebSocket multiplexing (sharing one connection across subscriptions) is
+  listed in `docs/roadmap.md` under **Under Consideration** and is out of scope for this release.
+- No breaking changes to existing APIs — `tvkit.api.chart.OHLCV` is unchanged.
+- `ErrorInfo.attempt` and `SymbolResult.attempts` minimum is `0` (pre-flight) rather than `1`;
+  this is additive and does not affect existing code that only uses non-pre-flight paths.
+
 ## [0.9.0] — 2026-04-09
 
 ### Added

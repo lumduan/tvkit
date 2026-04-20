@@ -57,12 +57,25 @@ Multi-format data export for OHLCV and scanner results.
 
 ---
 
+---
+
+## Batch API — `tvkit.batch`
+
+High-throughput async batch downloader for large symbol sets.
+
+| Page | Class / Module | What it covers |
+|------|---------------|----------------|
+| [Batch Downloader](batch/downloader.md) | `batch_download`, `BatchDownloadRequest` | `batch_download()`, `BatchDownloadRequest`, `BatchDownloadSummary`, `SymbolResult`, `ErrorInfo`, `BatchDownloadError`, retry policy, pre-flight validation, deduplication |
+
+---
+
 ## Quick Navigation: which page do I need?
 
 | I want to… | Go to |
 |-----------|-------|
 | Fetch historical OHLCV bars | [OHLCV Client](chart/ohlcv.md) |
 | Stream real-time price updates | [OHLCV Client](chart/ohlcv.md) |
+| Fetch historical bars for many symbols concurrently | [Batch Downloader](batch/downloader.md) |
 | Validate or convert an interval string | [Chart Utilities](chart/utils.md) |
 | Screen stocks with filters and sorting | [Scanner](scanner/scanner.md) |
 | Find the market identifier for a country or exchange | [Markets](scanner/markets.md) |
