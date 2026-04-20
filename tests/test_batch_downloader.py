@@ -30,7 +30,9 @@ Phase 3 additions:
 - model_dump() includes both computed fields
 """
 
+import asyncio
 import logging
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -40,6 +42,7 @@ from tvkit.api.chart.exceptions import NoHistoricalDataError, StreamConnectionEr
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.batch import BatchDownloadRequest, batch_download
 from tvkit.batch.exceptions import BatchDownloadError
+from tvkit.batch.models import BatchDownloadSummary, ErrorInfo, SymbolResult
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
@@ -1411,3 +1414,454 @@ async def test_preflight_progress_total_uses_original_deduped_count(
     # on_progress is only called for fetch tasks (not pre-flight rejections)
     # AAPL proceeds to fetch → callback called once with total=2
     assert total_values == [2]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Happy-path and strict-mode completeness
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_multi_symbol_all_success(mock_bars: list[OHLCVBar]) -> None:
+    """Multiple symbols all succeed — counts, symbols, and bars all correct."""
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL", "NASDAQ:MSFT", "NYSE:JPM"],
+                interval="1D",
+                bars_count=1,
+            )
+        )
+
+    assert summary.total_count == 3
+    assert summary.success_count == 3
+    assert summary.failure_count == 0
+    assert summary.successful_symbols == ["NASDAQ:AAPL", "NASDAQ:MSFT", "NYSE:JPM"]
+    assert summary.failed_symbols == []
+    assert all(r.success for r in summary.results)
+    assert all(r.bars == mock_bars for r in summary.results)
+
+
+@pytest.mark.asyncio
+async def test_strict_ok_no_raise(mock_bars: list[OHLCVBar]) -> None:
+    """strict=True with full success — batch_download() returns normally without raising."""
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                strict=True,
+            )
+        )
+
+    assert summary.success_count == 1
+    assert summary.failure_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Date-range mode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_date_range_mode(mock_bars: list[OHLCVBar]) -> None:
+    """start/end mode passes start and end to get_historical_ohlcv (not bars_count)."""
+    mock_client = _make_mock_client(mock_bars)
+    with patch("tvkit.batch.downloader.OHLCV", return_value=mock_client):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                start=datetime(2024, 1, 1, tzinfo=UTC),
+                end=datetime(2024, 12, 31, tzinfo=UTC),
+            )
+        )
+
+    assert summary.success_count == 1
+    # Verify that get_historical_ohlcv was called with start/end (not bars_count)
+    call_kwargs = mock_client.get_historical_ohlcv.call_args.kwargs
+    assert "start" in call_kwargs
+    assert "end" in call_kwargs
+    assert "bars_count" not in call_kwargs
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Concurrency and semaphore behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_semaphore_released_before_backoff() -> None:
+    """Semaphore is released (value > 0) at the moment asyncio.sleep is called during backoff."""
+    semaphore_values: list[int] = []
+    the_semaphore: asyncio.Semaphore | None = None
+
+    original_semaphore = asyncio.Semaphore
+
+    def capturing_semaphore(n: int) -> asyncio.Semaphore:
+        nonlocal the_semaphore
+        sem = original_semaphore(n)
+        the_semaphore = sem
+        return sem
+
+    async def fake_sleep(delay: float) -> None:
+        if the_semaphore is not None:
+            semaphore_values.append(the_semaphore._value)  # type: ignore[attr-defined]
+
+    with (
+        patch("tvkit.batch.downloader.asyncio.Semaphore", side_effect=capturing_semaphore),
+        patch("tvkit.batch.downloader.asyncio.sleep", side_effect=fake_sleep),
+        patch(
+            "tvkit.batch.downloader.OHLCV",
+            return_value=_make_failing_client(StreamConnectionError("dropped")),
+        ),
+    ):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=2,
+                base_backoff=0.0001,
+                concurrency=1,
+            )
+        )
+
+    # The semaphore must be released (value > 0) when sleep is called
+    assert semaphore_values, "asyncio.sleep was never called — retry did not happen"
+    assert all(v > 0 for v in semaphore_values), (
+        f"Semaphore was held during backoff sleep (values: {semaphore_values})"
+    )
+
+
+@pytest.mark.asyncio
+async def test_concurrency_bounded() -> None:
+    """Peak concurrent fetch tasks never exceeds the concurrency setting."""
+    peak_concurrent = 0
+    current_concurrent = 0
+    lock = asyncio.Lock()
+
+    async def slow_fetch(*args: object, **kwargs: object) -> list[OHLCVBar]:
+        nonlocal peak_concurrent, current_concurrent
+        async with lock:
+            current_concurrent += 1
+            peak_concurrent = max(peak_concurrent, current_concurrent)
+        await asyncio.sleep(0.01)
+        async with lock:
+            current_concurrent -= 1
+        return []
+
+    mock_client = AsyncMock()
+    mock_client.get_historical_ohlcv.side_effect = slow_fetch
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("tvkit.batch.downloader.OHLCV", return_value=mock_client):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=[f"NASDAQ:SYM{i}" for i in range(10)],
+                interval="1D",
+                bars_count=1,
+                concurrency=3,
+            )
+        )
+
+    assert peak_concurrent <= 3, f"Concurrency cap exceeded: peak={peak_concurrent}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Symbol normalization and order
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_symbol_normalization_applied(mock_bars: list[OHLCVBar]) -> None:
+    """Lowercase exchange:symbol input is normalized to EXCHANGE:SYMBOL before fetch."""
+    mock_client = _make_mock_client(mock_bars)
+    with patch("tvkit.batch.downloader.OHLCV", return_value=mock_client):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["nasdaq:aapl"],
+                interval="1D",
+                bars_count=1,
+            )
+        )
+
+    assert summary.results[0].symbol == "NASDAQ:AAPL"
+
+
+@pytest.mark.asyncio
+async def test_input_order_preserved(mock_bars: list[OHLCVBar]) -> None:
+    """Result order matches deduplicated input order for distinct symbols."""
+    symbols = ["NYSE:JPM", "NASDAQ:AAPL", "NASDAQ:MSFT"]
+    with patch("tvkit.batch.downloader.OHLCV", return_value=_make_mock_client(mock_bars)):
+        summary = await batch_download(
+            BatchDownloadRequest(symbols=symbols, interval="1D", bars_count=1)
+        )
+
+    assert [r.symbol for r in summary.results] == symbols
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Retry behaviour — additional retryable exception types
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_websocket_exception_retried(mock_bars: list[OHLCVBar]) -> None:
+    """websockets.exceptions.WebSocketException triggers retry; succeeds on second attempt."""
+    import websockets.exceptions
+
+    fail_client = _make_failing_client(websockets.exceptions.ConnectionClosedError(None, None))
+    ok_client = _make_mock_client(mock_bars)
+
+    call_count = 0
+
+    def client_factory(*args: object, **kwargs: object) -> AsyncMock:
+        nonlocal call_count
+        call_count += 1
+        return fail_client if call_count == 1 else ok_client
+
+    with patch("tvkit.batch.downloader.OHLCV", side_effect=client_factory):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=2,
+                base_backoff=0.0001,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is True
+    assert result.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_timeout_error_retried(mock_bars: list[OHLCVBar]) -> None:
+    """asyncio.TimeoutError triggers retry; succeeds on second attempt."""
+    fail_client = _make_failing_client(TimeoutError("timed out"))
+    ok_client = _make_mock_client(mock_bars)
+
+    call_count = 0
+
+    def client_factory(*args: object, **kwargs: object) -> AsyncMock:
+        nonlocal call_count
+        call_count += 1
+        return fail_client if call_count == 1 else ok_client
+
+    with patch("tvkit.batch.downloader.OHLCV", side_effect=client_factory):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=2,
+                base_backoff=0.0001,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is True
+    assert result.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_backoff_timing() -> None:
+    """asyncio.sleep is called with exponentially increasing backoff values."""
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    with (
+        patch("tvkit.batch.downloader.asyncio.sleep", side_effect=fake_sleep),
+        patch(
+            "tvkit.batch.downloader.OHLCV",
+            return_value=_make_failing_client(StreamConnectionError("down")),
+        ),
+    ):
+        await batch_download(
+            BatchDownloadRequest(
+                symbols=["NASDAQ:AAPL"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=3,
+                base_backoff=1.0,
+                max_backoff=30.0,
+            )
+        )
+
+    # Expect two sleep calls (between attempt 1→2 and 2→3): 1.0s, 2.0s
+    assert len(sleep_calls) == 2
+    assert sleep_calls[0] == pytest.approx(1.0)
+    assert sleep_calls[1] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Model invariant validation
+# ---------------------------------------------------------------------------
+
+
+def test_symbol_result_success_with_error_raises() -> None:
+    """SymbolResult rejects success=True when error is also set."""
+    with pytest.raises(ValidationError):
+        SymbolResult(
+            symbol="NASDAQ:AAPL",
+            bars=[],
+            success=True,
+            error=ErrorInfo(message="oops", exception_type="ValueError", attempt=1),
+            attempts=1,
+            elapsed_seconds=0.0,
+        )
+
+
+def test_symbol_result_failure_without_error_raises() -> None:
+    """SymbolResult rejects success=False when error is None."""
+    with pytest.raises(ValidationError):
+        SymbolResult(
+            symbol="NASDAQ:AAPL",
+            bars=[],
+            success=False,
+            error=None,
+            attempts=1,
+            elapsed_seconds=0.0,
+        )
+
+
+def test_symbol_result_failure_with_bars_raises() -> None:
+    """SymbolResult rejects success=False when bars is non-empty."""
+    bar = OHLCVBar(
+        timestamp=1700000000.0,
+        open=100.0,
+        high=105.0,
+        low=99.0,
+        close=104.0,
+        volume=1_000_000.0,
+    )
+    with pytest.raises(ValidationError):
+        SymbolResult(
+            symbol="NASDAQ:AAPL",
+            bars=[bar],
+            success=False,
+            error=ErrorInfo(message="oops", exception_type="ValueError", attempt=1),
+            attempts=1,
+            elapsed_seconds=0.0,
+        )
+
+
+def test_summary_total_count_mismatch_raises() -> None:
+    """BatchDownloadSummary rejects total_count that doesn't match len(results)."""
+    result = SymbolResult(
+        symbol="NASDAQ:AAPL",
+        bars=[],
+        success=False,
+        error=ErrorInfo(message="x", exception_type="E", attempt=1),
+        attempts=1,
+        elapsed_seconds=0.0,
+    )
+    with pytest.raises(ValidationError):
+        BatchDownloadSummary(
+            results=[result],
+            total_count=99,  # wrong — should be 1
+            success_count=0,
+            failure_count=1,
+            elapsed_seconds=0.0,
+            interval="1D",
+        )
+
+
+def test_summary_success_count_mismatch_raises() -> None:
+    """BatchDownloadSummary rejects success_count that doesn't match actual successes."""
+    result = SymbolResult(
+        symbol="NASDAQ:AAPL",
+        bars=[],
+        success=False,
+        error=ErrorInfo(message="x", exception_type="E", attempt=1),
+        attempts=1,
+        elapsed_seconds=0.0,
+    )
+    with pytest.raises(ValidationError):
+        BatchDownloadSummary(
+            results=[result],
+            total_count=1,
+            success_count=1,  # wrong — actual success is 0
+            failure_count=0,
+            elapsed_seconds=0.0,
+            interval="1D",
+        )
+
+
+def test_summary_failure_count_mismatch_raises() -> None:
+    """BatchDownloadSummary rejects failure_count that doesn't match actual failures."""
+    result = SymbolResult(
+        symbol="NASDAQ:AAPL",
+        bars=[],
+        success=False,
+        error=ErrorInfo(message="x", exception_type="E", attempt=1),
+        attempts=1,
+        elapsed_seconds=0.0,
+    )
+    with pytest.raises(ValidationError):
+        BatchDownloadSummary(
+            results=[result],
+            total_count=1,
+            success_count=0,
+            failure_count=0,  # wrong — actual failure is 1
+            elapsed_seconds=0.0,
+            interval="1D",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Validator path coverage
+# ---------------------------------------------------------------------------
+
+
+def test_datetime_tz_aware_normalization() -> None:
+    """Timezone-aware datetime input is converted to UTC (not just stamped with UTC)."""
+    eastern = timezone(timedelta(hours=-5))
+    dt_eastern = datetime(2024, 1, 1, 10, 0, 0, tzinfo=eastern)
+
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        start=dt_eastern,
+        end=datetime(2024, 12, 31, tzinfo=UTC),
+    )
+
+    # 10:00 ET = 15:00 UTC
+    assert request.start is not None
+    assert request.start.hour == 15
+    assert request.start.tzinfo is not None
+
+
+def test_datetime_explicit_none_accepted() -> None:
+    """Explicitly passing end=None is accepted (validator handles the None path)."""
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        start=datetime(2024, 1, 1, tzinfo=UTC),
+        end=None,
+    )
+    assert request.end is None
+
+
+def test_browser_valid_accepted() -> None:
+    """Valid browser values ('chrome', 'firefox') are accepted without error."""
+    req_chrome = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        bars_count=1,
+        browser="chrome",
+    )
+    req_firefox = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        bars_count=1,
+        browser="firefox",
+    )
+    assert req_chrome.browser == "chrome"
+    assert req_firefox.browser == "firefox"

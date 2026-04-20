@@ -344,7 +344,7 @@ class BatchDownloadRequest(BaseModel):
         if has_start and self.end is not None:
             # Both are UTC-aware at this point (normalized in field_validator).
             # has_start guarantees self.start is not None; checked explicitly for type safety.
-            if self.start is None:
+            if self.start is None:  # pragma: no cover
                 raise ValueError("Internal error: has_start is True but self.start is None")
             if self.end <= self.start:
                 raise ValueError(
