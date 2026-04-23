@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from tvkit.api.chart.exceptions import NoHistoricalDataError, SegmentedFetchError
+from tvkit.api.chart.models.adjustment import Adjustment
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.utils import (
     MAX_BARS_REQUEST,
@@ -75,6 +76,8 @@ class SegmentedFetchService:
         interval: str,
         start: datetime,
         end: datetime,
+        *,
+        adjustment: Adjustment = Adjustment.SPLITS,
     ) -> list[OHLCVBar]:
         """
         Fetch all OHLCV bars for the given range by splitting into segments.
@@ -96,6 +99,10 @@ class SegmentedFetchService:
                              before any fetch is attempted.
             start:           Inclusive start of the date range (UTC-aware datetime).
             end:             Inclusive end of the date range (UTC-aware datetime).
+            adjustment:      Price adjustment mode forwarded to each
+                             ``_fetch_single_range()`` call. Defaults to
+                             ``Adjustment.SPLITS`` (backwards-compatible). Pass
+                             ``Adjustment.DIVIDENDS`` for dividend-adjusted prices.
 
         Returns:
             Deduplicated, chronologically sorted list of ``OHLCVBar`` objects.
@@ -182,6 +189,7 @@ class SegmentedFetchService:
                     interval,
                     start=segment.start,
                     end=segment.end,
+                    adjustment=adjustment,
                 )
             except NoHistoricalDataError:
                 # Expected for segments covering weekends, holidays, or illiquid

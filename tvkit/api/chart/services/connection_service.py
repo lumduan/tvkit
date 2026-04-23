@@ -14,6 +14,7 @@ from websockets.connection import State as WebSocketState
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from tvkit.api.chart.exceptions import AuthError, StreamConnectionError
+from tvkit.api.chart.models.adjustment import Adjustment
 from tvkit.api.chart.models.realtime import (
     ExtraRequestHeader,
     WebSocketConnection,
@@ -583,6 +584,7 @@ class ConnectionService:
         send_message_func: Callable[[str, list[Any]], Awaitable[None]],
         *,
         range_param: str = "",
+        adjustment: Adjustment = Adjustment.SPLITS,
     ) -> None:
         """
         Adds the specified symbol to the quote and chart sessions.
@@ -600,18 +602,31 @@ class ConnectionService:
         build_range_param() produces a validated string before passing it here.
 
         Args:
-            quote_session: The quote session identifier
-            chart_session: The chart session identifier
-            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' format
-            timeframe: The timeframe for the chart (default is "1")
-            bars_count: Number of bars to fetch for the chart
-            send_message_func: Function to send messages through the WebSocket
-            range_param: TradingView range string ("r,<from_unix>:<to_unix>") for
+            quote_session: The quote session identifier.
+            chart_session: The chart session identifier.
+            exchange_symbol: The symbol in 'EXCHANGE:SYMBOL' format.
+            timeframe: The timeframe for the chart (e.g. ``"1D"``).
+            bars_count: Number of bars to fetch for the chart.
+            send_message_func: Function to send messages through the WebSocket.
+            range_param: TradingView range string (``"r,<from_unix>:<to_unix>"``) for
                 date-range mode. When non-empty, a modify_series message is sent
                 immediately after create_series to apply the date constraint.
-                Defaults to "" (count mode — modify_series is not sent).
+                Defaults to ``""`` (count mode — modify_series is not sent).
+            adjustment: Price adjustment mode. Controls the ``adjustment`` field in
+                the ``resolve_symbol`` WebSocket payload. Defaults to
+                ``Adjustment.SPLITS`` (split-adjusted prices — backwards-compatible
+                with all pre-v0.11.0 behaviour). Pass ``Adjustment.DIVIDENDS`` for
+                total-return (dividend-adjusted) prices. ``backadjustment: "default"``
+                is always included in the payload — present in every TradingView
+                browser request per HAR analysis.
         """
-        resolve_symbol: str = json.dumps({"adjustment": "splits", "symbol": exchange_symbol})
+        resolve_symbol: str = json.dumps(
+            {
+                "adjustment": adjustment.value,
+                "backadjustment": "default",
+                "symbol": exchange_symbol,
+            }
+        )
         await send_message_func("quote_add_symbols", [quote_session, f"={resolve_symbol}"])
         await send_message_func(
             "resolve_symbol", [chart_session, _SYMBOL_REF_ID, f"={resolve_symbol}"]

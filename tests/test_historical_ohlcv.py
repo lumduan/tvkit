@@ -800,8 +800,10 @@ class TestSessionLifecycle:
         with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
             await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=5)
 
+        from tvkit.api.chart.models.adjustment import Adjustment
+
         client._prepare_chart_session.assert_called_once_with(  # type: ignore[union-attr]
-            SYMBOL, "1D", 5, range_param=""
+            SYMBOL, "1D", 5, range_param="", adjustment=Adjustment.SPLITS
         )
 
     @pytest.mark.asyncio
@@ -1327,3 +1329,164 @@ class TestSegmentationDispatch:
         client._fetch_single_range.assert_called_once()  # type: ignore[union-attr]
         mock_fetch_all.assert_not_called()
         assert result == [expected_bar]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Adjustment parameter tests (Phase 1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSessionLifecycleAdjustment:
+    """Adjustment propagation through get_historical_ohlcv → _prepare_chart_session."""
+
+    @pytest.mark.asyncio
+    async def test_default_adjustment_is_splits(self) -> None:
+        """Omitting adjustment must forward Adjustment.SPLITS to _prepare_chart_session."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        messages: list[dict[str, Any]] = [make_timescale_update(bars_count=5), SERIES_COMPLETED_MSG]
+        client = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=5)
+
+        _, kwargs = client._prepare_chart_session.call_args  # type: ignore[union-attr]
+        assert kwargs.get("adjustment") == Adjustment.SPLITS
+
+    @pytest.mark.asyncio
+    async def test_dividends_adjustment_forwarded(self) -> None:
+        """Passing Adjustment.DIVIDENDS must forward it to _prepare_chart_session."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        messages: list[dict[str, Any]] = [make_timescale_update(bars_count=5), SERIES_COMPLETED_MSG]
+        client = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL,
+                interval="1D",
+                bars_count=5,
+                adjustment=Adjustment.DIVIDENDS,
+            )
+
+        _, kwargs = client._prepare_chart_session.call_args  # type: ignore[union-attr]
+        assert kwargs.get("adjustment") == Adjustment.DIVIDENDS
+
+    @pytest.mark.asyncio
+    async def test_raw_string_dividends_coerced(self) -> None:
+        """Passing adjustment='dividends' as a raw str must coerce without error."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        messages: list[dict[str, Any]] = [make_timescale_update(bars_count=5), SERIES_COMPLETED_MSG]
+        client = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL,
+                interval="1D",
+                bars_count=5,
+                adjustment="dividends",  # type: ignore[arg-type]
+            )
+
+        _, kwargs = client._prepare_chart_session.call_args  # type: ignore[union-attr]
+        assert kwargs.get("adjustment") == Adjustment.DIVIDENDS
+
+    @pytest.mark.asyncio
+    async def test_invalid_adjustment_string_raises_value_error_before_io(self) -> None:
+        """Unknown adjustment string must raise ValueError before any I/O."""
+        messages: list[dict[str, Any]] = []
+        client = _make_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            with pytest.raises(ValueError):
+                await client.get_historical_ohlcv(
+                    exchange_symbol=SYMBOL,
+                    interval="1D",
+                    bars_count=5,
+                    adjustment="none",  # type: ignore[arg-type]
+                )
+
+        client._prepare_chart_session.assert_not_called()  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_get_ohlcv_calls_prepare_with_splits_default(self) -> None:
+        """Regression: get_ohlcv() does not expose adjustment; _prepare_chart_session receives SPLITS."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        client: OHLCV = OHLCV()
+        prepare_mock: AsyncMock = AsyncMock()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+        client.connection_service = MagicMock()
+        client.connection_service.get_data_stream = lambda: fake_stream([])
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            async for _ in client.get_ohlcv(exchange_symbol=SYMBOL, interval="1D", bars_count=5):
+                break  # exhaust one iteration so _prepare_chart_session is called
+
+        if prepare_mock.called:
+            _, kwargs = prepare_mock.call_args
+            assert kwargs.get("adjustment", Adjustment.SPLITS) == Adjustment.SPLITS
+
+
+class TestRangeModeAdjustment:
+    """Adjustment propagation in get_historical_ohlcv() range mode."""
+
+    @pytest.mark.asyncio
+    async def test_range_mode_passes_dividends_adjustment(self) -> None:
+        """adjustment=Adjustment.DIVIDENDS must propagate in range mode."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        messages: list[dict[str, Any]] = [
+            SERIES_COMPLETED_MSG,
+            make_range_timescale_update(bars_count=3),
+            SERIES_COMPLETED_MSG,
+        ]
+        prepare_mock: AsyncMock = AsyncMock()
+        client: OHLCV = OHLCV()
+        client._prepare_chart_session = prepare_mock  # type: ignore[method-assign]
+        client.connection_service = MagicMock()
+        client.connection_service.get_data_stream = lambda: fake_stream(messages)
+        client.connection_service.close = AsyncMock()
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **make_patches()):
+            await client.get_historical_ohlcv(
+                exchange_symbol=SYMBOL,
+                interval="1D",
+                start="2024-01-01",
+                end="2024-12-31",
+                adjustment=Adjustment.DIVIDENDS,
+            )
+
+        _, kwargs = prepare_mock.call_args
+        assert kwargs.get("adjustment") == Adjustment.DIVIDENDS
+
+
+class TestStreamingSessionAdjustment:
+    """_StreamingSession must store and default adjustment correctly."""
+
+    def test_streaming_session_defaults_to_splits(self) -> None:
+        """Omitting adjustment from _StreamingSession must default to Adjustment.SPLITS."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        s = _StreamingSession(
+            symbol=SYMBOL,
+            interval="1D",
+            bars_count=100,
+            quote_session="qs_x",
+            chart_session="cs_x",
+        )
+        assert s.adjustment == Adjustment.SPLITS
+
+    def test_streaming_session_stores_dividends(self) -> None:
+        """_StreamingSession must store Adjustment.DIVIDENDS when provided."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        s = _StreamingSession(
+            symbol="SET:ADVANC",
+            interval="1D",
+            bars_count=300,
+            quote_session="qs_x",
+            chart_session="cs_x",
+            adjustment=Adjustment.DIVIDENDS,
+        )
+        assert s.adjustment == Adjustment.DIVIDENDS

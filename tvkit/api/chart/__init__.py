@@ -7,6 +7,7 @@ from TradingView, including OHLCV data, trade information, and technical indicat
 
 from .exceptions import AuthError, ChartError, RangeTooLargeError, StreamConnectionError
 from .models import (
+    Adjustment,
     ExportConfig,
     IndicatorData,
     OHLCVData,
@@ -23,6 +24,8 @@ from .ohlcv import OHLCV
 __all__ = [
     # Main streamer class
     "OHLCV",
+    # Enums
+    "Adjustment",
     # Exceptions
     "AuthError",
     "ChartError",

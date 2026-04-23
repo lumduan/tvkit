@@ -128,8 +128,17 @@ class TestRestoreSession:
         mock_ms_cls.assert_called_once_with(mock_ws)
         assert client.message_service is mock_ms  # assignment happened
         mock_cs.initialize_sessions.assert_called_once_with("qs_abc", "cs_abc", mock_send)
+        from tvkit.api.chart.models.adjustment import Adjustment
+
         mock_cs.add_symbol_to_sessions.assert_called_once_with(
-            "qs_abc", "cs_abc", "NASDAQ:AAPL", "1D", 100, mock_send, range_param=""
+            "qs_abc",
+            "cs_abc",
+            "NASDAQ:AAPL",
+            "1D",
+            100,
+            mock_send,
+            range_param="",
+            adjustment=Adjustment.SPLITS,
         )
 
     @pytest.mark.asyncio
@@ -157,6 +166,8 @@ class TestRestoreSession:
         with patch("tvkit.api.chart.ohlcv.MessageService", return_value=mock_ms):
             await client._restore_session()
 
+        from tvkit.api.chart.models.adjustment import Adjustment
+
         mock_cs.add_symbol_to_sessions.assert_called_once_with(
             "qs_abc",
             "cs_abc",
@@ -165,6 +176,7 @@ class TestRestoreSession:
             5000,
             mock_send,
             range_param="r,1704067200:1735603200",
+            adjustment=Adjustment.SPLITS,
         )
 
     @pytest.mark.asyncio

@@ -5,6 +5,7 @@ This module provides type-safe data models for all real-time streaming
 operations including OHLCV data, trade information, and WebSocket messages.
 """
 
+from .adjustment import Adjustment
 from .ohlcv import (
     LastBarStatus,
     NamespaceData,
@@ -31,6 +32,7 @@ from .stream_models import (
 )
 
 __all__ = [
+    "Adjustment",
     "OHLCVData",
     "TradeData",
     "StreamConfig",
