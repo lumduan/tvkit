@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.11.0** — Dividend-Adjusted OHLCV (`Adjustment` enum with `SPLITS` / `DIVIDENDS`; `adjustment` keyword parameter on `get_historical_ohlcv()`; `backadjustment: "default"` added to historical OHLCV WebSocket payload — protocol correctness fix)
 - **v0.10.0** — Async Batch Downloader (`tvkit.batch`: `batch_download()`, bounded concurrency via semaphore, per-symbol retry with exponential backoff, `BatchDownloadSummary`, partial failure model, opt-in pre-flight symbol validation)
 - **v0.9.0** — Data Integrity Validation (`tvkit.validation`: duplicate/monotonic/OHLC/volume/gap checks; `DataExporter` integration with `validate`, `strict`, `interval` parameters)
 - **v0.8.0** —  Symbol Normalization 
@@ -20,28 +21,6 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 - **v0.1.5** — Symbol format auto-conversion (dash → colon notation)
 - **v0.1.4** — Multi-market scanner with 69 markets and 101+ columns
 - **v0.1.0** — Initial release: real-time OHLCV streaming and historical data
-
----
-
-## In Progress
-
-### Dividend-Adjusted OHLCV Data ([#30](https://github.com/lumduan/tvkit/issues/30))
-
-Add an `adjustment` parameter to `get_historical_ohlcv()` so callers can request dividend-adjusted prices in addition to the existing split-adjusted default.
-
-TradingView's WebSocket protocol exposes an `adjustment` field on `resolve_symbol` that tvkit currently hardcodes to `"splits"`. Exposing this as a first-class API option enables total-return backtesting and income analysis without requiring users to source and apply dividend data separately.
-
-```python
-from tvkit.api.chart import OHLCV, Adjustment
-
-async with OHLCV() as client:
-    bars = await client.get_historical_ohlcv(
-        "SET:ADVANC", "1D", bars_count=100,
-        adjustment=Adjustment.DIVIDENDS,
-    )
-```
-
-Phase 1 supports: `Adjustment.SPLITS` (default, backwards-compatible) and `Adjustment.DIVIDENDS`. `Adjustment.NONE` (raw unadjusted prices) is deferred — the exact protocol value was not observed in the HAR capture and requires a separate investigation.
 
 ---
 
