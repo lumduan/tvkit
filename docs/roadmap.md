@@ -25,6 +25,24 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## In Progress
 
+### Dividend-Adjusted OHLCV Data ([#30](https://github.com/lumduan/tvkit/issues/30))
+
+Add an `adjustment` parameter to `get_historical_ohlcv()` so callers can request dividend-adjusted prices in addition to the existing split-adjusted default.
+
+TradingView's WebSocket protocol exposes an `adjustment` field on `resolve_symbol` that tvkit currently hardcodes to `"splits"`. Exposing this as a first-class API option enables total-return backtesting and income analysis without requiring users to source and apply dividend data separately.
+
+```python
+from tvkit.api.chart import OHLCV, Adjustment
+
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "SET:ADVANC", "1D", bars_count=100,
+        adjustment=Adjustment.DIVIDENDS,
+    )
+```
+
+Phase 1 supports: `Adjustment.SPLITS` (default, backwards-compatible) and `Adjustment.DIVIDENDS`. `Adjustment.NONE` (raw unadjusted prices) is deferred — the exact protocol value was not observed in the HAR capture and requires a separate investigation.
+
 ---
 
 ## Planned
