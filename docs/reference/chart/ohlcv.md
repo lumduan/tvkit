@@ -11,6 +11,7 @@ Async WebSocket client for streaming real-time and historical OHLCV data from Tr
 
 ```python
 from tvkit.api.chart.ohlcv import OHLCV
+from tvkit.api.chart import Adjustment          # price adjustment mode enum
 ```
 
 ---
@@ -169,6 +170,7 @@ async def get_historical_ohlcv(
     *,
     start: datetime | str | None = None,
     end: datetime | str | None = None,
+    adjustment: Adjustment = Adjustment.SPLITS,
 ) -> list[OHLCVBar]: ...
 ```
 
@@ -181,6 +183,7 @@ async def get_historical_ohlcv(
 | `bars_count` | `int \| None` | `None` | Count mode: number of most-recent bars to fetch. Mutually exclusive with `start`/`end`. Must be a positive integer. No implicit default — must be provided explicitly in count mode. |
 | `start` | `datetime \| str \| None` | `None` | Range mode: start of date window (inclusive). Keyword-only. Accepts timezone-aware datetime, naive datetime (assigned UTC), or ISO 8601 string. Must be used together with `end`. |
 | `end` | `datetime \| str \| None` | `None` | Range mode: end of date window (inclusive). Keyword-only. Same accepted types as `start`. Must be used together with `start`. |
+| `adjustment` | `Adjustment` | `Adjustment.SPLITS` | Price adjustment mode. Keyword-only. `Adjustment.SPLITS` (default) — split-adjusted only, identical to pre-v0.11.0 behaviour. `Adjustment.DIVIDENDS` — dividend-adjusted (total-return) prices; all prior bars are backward-adjusted for cash dividends. A raw string `"splits"` or `"dividends"` is accepted and coerced automatically. An unknown string raises `ValueError` before any network I/O. |
 
 #### Mode Selection
 
@@ -241,6 +244,7 @@ The segment size is snapshotted once at the start of each fetch so that a mid-fl
 | `ValueError` | Only one of `start`/`end` provided |
 | `ValueError` | `bars_count <= 0` |
 | `ValueError` | `start > end` |
+| `ValueError` | `adjustment` string is not a recognised value (raised before any network I/O) |
 | `ValueError` | Symbol format is invalid (from `validate_symbols`) |
 | `ValueError` | Interval format is invalid (from `validate_interval`) |
 | `ValueError` | TradingView returns a `series_error` (invalid symbol/interval for the requested timeframe) |
@@ -283,6 +287,52 @@ async with OHLCV() as client:
         start=datetime(2024, 1, 1, tzinfo=UTC),
         end=datetime(2024, 12, 31, tzinfo=UTC),
     )
+```
+
+**Dividend-adjusted prices (count mode):**
+
+```python
+from tvkit.api.chart import OHLCV, Adjustment
+
+async with OHLCV() as client:
+    # Default — split-adjusted only; identical to all pre-v0.11.0 calls
+    splits_bars = await client.get_historical_ohlcv(
+        "SET:ADVANC", "1D", bars_count=300,
+        adjustment=Adjustment.SPLITS,
+    )
+
+    # Dividend-adjusted total-return prices
+    div_bars = await client.get_historical_ohlcv(
+        "SET:ADVANC", "1D", bars_count=300,
+        adjustment=Adjustment.DIVIDENDS,
+    )
+
+# Closing prices differ: dividend-adjusted bars are backward-adjusted for cash payouts
+print(splits_bars[-1].close)   # e.g. 280.0
+print(div_bars[-1].close)      # e.g. 254.9  (lower — dividends deducted from history)
+```
+
+**Dividend-adjusted prices (range mode):**
+
+```python
+async with OHLCV() as client:
+    bars = await client.get_historical_ohlcv(
+        "SET:ADVANC", "1D",
+        start="2025-01-01", end="2025-12-31",
+        adjustment=Adjustment.DIVIDENDS,
+    )
+```
+
+**Raw string coercion (both forms are equivalent):**
+
+```python
+# Enum form — preferred, IDE-autocomplete-friendly
+bars = await client.get_historical_ohlcv("SET:ADVANC", "1D", bars_count=5,
+                                          adjustment=Adjustment.DIVIDENDS)
+
+# String form — accepted and coerced silently
+bars = await client.get_historical_ohlcv("SET:ADVANC", "1D", bars_count=5,
+                                          adjustment="dividends")  # type: ignore[arg-type]
 ```
 
 ---
@@ -506,6 +556,32 @@ df_utc = convert_to_exchange_timezone(df, "BINANCE") # UTC (crypto, 24/7)
 
 See [Concepts: Timezones](../../concepts/timezones.md) for the full explanation, and
 [tvkit.time Reference](../time/index.md) for the complete API.
+
+### `Adjustment`
+
+```python
+from tvkit.api.chart import Adjustment
+```
+
+`StrEnum` controlling the price adjustment mode applied to historical OHLCV bars. Maps directly to the `adjustment` field in TradingView's `resolve_symbol` WebSocket message.
+
+| Member | Value | Description |
+|--------|-------|-------------|
+| `Adjustment.SPLITS` | `"splits"` | Split-adjusted prices only. **Default.** Identical to all pre-v0.11.0 behaviour. |
+| `Adjustment.DIVIDENDS` | `"dividends"` | Dividend-adjusted (total-return) prices. Every prior bar is backward-adjusted so that each cash dividend payment is deducted from all earlier closing prices. Use for long-term backtesting of dividend-paying stocks. |
+
+Because `Adjustment` is a `str` enum, members compare equal to their string values:
+
+```python
+assert Adjustment.SPLITS == "splits"
+assert Adjustment.DIVIDENDS == "dividends"
+```
+
+`get_historical_ohlcv()` also accepts raw strings and coerces them automatically — a string that does not match a known member raises `ValueError` before any network I/O.
+
+**Added in v0.11.0.** `Adjustment.NONE` (raw unadjusted prices) is not yet supported — protocol value not confirmed; tracked for a future release.
+
+---
 
 ### `QuoteSymbolData`
 
