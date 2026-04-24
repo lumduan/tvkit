@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from tvkit.api.chart.exceptions import NoHistoricalDataError
+from tvkit.api.chart.models.adjustment import Adjustment
 from tvkit.api.chart.models.ohlcv import (
     OHLCVBar,
     OHLCVResponse,
@@ -98,6 +99,9 @@ class _StreamingSession:
         quote_session: Quote session identifier (e.g. "qs_abc123").
         chart_session: Chart session identifier (e.g. "cs_abc123").
         range_param: TradingView range string if range mode, else "".
+        adjustment: Price adjustment mode. Stored so that ``_restore_session``
+            replays the correct adjustment type after a WebSocket reconnect.
+            Defaults to ``Adjustment.SPLITS`` (identical to pre-v0.11.0 behaviour).
     """
 
     symbol: str
@@ -106,6 +110,7 @@ class _StreamingSession:
     quote_session: str
     chart_session: str
     range_param: str = ""
+    adjustment: Adjustment = Adjustment.SPLITS
 
 
 # Timeout constants for get_historical_ohlcv().
@@ -425,6 +430,7 @@ class OHLCV:
                 session.bars_count,
                 send_message_func,
                 range_param=session.range_param,
+                adjustment=session.adjustment,
             )
         except Exception:
             logger.exception(
@@ -444,6 +450,7 @@ class OHLCV:
         bars_count: int,
         *,
         range_param: str = "",
+        adjustment: Adjustment = Adjustment.SPLITS,
     ) -> None:
         """
         Set up services and subscribe the chart session to symbol data.
@@ -458,6 +465,9 @@ class OHLCV:
             range_param: TradingView range string (e.g. "r,<from>:<to>"). If non-empty,
                 a modify_series message is sent immediately after create_series to apply
                 the date range constraint. Empty string means count mode (default).
+            adjustment: Price adjustment mode forwarded to ``add_symbol_to_sessions()``.
+                Defaults to ``Adjustment.SPLITS``. Stored in ``_StreamingSession`` so
+                that ``_restore_session`` replays the correct type after reconnect.
 
         Raises:
             RuntimeError: If services fail to initialize.
@@ -482,6 +492,7 @@ class OHLCV:
             bars_count,
             send_message_func,
             range_param=range_param,
+            adjustment=adjustment,
         )
         self._session = _StreamingSession(
             symbol=converted_symbol,
@@ -490,6 +501,7 @@ class OHLCV:
             quote_session=quote_session,
             chart_session=chart_session,
             range_param=range_param,
+            adjustment=adjustment,
         )
 
     def _validate_range(self, start: datetime, end: datetime) -> tuple[datetime, datetime]:
@@ -576,6 +588,7 @@ class OHLCV:
         *,
         start: datetime,
         end: datetime,
+        adjustment: Adjustment = Adjustment.SPLITS,
     ) -> list[OHLCVBar]:
         """
         Perform a single-request historical fetch using range mode.
@@ -597,6 +610,8 @@ class OHLCV:
             interval:        TradingView interval string.
             start:           Inclusive start of the range (UTC-aware datetime, keyword-only).
             end:             Inclusive end of the range (UTC-aware datetime, keyword-only).
+            adjustment:      Price adjustment mode forwarded to ``_prepare_chart_session()``.
+                             Defaults to ``Adjustment.SPLITS``.
 
         Returns:
             List of OHLCVBar objects, sorted ascending by timestamp.
@@ -614,7 +629,7 @@ class OHLCV:
 
         range_param: str = build_range_param(start, end)
         await self._prepare_chart_session(
-            canonical, interval, MAX_BARS_REQUEST, range_param=range_param
+            canonical, interval, MAX_BARS_REQUEST, range_param=range_param, adjustment=adjustment
         )
 
         if self.connection_service is None:
@@ -802,6 +817,7 @@ class OHLCV:
         interval: str,
         *,
         bars_count: int,
+        adjustment: Adjustment = Adjustment.SPLITS,
     ) -> list[OHLCVBar]:
         """
         Perform a count-based historical fetch (most recent N bars).
@@ -814,6 +830,8 @@ class OHLCV:
             exchange_symbol: TradingView symbol in EXCHANGE:SYMBOL format.
             interval:        TradingView interval string.
             bars_count:      Number of bars to fetch (keyword-only). Must be > 0.
+            adjustment:      Price adjustment mode forwarded to ``_prepare_chart_session()``.
+                             Defaults to ``Adjustment.SPLITS``.
 
         Returns:
             List of OHLCVBar objects, sorted ascending by timestamp.
@@ -827,7 +845,9 @@ class OHLCV:
         await validate_symbols(canonical)
         validate_interval(interval)
 
-        await self._prepare_chart_session(canonical, interval, bars_count, range_param="")
+        await self._prepare_chart_session(
+            canonical, interval, bars_count, range_param="", adjustment=adjustment
+        )
 
         if self.connection_service is None:
             raise RuntimeError("Services not properly initialized")
@@ -1148,6 +1168,7 @@ class OHLCV:
         *,
         start: datetime | str | None = None,
         end: datetime | str | None = None,
+        adjustment: Adjustment = Adjustment.SPLITS,
     ) -> list[OHLCVBar]:
         """
         Returns a list of historical OHLCV data for a specified symbol.
@@ -1162,6 +1183,13 @@ class OHLCV:
 
             bars = await client.get_historical_ohlcv(
                 "NASDAQ:AAPL", "1D", start="2024-01-01", end="2024-12-31"
+            )
+
+        **Dividend-adjusted prices:**
+
+            bars = await client.get_historical_ohlcv(
+                "SET:ADVANC", "1D", bars_count=300,
+                adjustment=Adjustment.DIVIDENDS,
             )
 
         For large date ranges in range mode, this method automatically splits the request
@@ -1183,6 +1211,13 @@ class OHLCV:
             end: End of the date range (inclusive). Same accepted types as start.
                 Keyword-only. Must be provided together with start. Future end dates
                 are automatically clamped to the current UTC time.
+            adjustment: Price adjustment mode. Keyword-only. Defaults to
+                ``Adjustment.SPLITS`` — fully backwards-compatible; all existing calls
+                that omit this parameter produce the same data as before v0.11.0.
+                Pass ``Adjustment.DIVIDENDS`` for total-return (dividend-adjusted)
+                prices. Raw strings (``"splits"``, ``"dividends"``) are accepted and
+                coerced to the enum; unknown strings raise ``ValueError`` before any
+                network I/O.
 
         Returns:
             A list of OHLCVBar objects sorted by timestamp in ascending order.
@@ -1190,7 +1225,8 @@ class OHLCV:
         Raises:
             ValueError: If neither bars_count nor start/end is provided; if both are
                 provided; if only one of start/end is provided; if bars_count <= 0;
-                if start > end; or if the symbol/interval is invalid.
+                if start > end; if the symbol/interval is invalid; or if ``adjustment``
+                is an unrecognised string value.
             RangeTooLargeError: If the date range requires more than MAX_SEGMENTS (2000)
                 fetch operations. Narrow the range or use a wider interval.
             RuntimeError: If no bars are received from TradingView (count mode).
@@ -1198,6 +1234,10 @@ class OHLCV:
                 This is a RuntimeError subclass — existing except RuntimeError callers
                 are unaffected.
         """
+        # Coerce raw strings ("dividends") to Adjustment; unknown strings raise ValueError
+        # here, at the API boundary, before any I/O. Must be the first statement.
+        adjustment = Adjustment(adjustment)
+
         # --- Mode dispatch (fail fast before WebSocket) ---
         has_range: bool = start is not None or end is not None
         has_count: bool = bars_count is not None
@@ -1239,16 +1279,20 @@ class OHLCV:
                     client=self,
                     max_bars_per_segment=MAX_BARS_REQUEST,
                 )
-                return await service.fetch_all(exchange_symbol, interval, start_dt, end_dt)
+                return await service.fetch_all(
+                    exchange_symbol, interval, start_dt, end_dt, adjustment=adjustment
+                )
 
             # Small range — use single-request path (existing behavior, unchanged).
             return await self._fetch_single_range(
-                exchange_symbol, interval, start=start_dt, end=end_dt
+                exchange_symbol, interval, start=start_dt, end=end_dt, adjustment=adjustment
             )
 
         elif has_count:
             assert bars_count is not None  # mypy narrowing
-            return await self._fetch_count_mode(exchange_symbol, interval, bars_count=bars_count)
+            return await self._fetch_count_mode(
+                exchange_symbol, interval, bars_count=bars_count, adjustment=adjustment
+            )
 
         else:
             raise ValueError("Either bars_count or both start and end must be provided.")

@@ -70,8 +70,12 @@ class TestNormalizeBeforeValidate:
             with pytest.raises(RuntimeError, match="No historical data"):
                 await client._fetch_count_mode("nasdaq:aapl", "1D", bars_count=5)
 
+            from tvkit.api.chart.models.adjustment import Adjustment
+
             mock_validate.assert_called_once_with("NASDAQ:AAPL")
-            mock_prepare.assert_called_once_with("NASDAQ:AAPL", "1D", 5, range_param="")
+            mock_prepare.assert_called_once_with(
+                "NASDAQ:AAPL", "1D", 5, range_param="", adjustment=Adjustment.SPLITS
+            )
 
     @pytest.mark.asyncio
     async def test_fetch_count_mode_dash_notation_passed_canonical(self) -> None:

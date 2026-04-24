@@ -409,6 +409,36 @@ class TestRecursionGuard:
         mock_client._fetch_single_range.assert_called()
         mock_client.get_historical_ohlcv.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_fetch_all_forwards_dividends_adjustment_to_each_segment(self) -> None:
+        """fetch_all() must forward adjustment to every _fetch_single_range call."""
+
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        mock_client = AsyncMock(spec=OHLCV)
+        mock_client._fetch_single_range = AsyncMock(return_value=[make_bar(1000.0)])
+        service = SegmentedFetchService(client=mock_client)
+
+        await service.fetch_all(
+            "SET:ADVANC",
+            "1H",
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 2, tzinfo=UTC),
+            adjustment=Adjustment.DIVIDENDS,
+        )
+
+        for call in mock_client._fetch_single_range.call_args_list:
+            assert call.kwargs.get("adjustment") == Adjustment.DIVIDENDS
+
+    def test_fetch_all_default_adjustment_is_splits(self) -> None:
+        """Omitting adjustment from fetch_all() must default to Adjustment.SPLITS."""
+        import inspect as _inspect
+
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        sig = _inspect.signature(SegmentedFetchService.fetch_all)
+        assert sig.parameters["adjustment"].default == Adjustment.SPLITS
+
 
 # ---------------------------------------------------------------------------
 # TestSegmentedFetchMaxBarsSnapshot  (Phase 5)

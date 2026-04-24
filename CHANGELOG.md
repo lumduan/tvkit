@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-04-24
+
+### Added
+
+- **`Adjustment` enum** (`tvkit.api.chart.Adjustment`) with two members:
+  - `Adjustment.SPLITS` — split-adjusted prices only (default; identical to all pre-v0.11.0 behaviour)
+  - `Adjustment.DIVIDENDS` — dividend-adjusted (total-return) prices; all prior bars are backward-adjusted for cash dividends, producing accurate total-return series for long-term backtesting of dividend-paying stocks
+- **`adjustment` keyword parameter on `get_historical_ohlcv()`** — defaults to `Adjustment.SPLITS`; a raw string `"splits"` or `"dividends"` is coerced automatically; an unknown string raises `ValueError` before any network I/O
+- **`backadjustment: "default"` added to the historical OHLCV `resolve_symbol` WebSocket payload** — matches TradingView browser behaviour confirmed by HAR capture; applies to `add_symbol_to_sessions()` (historical OHLCV path) only
+
+### Notes
+
+- Existing calls to `get_historical_ohlcv()` without `adjustment` produce the same data as v0.10.0 — fully backwards-compatible
+- `Adjustment.NONE` (raw unadjusted prices) is not yet supported — protocol value not confirmed; tracked for a future release
+- `add_multiple_symbols_to_sessions()` (quote-data path) and `get_ohlcv()` / `get_ohlcv_raw()` / `get_quote_data()` are unchanged in this release
+
+---
+
 ## [0.10.0] — 2026-04-20
 
 ### Added

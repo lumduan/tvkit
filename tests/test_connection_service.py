@@ -321,6 +321,76 @@ class TestAuthErrorDetection:
         # WebSocket close() was invoked during teardown
         ws_mock.close.assert_called()
 
+    # ── Adjustment / backadjustment tests (Phase 1) ──────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_resolve_symbol_includes_backadjustment_default(self) -> None:
+        """resolve_symbol payload must include backadjustment:'default' in default/splits mode."""
+        sent: list[tuple[str, list[Any]]] = []
+
+        async def mock_send(m: str, p: list[Any]) -> None:
+            sent.append((m, p))
+
+        svc = ConnectionService(ws_url=WS_URL)
+        await svc.add_symbol_to_sessions("qs_t", "cs_t", "NASDAQ:AAPL", "1D", 100, mock_send)
+        resolve_args = next(p for m, p in sent if m == "resolve_symbol")
+        payload = json.loads(resolve_args[2].lstrip("="))
+        assert payload["backadjustment"] == "default"
+        assert payload["adjustment"] == "splits"
+
+    @pytest.mark.asyncio
+    async def test_resolve_symbol_dividends_adjustment(self) -> None:
+        """Passing Adjustment.DIVIDENDS must produce adjustment:'dividends' in resolve_symbol."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        sent: list[tuple[str, list[Any]]] = []
+
+        async def mock_send(m: str, p: list[Any]) -> None:
+            sent.append((m, p))
+
+        svc = ConnectionService(ws_url=WS_URL)
+        await svc.add_symbol_to_sessions(
+            "qs_t",
+            "cs_t",
+            "SET:ADVANC",
+            "1D",
+            300,
+            mock_send,
+            adjustment=Adjustment.DIVIDENDS,
+        )
+        resolve_args = next(p for m, p in sent if m == "resolve_symbol")
+        payload = json.loads(resolve_args[2].lstrip("="))
+        assert payload["adjustment"] == "dividends"
+        assert payload["backadjustment"] == "default"
+
+    def test_add_symbol_to_sessions_default_adjustment_is_splits(self) -> None:
+        """Default value of adjustment parameter must be Adjustment.SPLITS."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        sig = inspect.signature(ConnectionService.add_symbol_to_sessions)
+        assert sig.parameters["adjustment"].default == Adjustment.SPLITS
+
+    @pytest.mark.parametrize("adj_str", ["splits", "dividends"])
+    @pytest.mark.asyncio
+    async def test_backadjustment_present_for_all_adjustment_types(self, adj_str: str) -> None:
+        """backadjustment:'default' must be in resolve_symbol for every Adjustment value."""
+        from tvkit.api.chart.models.adjustment import Adjustment
+
+        sent: list[tuple[str, list[Any]]] = []
+
+        async def mock_send(m: str, p: list[Any]) -> None:
+            sent.append((m, p))
+
+        adj = Adjustment(adj_str)
+        svc = ConnectionService(ws_url=WS_URL)
+        await svc.add_symbol_to_sessions(
+            "qs_t", "cs_t", "NASDAQ:AAPL", "1D", 100, mock_send, adjustment=adj
+        )
+        resolve_args = next(p for m, p in sent if m == "resolve_symbol")
+        payload = json.loads(resolve_args[2].lstrip("="))
+        assert payload["backadjustment"] == "default"
+        assert payload["adjustment"] == adj_str
+
     def test_auth_error_is_subclass_of_chart_error(self) -> None:
         """AuthError inherits from ChartError."""
         from tvkit.api.chart.exceptions import ChartError
