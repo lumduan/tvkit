@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -40,15 +41,21 @@ class SegmentedFetchService:
         max_bars_per_segment: Maximum bars per segment. Defaults to ``MAX_BARS_REQUEST``
                               (5000). Lowering this value increases the number of
                               segments and reduces per-segment memory usage.
+        inter_segment_delay:  Seconds to sleep between consecutive segment fetches.
+                              Defaults to ``0.0`` (no delay). Increase this when
+                              fetching continuous futures symbols or making repeated
+                              range queries that trigger server-side throttling.
     """
 
     def __init__(
         self,
         client: OHLCV,
         max_bars_per_segment: int = MAX_BARS_REQUEST,
+        inter_segment_delay: float = 0.0,
     ) -> None:
         self._client = client
         self._max_bars_per_segment: int = max_bars_per_segment
+        self._inter_segment_delay: float = inter_segment_delay
 
     def _resolve_max_bars(self) -> int:
         """
@@ -228,6 +235,18 @@ class SegmentedFetchService:
                 logger.info("Segment complete.", extra=complete_kwargs)
             else:
                 logger.debug("Segment complete.", extra=complete_kwargs)
+
+            # Inter-segment delay: reduces server-side throttling risk for continuous
+            # futures symbols and rapid repeated range queries. Skipped after the last
+            # segment to avoid unnecessary wait at the end of the fetch.
+            if self._inter_segment_delay > 0 and i < total:
+                logger.debug(
+                    "Inter-segment delay %.2fs before segment %d/%d.",
+                    self._inter_segment_delay,
+                    i + 1,
+                    total,
+                )
+                await asyncio.sleep(self._inter_segment_delay)
 
         result: list[OHLCVBar] = self._deduplicate_and_sort(all_bars)
 

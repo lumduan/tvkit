@@ -17,34 +17,76 @@ print(MAX_BARS_REQUEST)  # inspect the current limit
 
 ---
 
-## TradingView Historical Depth Limitation
+## TradingView Historical Depth Limitation — The `max_bars` Window
 
-Separate from the per-request bar limit, TradingView imposes a server-side rolling window that controls how far back in time data is accessible. This window is not the number of bars per request — it is the maximum age of accessible data for your account tier.
+Separate from the per-request bar limit, TradingView imposes a server-side rolling window
+that controls how many bars are accessible per account tier. Understanding this window
+correctly is essential for both count mode and range mode.
 
-Free/basic accounts can access approximately ≈5,000 bars backward from the current time. Paid tiers allow deeper history. The table below shows approximate accessible depth by interval and account tier:
+### What `max_bars` actually means
 
-| Interval | Basic (free) | Essential / Plus | Premium | Ultimate |
-| -------- | ------------ | ---------------- | ------- | -------- |
-| 1 minute | ≈3.5 days | ≈17 days | ≈1 month | ≈6 months |
-| 5 minutes | ≈17 days | ≈3 months | ≈6 months | ≈2 years |
-| 15 minutes | ≈52 days | ≈9 months | ≈1.5 years | ≈6 years |
-| 1 hour | ≈7 months | ≈3 years | ≈6 years | ≈24 years |
-| 1 day | ≈27 years | Unlimited | Unlimited | Unlimited |
+> TradingView serves at most `max_bars` bars **counted backward from the latest bar in the
+> series** — not from wall-clock current time.
 
-These are approximate, empirical values. TradingView does not publish official figures and limits may change.
+For most liquid markets (equities, crypto, forex) the latest bar is a few minutes behind
+real time, so the distinction rarely matters. It matters significantly for:
 
-**Effect on segmented fetching:**
+- **Futures contracts** with daily maintenance breaks or weekend closures — the window spans
+  more calendar days than a 24×7 instrument with the same bar count
+- **Specific expiry contracts near or past expiry** — the latest bar may be days or weeks old
+- **Thinly traded instruments** — gaps in the series move the oldest accessible bar closer
+  to the latest bar's timestamp
 
-When `get_historical_ohlcv()` automatically segments a large date range, segments that fall before the accessible window for your account tier return no bars. tvkit treats these as empty results — no error is raised. This behavior mirrors TradingView's native chart behavior.
+### Range mode is a filter, not a deeper lookup
+
+A common misconception is that range mode (`start=..., end=...`) provides access to older
+data than count mode. It does not. Both modes are bounded by the same `max_bars` window.
+
+```text
+         ◄──────── max_bars window ──────────►
+         │                                   │
+[oldest accessible bar]          [latest bar in series]
+         │                                   │
+         │  ← range mode filter works here → │
+         │
+ dates here → 0 bars returned, no error raised
+```
+
+The server first retrieves the last `max_bars` bars, then applies the date filter.
+If the requested date range falls entirely before the oldest accessible bar, 0 bars are
+returned — no `NoHistoricalDataError` is raised, because the series itself is valid.
+
+This also applies to **segmented fetch**: `get_historical_ohlcv()` automatically splits
+large date ranges into smaller requests, but each segment is still bounded by the same
+`max_bars` window. Segments older than the window return empty results silently.
+
+### Accessible depth by interval and account tier
+
+The table below shows approximate calendar-equivalent lookback for each tier, assuming
+continuous 24-hour trading. For instruments with trading gaps (e.g. CME futures with a
+1-hour daily maintenance break and weekend closure), the equivalent calendar span is
+proportionally longer.
+
+| Interval   | Basic (free)  | Essential / Plus | Premium    | Ultimate    |
+| ---------- | ------------- | ---------------- | ---------- | ----------- |
+| 1 minute   | ≈3.5 days     | ≈7 days          | ≈14 days   | ≈28 days    |
+| 5 minutes  | ≈17 days      | ≈35 days         | ≈70 days   | ≈140 days   |
+| 15 minutes | ≈52 days      | ≈104 days        | ≈208 days  | ≈416 days   |
+| 1 hour     | ≈7 months     | ≈14 months       | ≈28 months | ≈56 months  |
+| 1 day      | ≈27 years     | Unlimited        | Unlimited  | Unlimited   |
+
+These are approximate, empirical values based on `max_bars` counts. TradingView does not
+publish official figures and limits may change.
 
 **Distinction from `MAX_BARS_REQUEST`:**
 
 | Concept | What it controls |
 | ------- | ---------------- |
-| `MAX_BARS_REQUEST` | Protocol limit — maximum bars in a single fetch request |
-| Historical depth | Server-side policy — maximum age of accessible data per account tier |
+| `MAX_BARS_REQUEST` | Protocol limit — maximum bars returned in a single WebSocket request |
+| `max_bars` (historical depth) | Account policy — total bars accessible, counted from the latest bar |
 
-**Resolution:** To access older data, upgrade your TradingView account tier or switch to a wider interval (e.g., `"1H"` instead of `"1"`).
+**Resolution:** To access older data, upgrade your TradingView account tier or switch to a
+wider interval (e.g., `"1H"` instead of `"1"`).
 
 ## Rate Limiting
 

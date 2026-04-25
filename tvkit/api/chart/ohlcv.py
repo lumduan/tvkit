@@ -645,6 +645,14 @@ class OHLCV:
         # We discard everything accumulated before the first series_completed and
         # only break on the second one, which carries the historical range bars.
         series_completed_count: int = 0
+        # Safety net: bars from the create_series response that fall within the
+        # requested range, saved before the first-event clear. For recent queries
+        # (e.g. sessions within the last ~83 hours at 1-minute interval),
+        # create_series already delivers the target bars. If modify_series returns
+        # nothing (throttled server, continuous futures edge case, or single-event
+        # protocol variant), these are used as a fallback instead of raising
+        # NoHistoricalDataError immediately.
+        pre_modify_bars_in_range: list[OHLCVBar] = []
 
         async for data in self.connection_service.get_data_stream():
             if loop.time() - start_time > _HISTORICAL_RANGE_TIMEOUT_SECONDS:
@@ -709,13 +717,28 @@ class OHLCV:
                     series_completed_count += 1
                     if series_completed_count == 1:
                         # First completion is the create_series response (most-recent
-                        # bars). Discard and wait for the modify_series response which
-                        # carries the actual historical range data.
-                        logger.debug(
-                            "First series_completed (create_series) — discarding %d bars, "
-                            "waiting for modify_series response.",
-                            len(historical_bars),
-                        )
+                        # bars). Before clearing, filter to the requested range and
+                        # save as a fallback — for recent queries the create_series
+                        # response may already contain the target bars. Only used if
+                        # modify_series returns nothing (see post-loop recovery below).
+                        _from_ts: int = to_unix_timestamp(start)
+                        _to_ts: int = end_of_day_timestamp(end)
+                        pre_modify_bars_in_range = [
+                            b for b in historical_bars if _from_ts <= b.timestamp <= _to_ts
+                        ]
+                        if pre_modify_bars_in_range:
+                            logger.debug(
+                                "First series_completed — saved %d in-range bars as fallback "
+                                "(discarding %d out-of-range bars, waiting for modify_series).",
+                                len(pre_modify_bars_in_range),
+                                len(historical_bars) - len(pre_modify_bars_in_range),
+                            )
+                        else:
+                            logger.debug(
+                                "First series_completed (create_series) — discarding %d bars, "
+                                "waiting for modify_series response.",
+                                len(historical_bars),
+                            )
                         historical_bars.clear()
                         continue
                     # Second series_completed is the modify_series response.
@@ -775,6 +798,24 @@ class OHLCV:
                 interval,
                 len(historical_bars),
             )
+
+        # Safety net: if modify_series returned no bars but create_series had
+        # in-range bars saved as a fallback, use those instead of raising
+        # NoHistoricalDataError. Triggered by server throttling, continuous futures
+        # data availability limits, or a single-event series_completed variant.
+        if not historical_bars and pre_modify_bars_in_range:
+            logger.info(
+                "modify_series returned no bars — falling back to %d in-range bars "
+                "from create_series response (possible server throttle or "
+                "single-event series_completed).",
+                len(pre_modify_bars_in_range),
+                extra={
+                    "symbol": canonical,
+                    "interval": interval,
+                    "fallback_bar_count": len(pre_modify_bars_in_range),
+                },
+            )
+            historical_bars = pre_modify_bars_in_range
 
         # Sort bars by timestamp for chronological order.
         historical_bars.sort(key=lambda bar: bar.timestamp)
@@ -1169,6 +1210,7 @@ class OHLCV:
         start: datetime | str | None = None,
         end: datetime | str | None = None,
         adjustment: Adjustment = Adjustment.SPLITS,
+        segment_delay: float = 0.0,
     ) -> list[OHLCVBar]:
         """
         Returns a list of historical OHLCV data for a specified symbol.
@@ -1218,6 +1260,13 @@ class OHLCV:
                 prices. Raw strings (``"splits"``, ``"dividends"``) are accepted and
                 coerced to the enum; unknown strings raise ``ValueError`` before any
                 network I/O.
+            segment_delay: Seconds to sleep between consecutive segment fetches when
+                the request is routed through ``SegmentedFetchService`` (i.e. when the
+                estimated bar count for the date range exceeds the account limit).
+                Defaults to ``0.0`` (no delay). Ignored in count mode and for ranges
+                that fit within a single request. Increase to ``1.0``–``3.0`` when
+                fetching continuous futures symbols (e.g. ``CME_MINI:MNQ1!``) to
+                reduce server-side throttling.
 
         Returns:
             A list of OHLCVBar objects sorted by timestamp in ascending order.
@@ -1278,6 +1327,7 @@ class OHLCV:
                 service = SegmentedFetchService(
                     client=self,
                     max_bars_per_segment=MAX_BARS_REQUEST,
+                    inter_segment_delay=segment_delay,
                 )
                 return await service.fetch_all(
                     exchange_symbol, interval, start_dt, end_dt, adjustment=adjustment

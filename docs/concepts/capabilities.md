@@ -8,7 +8,13 @@ tvkit can authenticate with a TradingView user account to unlock deeper historic
 
 ## TradingView Plans and Bar Limits
 
-TradingView offers five plan levels. Each plan determines the maximum number of bars accessible in a single historical fetch. See the [official TradingView pricing page](https://www.tradingview.com/pricing/) for the full feature comparison.
+TradingView offers five plan levels. Each plan determines `max_bars` — the total number of bars accessible, counted **backward from the latest bar in the series**. See the [official TradingView pricing page](https://www.tradingview.com/pricing/) for the full feature comparison.
+
+> **`max_bars` is a lookback window, not a per-request cap.** TradingView counts backward
+> from the latest bar in the series; any bar older than `max_bars` positions back is
+> inaccessible regardless of the fetch method. Range mode applies a date filter on top of
+> this window — dates before the oldest accessible bar return 0 bars with no error.
+> See [Limitations — The `max_bars` Window](../limitations.md#tradingview-historical-depth-limitation--the-max_bars-window).
 
 | TradingView plan | Internal plan slug | tvkit `tier` | `max_bars` |
 |------------------|--------------------|--------------|------------|
