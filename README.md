@@ -1,10 +1,12 @@
 # tvkit
 
+[![CI](https://github.com/lumduan/tvkit/actions/workflows/ruff-lint.yml/badge.svg)](https://github.com/lumduan/tvkit/actions/workflows/ruff-lint.yml)
+[![PyPI](https://img.shields.io/pypi/v/tvkit.svg)](https://pypi.org/project/tvkit/)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/tvkit.svg)](https://pypi.org/project/tvkit/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Async/Await](https://img.shields.io/badge/async-await-green.svg)](https://docs.python.org/3/library/asyncio.html)
 [![Type Safety](https://img.shields.io/badge/typed-pydantic-red.svg)](https://pydantic.dev/)
-[![PyPI](https://img.shields.io/pypi/v/tvkit.svg)](https://pypi.org/project/tvkit/)
 
 tvkit — Async Python client for TradingView market data.
 
