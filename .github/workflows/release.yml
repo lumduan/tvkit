@@ -1,0 +1,168 @@
+# Triggered by version tags: v0.11.1, v1.0.0, v1.0.0-beta.1, etc.
+# Pipeline: validate tag → CI → build → publish PyPI → create GitHub Release
+#
+# One-time setup required (see docs/development/release-process.md):
+#   1. PyPI Trusted Publisher configured for this workflow + environment "pypi"
+#   2. GitHub environment "pypi" created in repo Settings → Environments
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write   # create GitHub Release + upload assets
+  id-token: write   # OIDC token for PyPI Trusted Publisher
+
+jobs:
+  # ── 1. Validate tag matches pyproject.toml version ──────────────────────────
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse tag and detect pre-release
+        id: parse
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$TAG" =~ -(alpha|beta|rc) ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify tag matches pyproject.toml
+        run: |
+          PYPROJECT_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          TAG_VERSION="${{ steps.parse.outputs.version }}"
+          if [ "$PYPROJECT_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ Version mismatch: pyproject.toml=${PYPROJECT_VERSION}, tag=${TAG_VERSION}"
+            echo "   Bump the version in pyproject.toml before tagging."
+            exit 1
+          fi
+          echo "✅ Version ${TAG_VERSION} matches pyproject.toml"
+
+  # ── 2. Full CI gate (mirrors ruff-lint.yml) ─────────────────────────────────
+  ci:
+    name: CI
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - run: uv python install 3.11
+      - run: uv sync --extra dev
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy tvkit/
+      - run: uv run pytest --cov=tvkit --cov-branch -v
+
+  # ── 3. Build sdist + wheel ───────────────────────────────────────────────────
+  build:
+    name: Build
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - run: uv python install 3.11
+      - run: uv run python -m build
+
+      - name: Verify dist contents
+        run: ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # ── 4. Publish to PyPI (Trusted Publisher — no token needed) ─────────────────
+  publish-pypi:
+    name: Publish → PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tvkit/${{ needs.validate.outputs.version }}/
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses OIDC Trusted Publisher — no PYPI_TOKEN secret required.
+        # Fallback: uncomment the two lines below and add PYPI_API_TOKEN to repo secrets.
+        # with:
+        #   password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ── 5. Create GitHub Release with changelog body ─────────────────────────────
+  github-release:
+    name: GitHub Release
+    needs: [validate, publish-pypi]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          python3 - "$VERSION" <<'PYEOF'
+          import re, sys
+          version = sys.argv[1]
+          content = open("CHANGELOG.md").read()
+          pattern = rf"(?m)^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)"
+          match = re.search(pattern, content, re.DOTALL)
+          notes = match.group(1).strip() if match else f"Release v{version}"
+          with open("release_notes.txt", "w") as f:
+              f.write(notes)
+          PYEOF
+          {
+            echo 'notes<<CHANGELOG_EOF'
+            cat release_notes.txt
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "tvkit v${{ needs.validate.outputs.version }}"
+          body: ${{ steps.changelog.outputs.notes }}
+          prerelease: ${{ needs.validate.outputs.is_prerelease }}
+          files: dist/*
+          make_latest: ${{ needs.validate.outputs.is_prerelease == 'false' }}

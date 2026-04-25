@@ -1,129 +1,199 @@
 # Release Process
 
-This page documents how to prepare, build, and publish a new tvkit release to PyPI.
+This document is the single source of truth for releasing tvkit — covering versioning strategy, the automated pipeline, manual steps, and the one-time setup required.
 
-## Prerequisites
+---
 
-- `uv` installed and `uv sync` run (all dev dependencies present)
-- PyPI project-scoped API token stored in `.env` as `PYPI_TOKEN=pypi-...`
-- All quality checks passing
-- Working on or merged into `main`
+## Versioning Strategy
 
-## Quick Release Steps
+tvkit follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
-1. Sync `main` from remote
-2. Run the full quality gate
-3. Bump version in `pyproject.toml`
-4. Commit, tag, and push
-5. Run `./scripts/publish.sh`
-6. Verify the package on PyPI and create a GitHub release
+| Change type | Component | Example |
+| --- | --- | --- |
+| Breaking API change | `MAJOR` | `0.x.x → 1.0.0` |
+| New feature, backwards-compatible | `MINOR` | `0.11.x → 0.12.0` |
+| Bug fix or internal improvement | `PATCH` | `0.11.1 → 0.11.2` |
 
-## Sync Repository
+### Pre-release tags
 
-Ensure the local repository is up to date before starting:
+Append a suffix to mark unstable releases:
 
-```bash
-git checkout main
-git pull origin main
+| Suffix | Meaning | Example |
+| --- | --- | --- |
+| `-beta.N` | Feature-complete, needs testing | `v0.12.0-beta.1` |
+| `-rc.N` | Release candidate, final validation | `v1.0.0-rc.1` |
+| `-alpha.N` | Early preview, may break | `v1.0.0-alpha.1` |
+
+Pre-release tags publish to PyPI with `--pre` semantics and are marked as pre-release on GitHub.
+
+### Milestone roadmap
+
+| Version | Theme | Key targets |
+| --- | --- | --- |
+| `0.11.x` | Stability | Bug fixes, improved error handling |
+| `0.12.0` | Completeness | Scanner pagination, more intervals |
+| `0.13.0` | Developer experience | Richer errors, better docs, type stubs |
+| `1.0.0` | Stable API | Frozen public contract, full coverage |
+
+Do not bump to `1.0.0` until the public API is frozen and test coverage is ≥ 90% on all public modules.
+
+---
+
+## Automated Pipeline
+
+Every version tag (`v*.*.*`) triggers `.github/workflows/release.yml`:
+
+```text
+push tag vX.Y.Z
+  │
+  ├─ validate     — tag matches pyproject.toml version
+  ├─ ci           — ruff + mypy + pytest (full suite)
+  ├─ build        — sdist + wheel via `python -m build`
+  ├─ publish-pypi — upload via PyPI Trusted Publisher (OIDC)
+  └─ github-release — extract CHANGELOG section → create GitHub Release + attach dist assets
 ```
 
-Never release from a stale local branch.
+**Both PyPI and GitHub Release are created automatically from a single tag push. You never need to do them separately.**
 
-## Pre-Release Checklist
+---
 
-Run the full quality gate:
+## One-Time Setup (do this once per repository)
+
+### 1. PyPI Trusted Publisher
+
+This replaces token-based uploads in CI. No secret is stored in GitHub.
+
+1. Log in to [pypi.org](https://pypi.org) → **Manage** → **Publishing** → **Add a new publisher**
+2. Fill in:
+   - **Owner**: `lumduan`
+   - **Repository**: `tvkit`
+   - **Workflow name**: `release.yml`
+   - **Environment**: `pypi`
+3. Save.
+
+### 2. GitHub Environment
+
+1. Go to **Settings → Environments → New environment**
+2. Name it exactly `pypi`
+3. (Optional but recommended) Add a required reviewer so no release can go out without approval
+
+### 3. `softprops/action-gh-release` permissions
+
+The workflow already sets `permissions: contents: write`. No extra token is needed.
+
+---
+
+## Release Checklist
+
+Follow these steps for every release, in order.
+
+### Before bumping the version
+
+- [ ] All work for this release is merged to `main`
+- [ ] `git pull origin main` — local branch is current
+- [ ] Quality gate passes:
+
+  ```bash
+  uv run ruff check . && uv run ruff format . && uv run mypy tvkit/
+  uv run python -m pytest tests/ -v
+  ```
+
+- [ ] `CHANGELOG.md` has a section for the new version with date and full notes
+
+### Bump and tag
 
 ```bash
-uv run ruff check . && uv run ruff format . && uv run mypy tvkit/
-uv run python -m pytest tests/ -v
-```
+# 1. Update version in pyproject.toml
+#    Change: version = "0.11.1"  →  version = "0.12.0"
 
-All checks must pass. Do not publish a release with failing tests or type errors.
+# 2. Commit the version bump
+git add pyproject.toml CHANGELOG.md
+git commit -m "chore(release): bump version to v0.12.0"
 
-## Version Bump
+# 3. Tag the commit
+git tag v0.12.0
 
-Version is declared in `pyproject.toml`:
-
-```toml
-[project]
-version = "0.3.0"
-```
-
-tvkit follows [Semantic Versioning](https://semver.org/):
-
-| Change type | Version component | Example |
-|-------------|-------------------|---------|
-| Backwards-incompatible API change | Major (`X.0.0`) | `0.3.0` → `1.0.0` |
-| New feature, backwards-compatible | Minor (`0.X.0`) | `0.3.0` → `0.4.0` |
-| Bug fix or internal change | Patch (`0.0.X`) | `0.3.0` → `0.3.1` |
-
-Update the version in `pyproject.toml`, commit the change, and tag the commit:
-
-```bash
-git add pyproject.toml
-git commit -m "release: bump version to vX.Y.Z"
-git tag vX.Y.Z
+# 4. Push branch and tag together
 git push origin main --tags
 ```
 
-## Build
+Pushing the tag starts the automated pipeline. Watch it at:
+`https://github.com/lumduan/tvkit/actions`
 
-Clean previous build artifacts before building to avoid uploading stale files:
+### After the pipeline completes
+
+- [ ] Verify PyPI: `https://pypi.org/project/tvkit/0.12.0/`
+- [ ] Test installation in a clean environment:
+
+  ```bash
+  pip install tvkit==0.12.0
+  ```
+
+- [ ] Verify GitHub Release: `https://github.com/lumduan/tvkit/releases/tag/v0.12.0`
+  - Release notes match the CHANGELOG section
+  - Both `.whl` and `.tar.gz` assets are attached
+- [ ] Mark the release as **Latest** if this is a stable release (the workflow does this automatically for non-pre-release tags)
+
+---
+
+## Manual Fallback (if automation fails)
+
+If the GitHub Actions pipeline fails after a tag is already pushed:
 
 ```bash
-rm -rf dist/ build/ *.egg-info
-uv run python3 -m build
-```
+# Rebuild
+rm -rf dist/ build/
+uv run python -m build
 
-Output goes to `dist/`. The publish script validates that `dist/` is non-empty before uploading.
-
-## Publishing
-
-Use the publish script:
-
-```bash
+# Publish to PyPI manually
 ./scripts/publish.sh
+
+# Create GitHub Release manually
+gh release create v0.12.0 dist/* \
+  --title "tvkit v0.12.0" \
+  --notes-file <(awk '/^## \[0\.12\.0\]/,/^## \[/' CHANGELOG.md | head -n -1 | tail -n +2)
 ```
 
-The script:
-1. Reads `PYPI_TOKEN` from `.env`
-2. Validates the token starts with `pypi-`
-3. Builds the package with `python -m build`
-4. Prompts for confirmation before uploading
-5. Uploads to production PyPI with `twine`
+Never skip the GitHub Release step — **every PyPI publish must have a matching GitHub Release**.
 
-The script publishes to **production PyPI** — not TestPyPI. Verify the version number and quality checks before confirming the prompt.
+---
 
-### Optional: Verify with TestPyPI First
+## CHANGELOG Format
 
-To test the upload without affecting production:
+Every release section must follow this format so the automation can extract it cleanly:
 
-```bash
-uv run python3 -m twine upload --repository testpypi dist/* --username __token__ --password "$PYPI_TOKEN"
+```markdown
+## [0.12.0] — 2026-05-15
+
+### Added
+- New feature description
+
+### Changed
+- What changed and why
+
+### Fixed
+- Bug that was fixed
+
+### Removed
+- What was removed (include migration path if breaking)
 ```
 
-Note: TestPyPI uses a separate token from a separate account (`test.pypi.org`).
+Rules:
 
-## Post-Release
+- The header must be exactly `## [VERSION] — YYYY-MM-DD`
+- Add the new section at the **top** of the file, above the previous release
+- Every public API change needs an entry
 
-After a successful publish:
+---
 
-1. Verify the release at `https://pypi.org/project/tvkit/`
-2. Test installation: `pip install tvkit==X.Y.Z`
-3. Create a GitHub release for the tag `vX.Y.Z` with release notes
-4. Update `CHANGELOG.md` if maintained
+## Local Publishing (reference)
 
-## PyPI Token Setup
+`./scripts/publish.sh` is the manual publish path. It reads `PYPI_TOKEN` from `.env`, builds, and uploads. Use this only when you need to bypass CI (e.g., fixing a broken release quickly). Always follow up with a manual `gh release create` afterward.
 
-Generate a project-scoped token at `https://pypi.org/manage/project/tvkit/settings/` (requires a PyPI account with maintainer access). Store it in a `.env` file at the project root:
-
-```text
-PYPI_TOKEN=pypi-your-token-here
-```
-
-The `.env` file is gitignored. Never commit a PyPI token to version control.
+---
 
 ## See Also
 
 - [Testing Strategy](testing-strategy.md) — quality gates required before release
-- [Architecture Decisions](architecture-decisions.md) — why certain design choices were made
+- [Architecture Decisions](architecture-decisions.md) — design rationale
+- [Workflow file](../../.github/workflows/release.yml) — the automation itself
