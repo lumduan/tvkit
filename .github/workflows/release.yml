@@ -119,9 +119,12 @@ jobs:
           path: dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
         # Uses OIDC Trusted Publisher — no PYPI_TOKEN secret required.
-        # Fallback: uncomment the two lines below and add PYPI_API_TOKEN to repo secrets.
-        # with:
+        # skip-existing: true allows re-running the workflow if the file was already
+        # published manually (e.g. via scripts/publish.sh) without failing the job.
+        # Fallback token auth: add PYPI_API_TOKEN to repo secrets and uncomment:
         #   password: ${{ secrets.PYPI_API_TOKEN }}
 
   # ── 5. Create GitHub Release with changelog body ─────────────────────────────
@@ -129,6 +132,7 @@ jobs:
     name: GitHub Release
     needs: [validate, publish-pypi]
     runs-on: ubuntu-latest
+    if: always() && needs.validate.result == 'success' && needs.publish-pypi.result != 'failure'
 
     steps:
       - uses: actions/checkout@v4
