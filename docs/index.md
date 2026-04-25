@@ -108,6 +108,7 @@ async with OHLCV() as client:
 
 - [Connection Service](internals/connection-service.md)
 - [Message Service](internals/message-service.md)
+- [Segmented Fetch](internals/segmented-fetch.md) — automatic range splitting, `max_bars` window, `inter_segment_delay`
 
 ---
 

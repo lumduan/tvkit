@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] — 2026-04-25
+
+### Fixed
+
+- **Range mode: single-event `series_completed` fallback** (`tvkit/api/chart/ohlcv.py` →
+  `_fetch_single_range()`)  
+  When TradingView sends only one `series_completed` event for a range query — which occurs
+  under server-side throttling of repeated requests to continuous futures symbols such as
+  `CME_MINI:MNQ1!` — the old code discarded all bars accumulated during `create_series` and
+  waited for a second event that never arrived, eventually timing out and raising
+  `NoHistoricalDataError` with zero bars even though the correct data had already been received.  
+  The fix saves bars from the `create_series` response that fall within the requested date range
+  as a fallback before clearing. If `modify_series` subsequently returns nothing, the fallback
+  is used instead of raising. The normal two-event path is unchanged — the fallback only
+  activates when `modify_series` returns no bars.
+
+### Added
+
+- **`inter_segment_delay` parameter on `SegmentedFetchService`**
+  (`tvkit/api/chart/services/segmented_fetch_service.py`)  
+  New optional constructor parameter (default `0.0`) that inserts `asyncio.sleep()` between
+  consecutive segment fetches. Reduces server-side throttle pressure when fetching large date
+  ranges for continuous futures symbols. Skipped after the last segment.
+
+- **`segment_delay` parameter on `get_historical_ohlcv()`** (`tvkit/api/chart/ohlcv.py`)  
+  New keyword-only parameter (default `0.0`) forwarded to `SegmentedFetchService` as
+  `inter_segment_delay` when the requested date range triggers segmentation. Ignored in
+  count mode and for ranges that fit within a single request.  
+  Recommended value for continuous futures symbols: `segment_delay=2.0`.
+
+### Notes
+
+- All three changes are **100% backward-compatible** — every new parameter defaults to `0.0`,
+  replicating pre-fix behavior exactly. Existing call sites require no changes.
+- The root cause of bar count degradation across consecutive CME futures sessions is
+  TradingView backend throttling on rapid repeated range queries to continuous symbols (`!`
+  suffix). The `segment_delay` parameter and the fallback mechanism together mitigate the
+  impact, but server-side throttling cannot be eliminated by tvkit. See
+  `docs/issues/continuous-futures-intraday-range-degradation/solution.md` for full analysis
+  and recommended fetch patterns.
+
+---
+
 ## [0.11.0] — 2026-04-24
 
 ### Added

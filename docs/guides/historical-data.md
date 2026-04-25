@@ -110,34 +110,52 @@ asyncio.run(fetch_full_year_1min())
 
 ---
 
-## TradingView Historical Depth Limitation
+## The `max_bars` Lookback Window
 
-Automatic segmentation handles the per-request bar limit, but a separate server-side constraint controls how far back in time TradingView data is accessible: the **historical depth window**.
+Automatic segmentation handles the per-request bar limit, but a separate server-side policy controls how many bars are accessible at all: the **`max_bars` window**.
 
-TradingView exposes approximately ≈5,000 bars backward from the current time for free/basic accounts. Paid tiers provide deeper access. The table below shows approximate accessible depth by interval and account tier:
+> **Key concept:** TradingView serves at most `max_bars` bars counted **backward from the
+> latest bar in the series** — not from wall-clock current time.
 
-| Interval | Free / Basic | Essential / Plus | Premium | Expert | Ultimate |
-| -------- | ------------ | ---------------- | ------- | ------ | -------- |
-| 1 minute | ≈3.5 days | ≈17 days | ≈1 month | ≈3 months | ≈6 months |
-| 5 minutes | ≈17 days | ≈3 months | ≈6 months | ≈1 year | ≈2 years |
-| 15 minutes | ≈52 days | ≈9 months | ≈1.5 years | ≈3 years | ≈6 years |
-| 1 hour | ≈7 months | ≈3 years | ≈6 years | ≈12 years | ≈24 years |
-| 1 day | ≈27 years | Unlimited | Unlimited | Unlimited | Unlimited |
+**Range mode is a filter, not a deeper lookup.** The server first retrieves the last
+`max_bars` bars, then filters to your requested `start`/`end` range. If your date range
+falls entirely before the oldest accessible bar, you get 0 bars with no error raised.
 
-These are approximate, empirical values. TradingView does not publish official figures and limits may change.
+```text
+         ◄──────── max_bars window ──────────►
+         │                                   │
+[oldest accessible bar]          [latest bar in series]
+         │                                   │
+         │   ← range filter works here →     │
+         │
+ dates here → 0 bars, no error
+```
 
-**What happens when a segment falls outside the accessible window:**
+The same window applies to **segmented fetch**: segments beyond the window return empty
+results silently. The caller receives a valid but partial result.
 
-If a segment's date range is before the accessible window for your account tier, TradingView returns no bars for that segment. tvkit treats this as an empty result — it does not raise an error. This behavior mirrors TradingView's native chart behavior.
+**Accessible depth by interval and account tier** (assumes ~24 h/day continuous trading;
+instruments with trading gaps span proportionally more calendar days):
 
-**This limit is distinct from `MAX_BARS_REQUEST`:**
+| Interval   | Free / Basic | Essential / Plus | Premium   | Ultimate  |
+| ---------- | ------------ | ---------------- | --------- | --------- |
+| 1 minute   | ≈3.5 days    | ≈7 days          | ≈14 days  | ≈28 days  |
+| 5 minutes  | ≈17 days     | ≈35 days         | ≈70 days  | ≈140 days |
+| 15 minutes | ≈52 days     | ≈104 days        | ≈208 days | ≈416 days |
+| 1 hour     | ≈7 months    | ≈14 months       | ≈28 months| ≈56 months|
+| 1 day      | ≈13 years    | Unlimited        | Unlimited | Unlimited |
+
+These figures are derived from `max_bars` counts. TradingView does not publish official
+figures; limits may change.
+
+**`MAX_BARS_REQUEST` vs `max_bars`:**
 
 | Concept | What it controls |
 | ------- | ---------------- |
-| `MAX_BARS_REQUEST` | Protocol limit on bars per single fetch request |
-| Historical depth | Server-side rolling window of accessible history per account tier |
+| `MAX_BARS_REQUEST` | Protocol limit — max bars in a single WebSocket request |
+| `max_bars` (lookback window) | Account policy — total bars accessible, counted from the latest bar |
 
-See [Limitations](../limitations.md) for the full depth table and further details.
+See [Limitations — The `max_bars` Window](../limitations.md#tradingview-historical-depth-limitation--the-max_bars-window) for full details.
 
 ---
 
@@ -145,9 +163,9 @@ See [Limitations](../limitations.md) for the full depth table and further detail
 
 If your result contains fewer bars than the date range would suggest, one of these reasons applies:
 
-- **Historical depth window** — your requested `start` date is before the accessible history for your TradingView account tier. Segments outside the window return empty results. Upgrade your account or shorten the date range.
+- **Outside the `max_bars` window** — your requested `start` date is before the oldest bar accessible for your account tier. The window is measured from the latest bar in the series, not from wall-clock time. Segments outside the window return 0 bars silently. Upgrade your account or shorten the date range.
 - **Market gaps** — weekends, public holidays, and illiquid periods contain no bars. Segments covering these periods are skipped. This is expected behavior, not a bug.
-- **Bar count mode** — `bars_count` mode always returns at most N bars counting backward from the present. Use `start`/`end` range mode to target a specific historical window.
+- **Bar count mode** — `bars_count` mode always returns at most N bars counting backward from the latest bar in the series. Use `start`/`end` range mode to target a specific historical window within the `max_bars` limit.
 
 See [Limitations → TradingView Historical Depth Limitation](../limitations.md) for account-tier depth figures.
 

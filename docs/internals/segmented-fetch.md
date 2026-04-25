@@ -13,6 +13,25 @@ When a caller requests a date range that would produce more than `MAX_BARS_REQUE
 
 ---
 
+## The `max_bars` Window — What Segmentation Cannot Override
+
+Segmentation splits a large date range into smaller WebSocket requests, each capped at `MAX_BARS_REQUEST` bars. This solves the protocol-level request cap. It does **not** extend the server-side history window.
+
+TradingView serves at most `max_bars` bars **counted backward from the latest bar in the series**. This is the account-tier policy limit:
+
+| Account tier     | `max_bars` |
+|------------------|------------|
+| Free / anonymous | 5,000      |
+| Essential / Plus | 10,000     |
+| Premium          | 20,000     |
+| Ultimate         | 40,000     |
+
+Segments that request bars older than the `max_bars` window receive `NoHistoricalDataError` from TradingView. `fetch_all()` treats these as empty results — no error propagates to the caller. See [Empty Segment Handling](#empty-segment-handling).
+
+**Practical implication:** if the full requested date range spans more bars than `max_bars`, only the segments closest to the latest bar will return data. Segments beyond the window silently return empty. The caller receives a partial (but valid) result with no indication that history was truncated.
+
+---
+
 ## Dispatch Decision
 
 The dispatch is decided in `OHLCV.get_historical_ohlcv()` by `_needs_segmentation(start, end, interval)`:
@@ -63,6 +82,33 @@ Key invariants:
 | No gap | `segs[i+1].start == segs[i].end + interval_seconds` |
 | Full coverage | `segs[0].start == start` and `segs[-1].end == end` |
 | Last clamped | The last segment's end is always exactly `end`, never beyond |
+
+---
+
+## Inter-Segment Delay (v0.11.1+)
+
+`SegmentedFetchService` accepts an optional `inter_segment_delay: float` parameter
+(default `0.0`, unit: seconds). When positive, `fetch_all()` calls
+`asyncio.sleep(inter_segment_delay)` after each segment fetch except the last.
+
+```python
+SegmentedFetchService(
+    client=self,
+    max_bars_per_segment=MAX_BARS_REQUEST,
+    inter_segment_delay=2.0,   # sleep 2s between segments
+)
+```
+
+**Why this matters for continuous futures:** TradingView throttles repeated WebSocket
+requests to the same continuous symbol (`MNQ1!`, `ES1!`, etc.). Without a delay, rapid
+successive segments trigger the throttle, causing later segments to return fewer bars or
+fall back to the single-event `series_completed` recovery path. A 2–3 second delay
+between segments substantially reduces throttle pressure at the cost of proportionally
+longer total fetch time.
+
+The delay is exposed to callers via the `segment_delay` keyword argument on
+`get_historical_ohlcv()`. It is ignored in count mode and for ranges that fit in a
+single segment.
 
 ---
 
@@ -126,7 +172,12 @@ For a 350-segment fetch, this produces ~36 INFO lines (first, last, and every 35
 
 ### Possible Future Enhancement (Heuristic Warning)
 
-A heuristic warning could be emitted when the segment count and interval suggest the request is likely to fall outside the accessible TradingView history window for free-tier accounts (e.g., `total_segments * interval_seconds > 3.5 * 86400` for 1-minute bars). This advisory log would help users diagnose unexpectedly short result sets without requiring access to TradingView account tier information. This enhancement is deferred — it is not implemented in v0.5.0.
+A heuristic warning could be emitted when the segment count and interval suggest the
+request is likely to fall outside the accessible `max_bars` window for the account tier
+(e.g., estimated bars across all segments exceed `account.max_bars`). This advisory log
+would help users diagnose unexpectedly short result sets — currently the caller receives
+a partial result with no indication that history was truncated by the window. This
+enhancement is deferred.
 
 ---
 
@@ -152,9 +203,10 @@ get_historical_ohlcv(symbol, interval, start, end)
         │
         ├─ for each segment [1..N]:
         │     ├─ _fetch_single_range(symbol, interval, seg.start, seg.end)
-        │     │     ├─ NoHistoricalDataError → bars = []  (skip)
+        │     │     ├─ NoHistoricalDataError → bars = []  (skip, outside max_bars window)
         │     │     └─ Exception → SegmentedFetchError    (abort)
-        │     └─ all_bars.extend(bars)
+        │     ├─ all_bars.extend(bars)
+        │     └─ asyncio.sleep(inter_segment_delay)  ← if > 0 and not last segment
         │
         └─ _deduplicate_and_sort(all_bars)
               └─ returns list[OHLCVBar]
