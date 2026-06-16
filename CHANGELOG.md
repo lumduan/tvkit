@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+_CI/tooling maintenance only — no package or runtime changes. The published
+`tvkit` 0.11.2 on PyPI is unaffected._
+
+### Fixed
+
+- **Release workflow: GitHub Release creation** (`.github/workflows/release.yml`)  
+  The `github-release` job failed at *Extract changelog section* with
+  `Invalid value. Matching delimiter not found 'CHANGELOG_EOF'`. The notes were written
+  without a trailing newline, so the closing `GITHUB_OUTPUT` heredoc delimiter ended up on
+  the same line as the content. Fixed by writing the notes with a trailing newline and
+  stripping the trailing `---` changelog separator from the release body. This path first
+  executed on the v0.11.2 tag (for v0.11.1 the PyPI publish failed, so `github-release` was
+  skipped). (PR #36)
+
+### Changed
+
+- **CI: bumped GitHub Actions to current (Node 24) major versions**
+  (`.github/workflows/release.yml`, `.github/workflows/ruff-lint.yml`)  
+  Clears the "Node.js 20 actions are deprecated" warnings emitted by every job:
+  - `actions/checkout` v4 → v6
+  - `astral-sh/setup-uv` v5 → v8.2.0 (pinned to the exact release — no moving `v8` major tag exists)
+  - `actions/upload-artifact` v4 → v7
+  - `actions/download-artifact` v4 → v8
+  - `softprops/action-gh-release` v2 → v3
+  - `codecov/codecov-action` v4 → v7
+
+  `pypa/gh-action-pypi-publish@release/v1` is a container action (not Node-based) and is
+  left unchanged. (PR #37)
+
+---
+
 ## [0.11.2] — 2026-06-16
 
 ### Fixed
