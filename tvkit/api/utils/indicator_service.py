@@ -9,8 +9,11 @@ import logging
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from .models import IndicatorData, InputValue, PineFeatures, ProfileConfig, StudyPayload
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 async def fetch_tradingview_indicators(query: str) -> list[IndicatorData]:
@@ -41,33 +44,56 @@ async def fetch_tradingview_indicators(query: str) -> list[IndicatorData]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response: httpx.Response = await client.get(url=url)
             response.raise_for_status()
-            json_data: dict[str, Any] = response.json()
-
-            results: list[Any] = json_data.get("results", [])
-            filtered_results: list[IndicatorData] = []
-
-            for indicator in results:
-                if (
-                    query.lower() in indicator["scriptName"].lower()
-                    or query.lower() in indicator["author"]["username"].lower()
-                ):
-                    filtered_results.append(
-                        IndicatorData(
-                            script_name=indicator["scriptName"],
-                            image_url=indicator["imageUrl"],
-                            author=indicator["author"]["username"],
-                            agree_count=indicator["agreeCount"],
-                            is_recommended=indicator["isRecommended"],
-                            script_id_part=indicator["scriptIdPart"],
-                            version=indicator.get("version"),
-                        )
-                    )
-
-            return filtered_results
-
-    except httpx.RequestError as exc:
-        logging.error("Error fetching TradingView indicators: %s", exc)
+            json_data: Any = response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error("TradingView indicator search returned an error status: %s", exc)
         return []
+    except httpx.RequestError as exc:
+        logger.error("Error fetching TradingView indicators: %s", exc)
+        return []
+    except ValueError as exc:  # json.JSONDecodeError is a ValueError subclass
+        logger.error("Failed to decode TradingView indicator response: %s", exc)
+        return []
+
+    results: list[Any] = json_data.get("results", []) if isinstance(json_data, dict) else []
+    query_lower: str = query.lower()
+    filtered_results: list[IndicatorData] = []
+
+    for indicator in results:
+        # Defensive parsing: TradingView's public endpoint occasionally returns
+        # entries missing expected keys. Skip malformed records instead of letting
+        # a single KeyError/TypeError abort the entire search.
+        if not isinstance(indicator, dict):
+            continue
+
+        script_name: Any = indicator.get("scriptName")
+        author: Any = indicator.get("author")
+        username: Any = author.get("username") if isinstance(author, dict) else None
+
+        if not isinstance(script_name, str) or not isinstance(username, str):
+            logger.debug("Skipping malformed indicator entry: %r", indicator)
+            continue
+
+        if query_lower not in script_name.lower() and query_lower not in username.lower():
+            continue
+
+        try:
+            filtered_results.append(
+                IndicatorData(
+                    script_name=script_name,
+                    image_url=indicator.get("imageUrl", ""),
+                    author=username,
+                    agree_count=indicator.get("agreeCount", 0),
+                    is_recommended=indicator.get("isRecommended", False),
+                    script_id_part=indicator.get("scriptIdPart", ""),
+                    version=indicator.get("version"),
+                )
+            )
+        except (ValidationError, TypeError) as exc:
+            logger.debug("Skipping indicator that failed validation: %s", exc)
+            continue
+
+    return filtered_results
 
 
 def display_and_select_indicator(
@@ -157,16 +183,23 @@ async def fetch_indicator_metadata(
             response.raise_for_status()
             json_data: dict[str, Any] = response.json()
 
-            metainfo: dict[str, Any] | None = json_data.get("result", {}).get("metaInfo")
-            if metainfo:
+            result: Any = json_data.get("result", {}) if isinstance(json_data, dict) else {}
+            metainfo: Any = result.get("metaInfo") if isinstance(result, dict) else None
+            if isinstance(metainfo, dict) and metainfo:
                 return prepare_indicator_metadata(
                     script_id=script_id, metainfo=metainfo, chart_session=chart_session
                 )
 
             return {}
 
+    except httpx.HTTPStatusError as exc:
+        logger.error("Indicator metadata request returned an error status: %s", exc)
+        return {}
     except httpx.RequestError as exc:
-        logging.error("Error fetching indicator metadata: %s", exc)
+        logger.error("Error fetching indicator metadata: %s", exc)
+        return {}
+    except ValueError as exc:  # json.JSONDecodeError is a ValueError subclass
+        logger.error("Failed to decode indicator metadata response: %s", exc)
         return {}
 
 
@@ -200,23 +233,37 @@ def prepare_indicator_metadata(
 
     profile_config: ProfileConfig = ProfileConfig(v=False, f=True, t="bool")
 
-    # Base study configuration
+    # Base study configuration. Extract the first input's default value defensively:
+    # malformed metadata (missing/empty "inputs", non-dict entries) must not raise
+    # IndexError/KeyError and abort study creation.
+    inputs: list[Any] = metainfo.get("inputs", [])
+    first_input: dict[str, Any] = inputs[0] if inputs and isinstance(inputs[0], dict) else {}
+    pine: Any = metainfo.get("pine")
+    pine_version: str = pine.get("version", "1.0") if isinstance(pine, dict) else "1.0"
     study_config: dict[str, Any] = {
-        "text": metainfo["inputs"][0]["defval"],
+        "text": first_input.get("defval", ""),
         "pineId": script_id,
-        "pineVersion": metainfo.get("pine", {}).get("version", "1.0"),
+        "pineVersion": pine_version,
         "pineFeatures": pine_features.model_dump(),
         "__profile": profile_config.model_dump(),
     }
 
     # Collect additional input values that start with 'in_'
     input_values: dict[str, dict[str, Any]] = {}
-    for input_item in metainfo.get("inputs", []):
-        if input_item["id"].startswith("in_"):
-            input_value: InputValue = InputValue(
-                v=input_item["defval"], f=True, t=input_item["type"]
-            )
-            input_values[input_item["id"]] = input_value.model_dump()
+    for input_item in inputs:
+        if not isinstance(input_item, dict):
+            continue
+        input_id: Any = input_item.get("id")
+        input_type: Any = input_item.get("type")
+        if (
+            not isinstance(input_id, str)
+            or not input_id.startswith("in_")
+            or "defval" not in input_item
+            or not isinstance(input_type, str)
+        ):
+            continue
+        input_value: InputValue = InputValue(v=input_item["defval"], f=True, t=input_type)
+        input_values[input_id] = input_value.model_dump()
 
     # Update study config with additional inputs
     study_config.update(input_values)

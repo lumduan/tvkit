@@ -20,7 +20,6 @@ from tvkit.api.chart.models.ohlcv import (
     QuoteCompletedMessage,
     QuoteSymbolData,
     TimescaleUpdateResponse,
-    WebSocketMessage,
 )
 from tvkit.api.chart.services import ConnectionService, MessageService
 from tvkit.api.chart.services.segmented_fetch_service import SegmentedFetchService
@@ -663,24 +662,21 @@ class OHLCV:
                 break
 
             try:
-                message: WebSocketMessage = WebSocketMessage.model_validate(data)
-                message_type: str = message.message_type
+                if not isinstance(data, dict):
+                    continue
+                message_type: str | None = data.get("m")
 
-                logger.debug(f"Received message type: {message_type}")
+                logger.debug("Received message type: %s", message_type)
 
                 if message_type == "timescale_update":
                     try:
-                        logger.debug(f"Raw timescale_update data: {data}")
+                        logger.debug("Raw timescale_update data: %s", data)
                         timescale_response: TimescaleUpdateResponse = (
                             TimescaleUpdateResponse.model_validate(data)
                         )
-                        logger.info(
-                            "Received %d historical OHLCV bars",
-                            len(timescale_response.ohlcv_bars),
-                        )
-                        for bar in timescale_response.ohlcv_bars:
-                            logger.debug(f"Parsed OHLCV bar: {bar}")
-                        historical_bars.extend(timescale_response.ohlcv_bars)
+                        bars: list[OHLCVBar] = timescale_response.ohlcv_bars
+                        logger.info("Received %d historical OHLCV bars", len(bars))
+                        historical_bars.extend(bars)
                     except ValidationError as e:
                         logger.warning(f"Failed to parse 'timescale_update' message: {e}")
                         logger.debug(f"Raw message that failed to parse: {data}")
@@ -689,12 +685,10 @@ class OHLCV:
                 elif message_type == "du":
                     try:
                         ohlcv_response: OHLCVResponse = OHLCVResponse.model_validate(data)
-                        if ohlcv_response.ohlcv_bars:
-                            logger.info(
-                                "Received %d OHLCV bars from data update",
-                                len(ohlcv_response.ohlcv_bars),
-                            )
-                            historical_bars.extend(ohlcv_response.ohlcv_bars)
+                        du_bars: list[OHLCVBar] = ohlcv_response.ohlcv_bars
+                        if du_bars:
+                            logger.info("Received %d OHLCV bars from data update", len(du_bars))
+                            historical_bars.extend(du_bars)
                     except ValidationError as e:
                         logger.debug(f"Failed to parse 'du' message as OHLCV: {e}")
                         continue
@@ -913,24 +907,21 @@ class OHLCV:
                 break
 
             try:
-                message: WebSocketMessage = WebSocketMessage.model_validate(data)
-                message_type: str = message.message_type
+                if not isinstance(data, dict):
+                    continue
+                message_type: str | None = data.get("m")
 
-                logger.debug(f"Received message type: {message_type}")
+                logger.debug("Received message type: %s", message_type)
 
                 if message_type == "timescale_update":
                     try:
-                        logger.debug(f"Raw timescale_update data: {data}")
+                        logger.debug("Raw timescale_update data: %s", data)
                         timescale_response: TimescaleUpdateResponse = (
                             TimescaleUpdateResponse.model_validate(data)
                         )
-                        logger.info(
-                            "Received %d historical OHLCV bars",
-                            len(timescale_response.ohlcv_bars),
-                        )
-                        for bar in timescale_response.ohlcv_bars:
-                            logger.debug(f"Parsed OHLCV bar: {bar}")
-                        historical_bars.extend(timescale_response.ohlcv_bars)
+                        bars: list[OHLCVBar] = timescale_response.ohlcv_bars
+                        logger.info("Received %d historical OHLCV bars", len(bars))
+                        historical_bars.extend(bars)
                         # In count mode, break early once enough bars are accumulated.
                         # prodata delivers all bars in a single large message, so
                         # series_completed may not have arrived yet — mark satisfied
@@ -946,12 +937,10 @@ class OHLCV:
                 elif message_type == "du":
                     try:
                         ohlcv_response: OHLCVResponse = OHLCVResponse.model_validate(data)
-                        if ohlcv_response.ohlcv_bars:
-                            logger.info(
-                                "Received %d OHLCV bars from data update",
-                                len(ohlcv_response.ohlcv_bars),
-                            )
-                            historical_bars.extend(ohlcv_response.ohlcv_bars)
+                        du_bars: list[OHLCVBar] = ohlcv_response.ohlcv_bars
+                        if du_bars:
+                            logger.info("Received %d OHLCV bars from data update", len(du_bars))
+                            historical_bars.extend(du_bars)
                     except ValidationError as e:
                         logger.debug(f"Failed to parse 'du' message as OHLCV: {e}")
                         continue
@@ -1118,10 +1107,11 @@ class OHLCV:
 
         async for data in self.connection_service.get_data_stream():
             try:
-                message: WebSocketMessage = WebSocketMessage.model_validate(data)
-                message_type: str = message.message_type
+                if not isinstance(data, dict):
+                    continue
+                message_type: str | None = data.get("m")
 
-                logger.debug(f"Received message type: {message_type}")
+                logger.debug("Received message type: %s", message_type)
 
                 if message_type == "du":
                     try:
@@ -1137,10 +1127,9 @@ class OHLCV:
                         timescale_response: TimescaleUpdateResponse = (
                             TimescaleUpdateResponse.model_validate(data)
                         )
-                        logger.info(
-                            f"Received {len(timescale_response.ohlcv_bars)} OHLCV bars from timescale update"
-                        )
-                        for ohlcv_bar in timescale_response.ohlcv_bars:
+                        bars: list[OHLCVBar] = timescale_response.ohlcv_bars
+                        logger.info("Received %d OHLCV bars from timescale update", len(bars))
+                        for ohlcv_bar in bars:
                             yield ohlcv_bar
                     except ValidationError as e:
                         logger.debug(f"Failed to parse 'timescale_update' message as OHLCV: {e}")
@@ -1384,8 +1373,9 @@ class OHLCV:
 
         async for data in self.connection_service.get_data_stream():
             try:
-                message: WebSocketMessage = WebSocketMessage.model_validate(data)
-                message_type: str = message.message_type
+                if not isinstance(data, dict):
+                    continue
+                message_type: str | None = data.get("m")
 
                 if message_type == "qsd":
                     try:

@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] — 2026-06-16
+
+### Fixed
+
+- **Indicator search crash on malformed API data** (`tvkit/api/utils/indicator_service.py`)
+  `fetch_tradingview_indicators()` indexed TradingView's public suggest endpoint with hard
+  subscripts (`indicator["scriptName"]`, `indicator["author"]["username"]`, …) while catching
+  only `httpx.RequestError`. A single malformed/partial entry — or `author` not being a dict —
+  raised an uncaught `KeyError`/`TypeError` that aborted the entire search. Each entry is now
+  parsed defensively (type-guarded `.get()`, malformed records skipped), and JSON-decode and
+  HTTP-status failures are handled, honouring the documented "return `[]` on error" contract.
+  `prepare_indicator_metadata()` is hardened the same way (no more `IndexError` on empty
+  `inputs`).
+
+- **Export wrote host-local timestamps instead of UTC** (`tvkit/export/formatters/base_formatter.py`)
+  `_prepare_timestamp()` used `datetime.fromtimestamp()` without a timezone for the `"iso"`
+  (default) and `"datetime"` formats, silently converting tvkit's UTC epoch data to the host's
+  local timezone. It now passes `tz=UTC`, so CSV/JSON/Polars exports are timezone-correct
+  (ISO output carries `+00:00`).
+
+- Removed a stale tracked source backup committed inside the package
+  (`tvkit/api/chart/ohlcv.py.backup`).
+
+### Performance
+
+- **OHLCV streaming/historical hot path** (`tvkit/api/chart/ohlcv.py`)
+  - The non-cached `ohlcv_bars` computed field was re-parsed up to 3× per message
+    (`len()`, a debug loop, `.extend()`); it is now bound to a local once — **3× → 1×** parse
+    work per message (significant for large `prodata` batches of tens of thousands of bars).
+  - Removed per-bar `logger.debug(f"...{bar}")` loops that built a string for **every bar on
+    every fetch even when DEBUG was disabled**.
+  - Made large raw-payload debug logs lazy (`%`-style) so multi-MB messages are not
+    stringified unless DEBUG is enabled.
+  - Replaced redundant double Pydantic validation per frame (a throwaway `WebSocketMessage`
+    parse used only to read the message type) with a guarded `data.get("m")`.
+
+- **Polars OHLCV export** (`tvkit/export/formatters/polars_formatter.py`)
+  Build the DataFrame columnar (`{col: [...]}`) instead of a list of per-row dicts — faster
+  and lighter for large exports. Output is unchanged.
+
+### Added
+
+- Regression tests for indicator-search parsing robustness
+  (`tests/test_indicator_service.py`): valid parse, malformed-entry skip, non-dict payload,
+  and JSON-decode failure.
+
+### Notes
+
+- All changes are backward-compatible. The export timezone fix changes `"iso"`/`"datetime"`
+  export output from naive local time to UTC-aware datetimes — this is a correctness fix
+  consistent with tvkit's UTC invariant for OHLCV timestamps.
+
+---
+
 ## [0.11.1] — 2026-04-25
 
 ### Fixed
