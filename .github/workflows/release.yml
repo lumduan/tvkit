@@ -153,8 +153,12 @@ jobs:
           pattern = rf"(?m)^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)"
           match = re.search(pattern, content, re.DOTALL)
           notes = match.group(1).strip() if match else f"Release v{version}"
+          notes = notes.rstrip("-").rstrip()  # drop trailing '---' changelog separator
           with open("release_notes.txt", "w") as f:
-              f.write(notes)
+              # Trailing newline keeps the closing GITHUB_OUTPUT heredoc delimiter
+              # ('CHANGELOG_EOF') on its own line — otherwise the job fails with
+              # "Matching delimiter not found".
+              f.write(notes + "\n")
           PYEOF
           {
             echo 'notes<<CHANGELOG_EOF'
