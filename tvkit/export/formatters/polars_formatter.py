@@ -68,29 +68,28 @@ class PolarsFormatter(BaseFormatter):
         try:
             self._validate_data(data)
 
-            # Convert to dictionaries for Polars DataFrame creation
-            records: list[dict[str, Any]] = []
-            for item in data:
-                record: dict[str, Any] = {
-                    "timestamp": self._prepare_timestamp(item.timestamp),
-                    "open": float(item.open),
-                    "high": float(item.high),
-                    "low": float(item.low),
-                    "close": float(item.close),
-                    "volume": float(item.volume),
-                }
+            # Build columns directly (columnar) rather than a list of per-row dicts.
+            # For large datasets (e.g. multi-year minute bars) Polars constructs each
+            # column in a single pass instead of inferring the schema row by row.
+            columns: dict[str, Any] = {
+                "timestamp": [self._prepare_timestamp(item.timestamp) for item in data],
+                "open": [float(item.open) for item in data],
+                "high": [float(item.high) for item in data],
+                "low": [float(item.low) for item in data],
+                "close": [float(item.close) for item in data],
+                "volume": [float(item.volume) for item in data],
+            }
 
-                # Add optional fields if present
-                if item.symbol:
-                    record["symbol"] = item.symbol
-                if item.interval:
-                    record["interval"] = item.interval
-
-                records.append(record)
+            # Optional columns — included only when at least one record carries the
+            # field, matching the previous row-oriented behaviour (absent field → null).
+            if any(item.symbol for item in data):
+                columns["symbol"] = [item.symbol if item.symbol else None for item in data]
+            if any(item.interval for item in data):
+                columns["interval"] = [item.interval if item.interval else None for item in data]
 
             # Create Polars DataFrame
             assert pl is not None  # Already checked in __init__
-            df: pl.DataFrame = pl.DataFrame(records)
+            df: pl.DataFrame = pl.DataFrame(columns)
 
             # Apply timestamp conversion if needed
             if self.config.timestamp_format == "datetime" and "timestamp" in df.columns:

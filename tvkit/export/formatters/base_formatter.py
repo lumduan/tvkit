@@ -127,8 +127,13 @@ class BaseFormatter(ABC):
 
         Returns:
             Formatted timestamp based on config
+
+        Note:
+            Numeric timestamps are interpreted as UTC Unix epoch seconds — consistent
+            with tvkit's UTC invariant for OHLCV data. ``"iso"``/``"datetime"`` outputs
+            are therefore UTC-aware, never the host's local timezone.
         """
-        from datetime import datetime
+        from datetime import UTC, datetime
 
         if self.config.timestamp_format == "unix":
             if isinstance(timestamp, int | float):
@@ -140,7 +145,7 @@ class BaseFormatter(ABC):
 
         elif self.config.timestamp_format == "iso":
             if isinstance(timestamp, int | float):
-                return datetime.fromtimestamp(timestamp).isoformat()
+                return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
             elif hasattr(timestamp, "isoformat"):
                 return timestamp.isoformat()
             else:
@@ -148,7 +153,7 @@ class BaseFormatter(ABC):
 
         elif self.config.timestamp_format == "datetime":
             if isinstance(timestamp, int | float):
-                return datetime.fromtimestamp(timestamp)
+                return datetime.fromtimestamp(timestamp, tz=UTC)
             elif isinstance(timestamp, str):
                 # Try to parse ISO format
                 try:
