@@ -167,6 +167,59 @@ result = await exporter.export_scanner_data(
 
 ---
 
+### `export_fundamentals_data()`
+
+Export financial statements, revenue segments, dividends, and earnings as tidy/long rows.
+
+```python
+async def export_fundamentals_data(
+    self,
+    data: FundamentalsInput | list[FundamentalsInput],
+    format: ExportFormat,
+    file_path: Path | str | None = None,
+    config: ExportConfig | None = None,
+) -> ExportResult: ...
+```
+
+`FundamentalsInput` is any of `FinancialStatement`, `SegmentReport`, `DividendReport`, `EarningsReport`, or `FundamentalsSnapshot`.
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `FundamentalsInput \| list[FundamentalsInput]` | required | A report or list of reports from `FundamentalsClient` |
+| `format` | `ExportFormat` | required | Target format |
+| `file_path` | `Path \| str \| None` | `None` | Output path for file formats |
+| `config` | `ExportConfig \| None` | `None` | Export configuration |
+
+#### Returns
+
+`ExportResult` — the `data` field carries a Polars DataFrame for `POLARS`; file formats write to `file_path`.
+
+Each report explodes into tidy rows with columns: `symbol`, `dataset`, `row`, `label`, `period`, `period_end`, `value`, `currency`.
+
+#### Raises
+
+| Exception | When |
+|-----------|------|
+| `RuntimeError` | Formatter error |
+
+#### Example
+
+```python
+from tvkit.export import DataExporter, ExportFormat
+from tvkit.api.fundamentals import FundamentalsClient
+
+async with FundamentalsClient() as fx:
+    snapshot = await fx.get_financials("NASDAQ:AAPL")
+
+exporter = DataExporter()
+result = await exporter.export_fundamentals_data(snapshot, ExportFormat.POLARS)
+df = result.data
+```
+
+---
+
 ### `to_polars()`
 
 Convenience method — exports directly to a Polars DataFrame without writing any file.
@@ -393,14 +446,15 @@ print([f.value for f in exporter.get_supported_formats()])
 
 ## Supported Input Data
 
-`DataExporter` accepts two tvkit data types across all export methods:
+`DataExporter` accepts these tvkit data types across all export methods:
 
 | Data Type | Source API | Typical Origin |
 |-----------|-----------|----------------|
 | `list[OHLCVBar]` | Chart OHLCV API | `get_historical_ohlcv()`, `get_ohlcv()` |
 | `list[StockData]` | Scanner API | `ScannerService.scan_market()` |
+| fundamentals reports | Fundamentals API | `FundamentalsClient.get_income_statement()`, `get_segments()`, `get_financials()`, … |
 
-The exporter detects the data type automatically based on the first element of the list. Passing an empty list is valid and produces an empty output.
+The exporter detects the data type automatically based on the first element of the list. Passing an empty list is valid and produces an empty output. Fundamentals reports may also be passed via `export_fundamentals_data()`.
 
 > **Note:** All export methods are `async` to allow non-blocking file I/O and formatter processing. Use `await` for every call, including `to_polars()`.
 

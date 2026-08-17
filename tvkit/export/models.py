@@ -115,3 +115,23 @@ class ScannerExportData(BaseModel):
         """Pydantic configuration."""
 
         json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class FundamentalsExportData(BaseModel):
+    """One tidy/long fundamentals record (a single value cell).
+
+    A financial statement, segment report, dividend report or snapshot explodes into many of
+    these rows, so the shape is uniform across every export format.
+    """
+
+    symbol: str = Field(description="Normalized 'EXCHANGE:TICKER' symbol")
+    dataset: str = Field(
+        description="income | balance | cash_flow | statistics | "
+        "segment_business | segment_region | dividend | earnings"
+    )
+    row: str = Field(description="Field id, segment label, or metric name")
+    label: str = Field(description="Human-readable row label")
+    period: str = Field(description="Period label, e.g. '2025' or '2026-Q3'")
+    period_end: datetime | None = Field(default=None, description="Period end (UTC), if known")
+    value: float | None = Field(default=None, description="Value in raw reporting-currency units")
+    currency: str | None = Field(default=None, description="Reporting currency code")

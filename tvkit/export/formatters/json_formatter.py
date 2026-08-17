@@ -14,6 +14,7 @@ from ..models import (
     ExportFormat,
     ExportMetadata,
     ExportResult,
+    FundamentalsExportData,
     OHLCVExportData,
     ScannerExportData,
 )
@@ -24,6 +25,46 @@ logger = logging.getLogger(__name__)
 
 class JSONFormatter(BaseFormatter):
     """JSON export formatter with configurable options."""
+
+    async def export_fundamentals(
+        self, data: list[FundamentalsExportData], file_path: Path | str | None = None
+    ) -> ExportResult:
+        """Export fundamentals data (tidy/long rows) to JSON format."""
+        try:
+            self._validate_data(data)
+            if file_path is None:
+                file_path = self._generate_file_path("fundamentals", "data", "json")
+            else:
+                file_path = Path(file_path)
+
+            json_data: dict[str, Any] = {"data": self._fundamentals_rows(data)}
+            if self.config.include_metadata:
+                metadata: ExportMetadata = ExportMetadata(
+                    source="fundamentals",
+                    record_count=len(data),
+                    format=ExportFormat.JSON,
+                    file_path=str(file_path),
+                )
+                json_data["metadata"] = metadata.model_dump()
+
+            await self._write_json_file(json_data, file_path)
+
+            metadata = ExportMetadata(
+                source="fundamentals",
+                record_count=len(data),
+                format=ExportFormat.JSON,
+                file_path=str(file_path),
+            )
+            return ExportResult(success=True, metadata=metadata, file_path=file_path)
+        except Exception as e:
+            logger.error(f"Failed to export fundamentals data to JSON: {e}")
+            metadata = ExportMetadata(
+                source="fundamentals",
+                record_count=len(data) if data else 0,
+                format=ExportFormat.JSON,
+                file_path=str(file_path) if file_path else None,
+            )
+            return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
     def supports_format(self, format_type: str) -> bool:
         """Check if this formatter supports the given format."""

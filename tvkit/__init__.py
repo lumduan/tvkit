@@ -52,6 +52,18 @@ try:
 except ImportError:
     scanner_available = False
 
+# Fundamentals API exports
+try:
+    from tvkit.api.fundamentals import (  # noqa: F401
+        FundamentalsClient,
+        Period,
+        StatementType,
+    )
+
+    fundamentals_available = True
+except ImportError:
+    fundamentals_available = False
+
 __all__ = [
     # Core exports
     "__version__",
@@ -89,5 +101,15 @@ if scanner_available:
             "ScannerResponse",
             "ColumnSets",
             "get_markets_by_region",
+        ]
+    )
+
+# Add fundamentals exports if available
+if fundamentals_available:
+    __all__.extend(
+        [
+            "FundamentalsClient",
+            "Period",
+            "StatementType",
         ]
     )

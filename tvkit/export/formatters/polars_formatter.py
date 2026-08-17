@@ -22,6 +22,7 @@ from ..models import (
     ExportFormat,
     ExportMetadata,
     ExportResult,
+    FundamentalsExportData,
     OHLCVExportData,
     ScannerExportData,
 )
@@ -47,6 +48,28 @@ class PolarsFormatter(BaseFormatter):
             raise ImportError("Polars is required for PolarsFormatter. Install with: uv add polars")
 
         super().__init__(config)
+
+    async def export_fundamentals(
+        self, data: list[FundamentalsExportData], file_path: Path | str | None = None
+    ) -> ExportResult:
+        """Export fundamentals data (tidy/long rows) as a Polars DataFrame."""
+        try:
+            self._validate_data(data)
+            records: list[dict[str, Any]] = self._fundamentals_rows(data)
+            assert pl is not None  # Already checked in __init__
+            df: pl.DataFrame = pl.DataFrame(records)
+            metadata: ExportMetadata = ExportMetadata(
+                source="fundamentals", record_count=len(data), format=ExportFormat.POLARS
+            )
+            return ExportResult(success=True, metadata=metadata, data=df)
+        except Exception as e:
+            logger.error(f"Failed to export fundamentals data to Polars: {e}")
+            metadata = ExportMetadata(
+                source="fundamentals",
+                record_count=len(data) if data else 0,
+                format=ExportFormat.POLARS,
+            )
+            return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
     def supports_format(self, format_type: str) -> bool:
         """Check if this formatter supports the given format."""

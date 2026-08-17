@@ -1,6 +1,6 @@
 # System Overview
 
-tvkit is structured as four independent modules that can be used separately or composed together.
+tvkit is structured as independent modules that can be used separately or composed together.
 
 ## Module Map
 
@@ -8,10 +8,15 @@ tvkit is structured as four independent modules that can be used separately or c
 tvkit/
 ├── tvkit.api.chart          # Real-time WebSocket streaming
 ├── tvkit.api.scanner        # HTTP-based market scanner
+├── tvkit.api.fundamentals   # WebSocket financial statements & revenue segments
 ├── tvkit.api.utils          # Shared utilities (symbols, timestamps, indicators)
 ├── tvkit.batch              # Async high-throughput batch OHLCV downloader
 └── tvkit.export             # Multi-format data export
 ```
+
+`tvkit.api.fundamentals` retrieves per-symbol financial statements over TradingView's WebSocket
+quote protocol. It reuses the chart module's WebSocket transport primitives (connection,
+framing, session handling) but exposes one-shot request/response methods rather than a stream.
 
 ## Component Diagram
 

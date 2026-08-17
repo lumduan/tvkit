@@ -19,6 +19,8 @@ tvkit
 ├── api.scanner
 │   ├── ScannerService → market screening client
 │   └── markets        → 69 global market identifiers
+├── api.fundamentals
+│   └── FundamentalsClient → financial statements & revenue segments
 └── export
     └── DataExporter   → Polars, JSON, CSV export
 ```
@@ -47,9 +49,20 @@ Global stock screening across 69 markets with 100+ financial data columns.
 
 ---
 
+## Fundamentals API — `tvkit.api.fundamentals`
+
+Per-symbol financial statements and revenue segments over the WebSocket quote protocol.
+
+| Page | Class / Module | What it covers |
+|------|---------------|----------------|
+| [Fundamentals](fundamentals/index.md) | `FundamentalsClient` | `get_segments()`, `get_income_statement()`, `get_balance_sheet()`, `get_cash_flow()`, `get_statistics()`, `get_dividends()`, `get_earnings()`, `get_financials()`, `Period`, `StatementType`, exception hierarchy |
+| [Models](fundamentals/models.md) | fundamentals models | `FinancialStatement`, `StatementLine`, `FiscalPeriod`, `SegmentReport`, `RevenueSegment`, `DividendReport`, `EarningsReport`, `FundamentalsSnapshot` |
+
+---
+
 ## Export API — `tvkit.export`
 
-Multi-format data export for OHLCV and scanner results.
+Multi-format data export for OHLCV, scanner, and fundamentals results.
 
 | Page | Class / Module | What it covers |
 |------|---------------|----------------|
@@ -79,6 +92,9 @@ High-throughput async batch downloader for large symbol sets.
 | Validate or convert an interval string | [Chart Utilities](chart/utils.md) |
 | Screen stocks with filters and sorting | [Scanner](scanner/scanner.md) |
 | Find the market identifier for a country or exchange | [Markets](scanner/markets.md) |
+| Fetch revenue segments for a company | [Fundamentals](fundamentals/index.md) |
+| Fetch an income statement, balance sheet, or cash-flow statement | [Fundamentals](fundamentals/index.md) |
+| Fetch dividends or earnings estimates | [Fundamentals](fundamentals/index.md) |
 | Export data to a Polars DataFrame | [DataExporter](export/exporter.md) |
 | Export data to CSV or JSON | [DataExporter](export/exporter.md) |
 | Register a custom export formatter | [DataExporter](export/exporter.md) |

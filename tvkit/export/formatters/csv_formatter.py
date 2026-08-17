@@ -15,6 +15,7 @@ from ..models import (
     ExportFormat,
     ExportMetadata,
     ExportResult,
+    FundamentalsExportData,
     OHLCVExportData,
     ScannerExportData,
 )
@@ -25,6 +26,38 @@ logger = logging.getLogger(__name__)
 
 class CSVFormatter(BaseFormatter):
     """CSV export formatter with configurable options."""
+
+    async def export_fundamentals(
+        self, data: list[FundamentalsExportData], file_path: Path | str | None = None
+    ) -> ExportResult:
+        """Export fundamentals data (tidy/long rows) to CSV format."""
+        try:
+            self._validate_data(data)
+            if file_path is None:
+                file_path = self._generate_file_path("fundamentals", "data", "csv")
+            else:
+                file_path = Path(file_path)
+
+            columns: list[str] = list(self.FUNDAMENTALS_COLUMNS)
+            rows: list[dict[str, Any]] = self._fundamentals_rows(data)
+            await self._write_csv_file(rows, columns, file_path)
+
+            metadata: ExportMetadata = ExportMetadata(
+                source="fundamentals",
+                record_count=len(data),
+                format=ExportFormat.CSV,
+                file_path=str(file_path),
+            )
+            return ExportResult(success=True, metadata=metadata, file_path=file_path)
+        except Exception as e:
+            logger.error(f"Failed to export fundamentals data to CSV: {e}")
+            metadata = ExportMetadata(
+                source="fundamentals",
+                record_count=len(data) if data else 0,
+                format=ExportFormat.CSV,
+                file_path=str(file_path) if file_path else None,
+            )
+            return ExportResult(success=False, metadata=metadata, error_message=str(e))
 
     def supports_format(self, format_type: str) -> bool:
         """Check if this formatter supports the given format."""

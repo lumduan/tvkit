@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_CI/tooling maintenance only — no package or runtime changes. The published
-`tvkit` 0.11.2 on PyPI is unaffected._
+### Added
+
+- **Financial statements & revenue segments** (`tvkit.api.fundamentals`)  
+  New `FundamentalsClient` retrieves per-symbol fundamentals over TradingView's WebSocket quote
+  protocol (anonymous by default): `get_segments()`, `get_income_statement()`,
+  `get_balance_sheet()`, `get_cash_flow()`, `get_statistics()`, `get_dividends()`,
+  `get_earnings()`, and `get_financials()` (a single-round-trip bundle). Values are raw
+  reporting-currency units with fiscal-period alignment; per-issuer statement templates
+  (industrial / banking / insurance / other) select the correct rows via a curated field
+  catalog. Reuses the chart module's WebSocket transport (see
+  [architecture decisions](docs/development/architecture-decisions.md)).
+- **Fundamentals export** (`tvkit.export`)  
+  `DataExporter.export_fundamentals_data()` and a new `FundamentalsExportData` model emit
+  tidy/long rows (`symbol, dataset, row, label, period, period_end, value, currency`) to Polars,
+  CSV, or JSON; the `to_polars()` / `to_json()` / `to_csv()` convenience wrappers accept
+  fundamentals reports too. `BaseFormatter.export_fundamentals()` is added as a concrete
+  (non-abstract) method, so existing custom formatters remain compatible.
 
 ### Fixed
 
