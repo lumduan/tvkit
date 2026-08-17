@@ -9,7 +9,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from ..models import ExportConfig, ExportResult, OHLCVExportData, ScannerExportData
+from ..models import (
+    ExportConfig,
+    ExportResult,
+    FundamentalsExportData,
+    OHLCVExportData,
+    ScannerExportData,
+)
 
 
 class BaseFormatter(ABC):
@@ -64,6 +70,27 @@ class BaseFormatter(ABC):
         """
         pass
 
+    async def export_fundamentals(
+        self, data: list[FundamentalsExportData], file_path: Path | str | None = None
+    ) -> ExportResult:
+        """
+        Export fundamentals data (tidy/long rows) to the specified format.
+
+        Concrete (non-abstract) so existing custom formatters registered via
+        ``DataExporter.add_formatter`` keep working; the built-in formatters override it.
+
+        Args:
+            data: List of tidy fundamentals records
+            file_path: Optional override for output file path
+
+        Returns:
+            ExportResult with operation details
+
+        Raises:
+            NotImplementedError: If a formatter does not support fundamentals export
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement fundamentals export")
+
     @abstractmethod
     def supports_format(self, format_type: str) -> bool:
         """
@@ -76,6 +103,35 @@ class BaseFormatter(ABC):
             True if format is supported
         """
         pass
+
+    # Fixed column order for tidy fundamentals rows across every format.
+    FUNDAMENTALS_COLUMNS: tuple[str, ...] = (
+        "symbol",
+        "dataset",
+        "row",
+        "label",
+        "period",
+        "period_end",
+        "value",
+        "currency",
+    )
+
+    @staticmethod
+    def _fundamentals_rows(data: list[FundamentalsExportData]) -> list[dict[str, Any]]:
+        """Convert tidy fundamentals records to plain dicts (uniform across formats)."""
+        return [
+            {
+                "symbol": r.symbol,
+                "dataset": r.dataset,
+                "row": r.row,
+                "label": r.label,
+                "period": r.period,
+                "period_end": r.period_end.isoformat() if r.period_end else None,
+                "value": r.value,
+                "currency": r.currency,
+            }
+            for r in data
+        ]
 
     def _generate_file_path(
         self, data_type: str, symbol: str = "data", extension: str = "txt"

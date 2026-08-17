@@ -35,6 +35,7 @@ from .models import (
     ExportFormat,
     ExportMetadata,
     ExportResult,
+    FundamentalsExportData,
     OHLCVExportData,
     ScannerExportData,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "ExportMetadata",
     "OHLCVExportData",
     "ScannerExportData",
+    "FundamentalsExportData",
     # Formatters
     "BaseFormatter",
     "PolarsFormatter",

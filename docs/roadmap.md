@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.12.0** — Financial Statements & Revenue Segments (`tvkit.api.fundamentals`: `FundamentalsClient` with `get_segments()`, `get_income_statement()`, `get_balance_sheet()`, `get_cash_flow()`, `get_statistics()`, `get_dividends()`, `get_earnings()`, `get_financials()`; WebSocket quote protocol reusing the chart transport; per-issuer statement templates; `DataExporter` fundamentals export)
 - **v0.11.0** — Dividend-Adjusted OHLCV (`Adjustment` enum with `SPLITS` / `DIVIDENDS`; `adjustment` keyword parameter on `get_historical_ohlcv()`; `backadjustment: "default"` added to historical OHLCV WebSocket payload — protocol correctness fix)
 - **v0.10.0** — Async Batch Downloader (`tvkit.batch`: `batch_download()`, bounded concurrency via semaphore, per-symbol retry with exponential backoff, `BatchDownloadSummary`, partial failure model, opt-in pre-flight symbol validation)
 - **v0.9.0** — Data Integrity Validation (`tvkit.validation`: duplicate/monotonic/OHLC/volume/gap checks; `DataExporter` integration with `validate`, `strict`, `interval` parameters)

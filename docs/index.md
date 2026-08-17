@@ -61,6 +61,7 @@ async with OHLCV() as client:
 - [Intervals](concepts/intervals.md)
 - [Streaming vs Historical](concepts/streaming-vs-historical.md)
 - [Scanner Columns](concepts/scanner-columns.md)
+- [Financial Statements](concepts/financial-statements.md) — fundamentals transport, field catalog, period alignment, and units
 - [Timezones](concepts/timezones.md) — UTC internal model; how to convert OHLCV timestamps to exchange or local time
 - [Account Capabilities](concepts/capabilities.md) — TradingView plan tiers, bar limits, and capability detection
 
@@ -75,6 +76,7 @@ async with OHLCV() as client:
 - [Authenticated Sessions](guides/authenticated-sessions.md) — browser cookies, token injection, capability detection
 - [Google Colab / Hosted Notebooks](guides/notebook-colab.md) — export cookies from host and use in remote environments
 - [Scanner](guides/scanner.md)
+- [Fundamentals](guides/fundamentals.md) — financial statements and revenue segments
 - [Exporting Data](guides/exporting.md)
 - [Macro Indicators](guides/macro-indicators.md)
 
@@ -87,6 +89,7 @@ async with OHLCV() as client:
 - [Chart API — OHLCV Client](reference/chart/ohlcv.md)
 - [Authentication — tvkit.auth](reference/auth/index.md)
 - [Scanner API](reference/scanner/scanner.md)
+- [Fundamentals API](reference/fundamentals/index.md)
 - [Export API](reference/export/exporter.md)
 - [Timezone Utilities — tvkit.time](reference/time/index.md)
 - [Full Reference Index](reference/index.md)

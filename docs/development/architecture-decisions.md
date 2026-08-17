@@ -108,6 +108,20 @@ Input:   NASDAQ:AAPL → Output: NASDAQ:AAPL  (unchanged, already correct)
 
 ---
 
+## Fundamentals Reuses the Chart WebSocket Transport
+
+**Decision**: `tvkit.api.fundamentals` (added in v0.12.0) is a third API module that speaks the WebSocket quote protocol, and it **reuses** the chart module's low-level transport (`ConnectionService`, `MessageService`, `QuoteSymbolData`, `QuoteCompletedMessage`) rather than reimplementing framing, heartbeat, and session handling.
+
+**Why**: reverse-engineering showed TradingView delivers financial statements as WebSocket quote fields on the same data socket the chart uses — not over HTTP. The chart module already implements that transport correctly and has test coverage. Duplicating ~150 lines of framing/session code, or refactoring the crown-jewel OHLCV path to extract a shared layer, both carry more risk than a one-directional dependency.
+
+**Nuance vs. the rule above**: this softens "chart and scanner share only `tvkit.api.utils`". Fundamentals genuinely is a WebSocket consumer, so reusing the WebSocket transport is appropriate reuse, not inappropriate coupling. The dependency is one-way (`fundamentals → chart`); the chart module knows nothing about fundamentals.
+
+**Semantics differ from chart**: financials are a one-shot request/response snapshot (`quote_set_fields` → `qsd` frames → `quote_completed`), not a stream. So `FundamentalsClient` exposes scanner-style `async` methods (`get_income_statement()`, `get_segments()`, …) and opens a fresh short-lived socket per call, because the TradingView server closes a quote-only socket after delivering one snapshot.
+
+**Future option**: the shared transport primitives could later be promoted into `tvkit.api.utils` so chart and fundamentals both consume them. That is a behaviour-preserving refactor deferred to keep the v0.12.0 feature low-risk.
+
+---
+
 ## No Global Connection Pool
 
 **Decision**: there is no shared connection pool or singleton. Each `OHLCV` context manager opens its own connection.

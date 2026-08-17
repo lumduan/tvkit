@@ -12,6 +12,13 @@ from typing import Any, cast, overload
 import polars as pl
 
 from ..api.chart.models.ohlcv import OHLCVBar
+from ..api.fundamentals.models import (
+    DividendReport,
+    EarningsReport,
+    FinancialStatement,
+    FundamentalsSnapshot,
+    SegmentReport,
+)
 from ..api.scanner.models import StockData
 from ..validation import DataIntegrityError, ValidationResult, validate_ohlcv
 from .formatters import BaseFormatter, CSVFormatter, JSONFormatter, PolarsFormatter
@@ -19,8 +26,21 @@ from .models import (
     ExportConfig,
     ExportFormat,
     ExportResult,
+    FundamentalsExportData,
     OHLCVExportData,
     ScannerExportData,
+)
+
+# Report types that ``export_fundamentals_data`` / the convenience wrappers accept.
+FundamentalsInput = (
+    FinancialStatement | SegmentReport | DividendReport | EarningsReport | FundamentalsSnapshot
+)
+_FUNDAMENTALS_TYPES: tuple[type, ...] = (
+    FinancialStatement,
+    SegmentReport,
+    DividendReport,
+    EarningsReport,
+    FundamentalsSnapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,14 +180,157 @@ class DataExporter:
             logger.error(f"Failed to export scanner data: {e}")
             raise
 
+    async def export_fundamentals_data(
+        self,
+        data: FundamentalsInput | list[FundamentalsInput],
+        format: ExportFormat,
+        file_path: Path | str | None = None,
+        config: ExportConfig | None = None,
+    ) -> ExportResult:
+        """
+        Export financial statements / revenue segments / dividends / earnings.
+
+        Accepts a single report (or a list of reports) from
+        :class:`tvkit.api.fundamentals.FundamentalsClient` and emits tidy/long rows.
+
+        Args:
+            data: A report or list of reports (statement, segments, dividends, earnings, snapshot)
+            format: Export format to use
+            file_path: Optional file path for file-based exports
+            config: Optional export configuration
+
+        Returns:
+            ExportResult with operation details and exported data
+
+        Example:
+            >>> from tvkit.export import DataExporter, ExportFormat
+            >>> from tvkit.api.fundamentals import FundamentalsClient
+            >>>
+            >>> async with FundamentalsClient() as fx:
+            ...     income = await fx.get_income_statement("NASDAQ:AAPL")
+            ...     exporter = DataExporter()
+            ...     df = await exporter.export_fundamentals_data(income, ExportFormat.POLARS)
+        """
+        try:
+            reports = data if isinstance(data, list) else [data]
+            export_data: list[FundamentalsExportData] = self._convert_fundamentals_data(reports)
+
+            if config is None:
+                config = ExportConfig(format=format)
+            formatter: BaseFormatter = self._get_formatter(format, config)
+            result: ExportResult = await formatter.export_fundamentals(export_data, file_path)
+
+            logger.info(
+                f"Successfully exported {len(export_data)} fundamentals rows to {format.value}"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to export fundamentals data: {e}")
+            raise
+
+    def _convert_fundamentals_data(
+        self, reports: list[FundamentalsInput]
+    ) -> list[FundamentalsExportData]:
+        """Flatten reports into tidy/long :class:`FundamentalsExportData` rows."""
+        rows: list[FundamentalsExportData] = []
+        for report in reports:
+            if isinstance(report, FundamentalsSnapshot):
+                for sub in (
+                    report.income,
+                    report.balance,
+                    report.cash_flow,
+                    report.statistics,
+                    report.segments,
+                    report.dividends,
+                    report.earnings,
+                ):
+                    if sub is not None:
+                        rows.extend(self._convert_fundamentals_data([sub]))
+            elif isinstance(report, FinancialStatement):
+                for line in report.lines:
+                    for i, period in enumerate(report.periods):
+                        rows.append(
+                            FundamentalsExportData(
+                                symbol=report.symbol,
+                                dataset=report.statement.value,
+                                row=line.field_id,
+                                label=line.label,
+                                period=period.label,
+                                period_end=period.period_end,
+                                value=line.values[i] if i < len(line.values) else None,
+                                currency=report.currency,
+                            )
+                        )
+            elif isinstance(report, SegmentReport):
+                for dataset, series in (
+                    ("segment_business", report.by_business),
+                    ("segment_region", report.by_region),
+                ):
+                    for sp in series:
+                        for seg in sp.segments:
+                            rows.append(
+                                FundamentalsExportData(
+                                    symbol=report.symbol,
+                                    dataset=dataset,
+                                    row=seg.label,
+                                    label=seg.label,
+                                    period=sp.period.label,
+                                    period_end=sp.period.period_end,
+                                    value=seg.value,
+                                    currency=report.currency,
+                                )
+                            )
+            elif isinstance(report, DividendReport):
+                for ev in report.events:
+                    ex_label = ev.ex_date.date().isoformat() if ev.ex_date else ""
+                    rows.append(
+                        FundamentalsExportData(
+                            symbol=report.symbol,
+                            dataset="dividend",
+                            row="amount",
+                            label=ev.dividend_type or "Dividend",
+                            period=ex_label,
+                            period_end=ev.ex_date,
+                            value=ev.amount,
+                            currency=report.currency,
+                        )
+                    )
+            elif isinstance(report, EarningsReport):
+                for ep in report.periods:
+                    for row_id, label, value in (
+                        ("eps_reported", "Reported EPS", ep.eps_reported),
+                        ("eps_estimate", "Estimated EPS", ep.eps_estimate),
+                        ("eps_surprise_pct", "EPS surprise %", ep.eps_surprise_pct),
+                        ("revenue_reported", "Reported revenue", ep.revenue_reported),
+                        ("revenue_estimate", "Estimated revenue", ep.revenue_estimate),
+                    ):
+                        rows.append(
+                            FundamentalsExportData(
+                                symbol=report.symbol,
+                                dataset="earnings",
+                                row=row_id,
+                                label=label,
+                                period=ep.label,
+                                value=value,
+                                currency=report.currency,
+                            )
+                        )
+        return rows
+
     @overload
     async def to_polars(self, data: list[OHLCVBar], add_analysis: bool = False) -> Any: ...
 
     @overload
     async def to_polars(self, data: list[StockData], add_analysis: bool = False) -> Any: ...
 
+    @overload
+    async def to_polars(self, data: list[FundamentalsInput], add_analysis: bool = False) -> Any: ...
+
     async def to_polars(
-        self, data: list[OHLCVBar] | list[StockData], add_analysis: bool = False
+        self,
+        data: list[OHLCVBar] | list[StockData] | list[FundamentalsInput],
+        add_analysis: bool = False,
     ) -> Any:
         """
         Convenience method to export data directly to Polars DataFrame.
@@ -194,6 +357,12 @@ class DataExporter:
                 ExportFormat.POLARS,
                 config=config,
             )
+        elif data and isinstance(data[0], _FUNDAMENTALS_TYPES):
+            result = await self.export_fundamentals_data(
+                cast(list[FundamentalsInput], data),
+                ExportFormat.POLARS,
+                config=config,
+            )
         else:
             result = await self.export_scanner_data(
                 cast(list[StockData], data),
@@ -208,7 +377,7 @@ class DataExporter:
 
     async def to_json(
         self,
-        data: list[OHLCVBar] | list[StockData],
+        data: list[OHLCVBar] | list[StockData] | list[FundamentalsInput],
         file_path: Path | str,
         include_metadata: bool = True,
         *,
@@ -267,6 +436,13 @@ class DataExporter:
                 file_path,
                 config,
             )
+        elif data and isinstance(data[0], _FUNDAMENTALS_TYPES):
+            result = await self.export_fundamentals_data(
+                cast(list[FundamentalsInput], data),
+                ExportFormat.JSON,
+                file_path,
+                config,
+            )
         else:
             result = await self.export_scanner_data(
                 cast(list[StockData], data),
@@ -285,7 +461,7 @@ class DataExporter:
 
     async def to_csv(
         self,
-        data: list[OHLCVBar] | list[StockData],
+        data: list[OHLCVBar] | list[StockData] | list[FundamentalsInput],
         file_path: Path | str,
         include_metadata: bool = True,
         *,
@@ -345,6 +521,13 @@ class DataExporter:
                 file_path,
                 config,
             )
+        elif data and isinstance(data[0], _FUNDAMENTALS_TYPES):
+            result = await self.export_fundamentals_data(
+                cast(list[FundamentalsInput], data),
+                ExportFormat.CSV,
+                file_path,
+                config,
+            )
         else:
             result = await self.export_scanner_data(
                 cast(list[StockData], data),
@@ -363,7 +546,7 @@ class DataExporter:
 
     def _run_ohlcv_validation(
         self,
-        data: list[OHLCVBar] | list[StockData],
+        data: list[OHLCVBar] | list[StockData] | list[FundamentalsInput],
         *,
         strict: bool,
         interval: str | None,
