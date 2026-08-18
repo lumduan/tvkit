@@ -34,6 +34,20 @@ async def fetch_recent_bars() -> None:
 asyncio.run(fetch_recent_bars())
 ```
 
+**Output:**
+
+| timestamp | open | close | volume |
+|---|---|---|---|
+| 1783431000.0 | 315.29 | 310.66 | 42490002.0 |
+| 1783517400.0 | 311.91 | 313.39 | 41323480.0 |
+| 1783603800.0 | 310.51 | 316.22 | 48124490.0 |
+| 1783690200.0 | 314.72 | 315.32 | 34132321.0 |
+| 1783949400.0 | 317.015 | 317.31 | 43257804.0 |
+
+# 30 rows total, showing 5 — oldest first
+
+*Example output — live market values will differ.*
+
 `bars_count` accepts any positive integer up to `MAX_BARS_REQUEST`. Bars are returned oldest-first.
 
 ---
@@ -59,6 +73,14 @@ async def fetch_date_range() -> None:
 
 asyncio.run(fetch_date_range())
 ```
+
+**Output:**
+
+```text
+Fetched 124 bars from 2024-01-01 to 2024-06-30
+```
+
+124 rather than ~181 calendar days: weekends and US market holidays contain no bars.
 
 `start` and `end` accept ISO 8601 date strings (`"YYYY-MM-DD"`) or Unix timestamps (integers). Times default to midnight UTC.
 
@@ -94,6 +116,21 @@ async def fetch_full_year_1min() -> None:
 
 asyncio.run(fetch_full_year_1min())
 ```
+
+**Output:**
+
+```text
+WARNING:tvkit.api.chart.ohlcv:No historical bars received for symbol BINANCE:BTCUSDT
+WARNING:tvkit.api.chart.ohlcv:No historical bars received for symbol BINANCE:BTCUSDT
+...
+Fetched 0 1-minute bars
+```
+
+# 107 segments requested, every one empty; ~105 s wall time on an anonymous session
+
+Zero bars, no exception. A full year of 1-minute bars sits far outside the anonymous
+`max_bars` window (≈3.5 days at 1-minute), so every segment returns empty and is skipped —
+see [The `max_bars` Lookback Window](#the-max_bars-lookback-window) below.
 
 **How segmentation works:**
 
@@ -196,7 +233,7 @@ The most common pattern — download bars, export to a DataFrame, then convert t
 import asyncio
 import polars as pl
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.export import DataExporter
+from tvkit.export import DataExporter, ExportConfig, ExportFormat
 from tvkit.time import convert_to_exchange_timezone
 
 async def fetch_with_local_time(symbol: str, exchange: str) -> pl.DataFrame:
@@ -204,7 +241,11 @@ async def fetch_with_local_time(symbol: str, exchange: str) -> pl.DataFrame:
         bars = await client.get_historical_ohlcv(symbol, "60", bars_count=10)
 
     exporter = DataExporter()
-    df = await exporter.to_polars(bars)
+    # timestamp_format="unix" keeps the column numeric. tvkit.time needs an epoch column —
+    # to_polars() defaults to "iso", which produces a String column the converters reject.
+    config = ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")
+    result = await exporter.export_ohlcv_data(bars, ExportFormat.POLARS, config=config)
+    df = result.data
 
     # Internal timestamps are UTC — convert for display
     print("UTC epoch:", df["timestamp"].head(3))
@@ -220,6 +261,27 @@ asyncio.run(fetch_with_local_time("NASDAQ:AAPL", "NASDAQ"))
 # to:
 #   2024-01-15 09:30:00 EST
 ```
+
+**Output:**
+
+```text
+UTC epoch: shape: (3,)
+Series: 'timestamp' [f64]
+[
+	1.7867e9
+	1.7867e9
+	1.7867e9
+]
+Local time: shape: (3,)
+Series: 'timestamp' [datetime[μs, America/New_York]]
+[
+	2026-08-14 13:30:00 EDT
+	2026-08-14 14:30:00 EDT
+	2026-08-14 15:30:00 EDT
+]
+```
+
+Polars abbreviates the f64 epoch column to `1.7867e9` for display; the stored value is exact.
 
 The original DataFrame is never mutated — `convert_to_exchange_timezone` returns a new DataFrame.
 
@@ -283,6 +345,31 @@ async def export_to_polars() -> None:
 asyncio.run(export_to_polars())
 ```
 
+**Output:**
+
+```text
+shape: (5, 6)
+┌───────────────────────────┬────────┬─────────────┬────────────┬─────────┬────────────┐
+│ timestamp                 ┆ close  ┆ volume      ┆ return_pct ┆ sma_5   ┆ vwap       │
+│ ---                       ┆ ---    ┆ ---         ┆ ---        ┆ ---     ┆ ---        │
+│ str                       ┆ f64    ┆ f64         ┆ f64        ┆ f64     ┆ f64        │
+╞═══════════════════════════╪════════╪═════════════╪════════════╪═════════╪════════════╡
+│ 2026-04-09T13:30:00+00:00 ┆ 260.49 ┆ 2.8121574e7 ┆ 0.57529    ┆ null    ┆ 259.226667 │
+│ 2026-04-10T13:30:00+00:00 ┆ 260.48 ┆ 3.1291473e7 ┆ 0.192322   ┆ null    ┆ 259.931206 │
+│ 2026-04-13T13:30:00+00:00 ┆ 259.2  ┆ 3.6234698e7 ┆ -0.204058  ┆ null    ┆ 259.457206 │
+│ 2026-04-14T13:30:00+00:00 ┆ 258.83 ┆ 4.837071e7  ┆ -0.16008   ┆ null    ┆ 259.410004 │
+│ 2026-04-15T13:30:00+00:00 ┆ 266.43 ┆ 4.991351e7  ┆ 3.20344    ┆ 261.086 ┆ 260.48841  │
+└───────────────────────────┴────────┴─────────────┴────────────┴─────────┴────────────┘
+```
+
+# 90 rows total, showing 5 · showing 6 of 17 columns
+# full set: timestamp, open, high, low, close, volume, return_pct, typical_price, true_range,
+#   vwap_numerator, sma_5, sma_10, vol_ma_5, cum_vwap_num, cum_volume, vwap, momentum_3
+
+`timestamp` is a `String` (ISO-8601) here — `to_polars()` uses `timestamp_format="iso"`. The
+`sma_5` nulls are expected: the window has not filled yet. Large floats print in scientific
+notation.
+
 `add_analysis=True` appends SMA, VWAP, and other technical columns automatically.
 
 ---
@@ -293,6 +380,8 @@ A typical backtesting workflow:
 
 ```python
 import asyncio
+from pathlib import Path
+
 import polars as pl
 from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.export import DataExporter
@@ -310,11 +399,21 @@ async def build_backtest_dataset(symbol: str, interval: str, start: str, end: st
     df = await exporter.to_polars(bars, add_analysis=True)
 
     # Save for reuse
+    Path("data").mkdir(exist_ok=True)
     df.write_parquet(f"data/{symbol.replace(':', '_')}_{interval}.parquet")
+    print(f"{df.shape[0]} bars x {df.shape[1]} columns -> data/{symbol.replace(':', '_')}_{interval}.parquet")
     return df
 
 asyncio.run(build_backtest_dataset("NASDAQ:AAPL", "1D", "2020-01-01", "2024-12-31"))
 ```
+
+**Output:**
+
+```text
+1258 bars x 17 columns -> data/NASDAQ_AAPL_1D.parquet
+```
+
+1258 bars for five calendar years of US daily data — weekends and holidays excluded.
 
 ---
 

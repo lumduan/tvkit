@@ -36,6 +36,12 @@ async with OHLCV(browser="chrome") as client:
     )
 ```
 
+<!-- TODO: output unverified -->
+
+> Not captured: this needs a TradingView session in a local Chrome/Firefox profile. With a
+> `pro_premium` account the call returns up to 20,000 bars per segment; anonymously it raises
+> `BrowserCookieError` before any fetch (see [Failure Recovery](#failure-recovery)).
+
 **Requirements:**
 
 - You must be logged in to TradingView in Chrome or Firefox **before** running tvkit
@@ -65,6 +71,11 @@ async with OHLCV(auth_token=os.environ["TVKIT_AUTH_TOKEN"]) as client:
         bars_count=500,
     )
 ```
+
+<!-- TODO: output unverified -->
+
+> Not captured: requires a valid `TVKIT_AUTH_TOKEN`. In this mode `client.account` is `None`, so
+> there is no tier information to print.
 
 **Trade-off:** No profile fetch and no capability detection in this mode — `client.account` is `None`. tvkit does not know your plan tier and cannot auto-configure `max_bars`. Segmented fetching defaults to 5,000 bars per segment (the free-tier conservative limit). If your account supports more, pass a larger `bars_count` explicitly or use browser mode instead.
 
@@ -102,6 +113,23 @@ async with OHLCV() as client:
         bars_count=100,
     )
 ```
+
+**Output:**
+
+`client.account` is `None` in anonymous mode, and `bars` holds 100 `OHLCVBar` records:
+
+| timestamp | date | open | high | low | close | volume |
+|---|---|---|---|---|---|---|
+| 1786455000.0 | 2026-08-11 | 307.75 | 309.97 | 302.79 | 304.91 | 37,476,746 |
+| 1786541400.0 | 2026-08-12 | 305.1 | 305.66 | 300.57 | 302.25 | 41,657,768 |
+| 1786627800.0 | 2026-08-13 | 304.21 | 306.0 | 302.05 | 305.26 | 40,349,289 |
+| 1786714200.0 | 2026-08-14 | 306.0 | 307.49 | 304.3 | 305.93 | 28,229,375 |
+| 1786973400.0 | 2026-08-17 | 306.21 | 307.66 | 302.939 | 305.59 | 38,169,263 |
+
+# 100 rows total, showing the last 5
+# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+
+*Example output — live market values will differ.*
 
 ---
 
@@ -166,6 +194,28 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+**Output** — on a `pro_premium` account:
+
+```text
+Authenticated: tier='premium', max_bars=20000
+Probe: status='pending', source='estimate'
+Fetched <n> bars
+```
+
+`<n>` is bounded by the account's `max_bars`, not by the requested `bars_count` — the server
+returns whatever its lookback window holds. Measured anonymously, the same call returns
+`Fetched 6240 bars` for `NASDAQ:AAPL` at `interval="1"`.
+
+Without a logged-in browser the `except` branch runs instead, with the real message:
+
+```text
+Browser error: browser_cookie3 failed to extract cookies from 'chrome': Failed to find cookies for Chrome browser. Ensure the browser is installed and not currently writing to its database.
+Fix: Log in to TradingView in Chrome, then run again.
+```
+
+# the failure path is a live capture; the authenticated lines are derived from
+# CapabilityDetector.estimate_from_plan("pro_premium", []) -> (20000, "premium")
+
 ---
 
 ## Checking Capabilities
@@ -188,6 +238,31 @@ async with OHLCV(browser="chrome") as client:
         print(f"Probe confirmed:   {account.probe_confirmed}")
 ```
 
+**Output** — `pro_premium` account, before the probe completes:
+
+| field | value |
+|---|---|
+| `plan` | `'pro_premium'` |
+| `tier` | `'premium'` |
+| `max_bars` | `20000` |
+| `max_bars_source` | `'estimate'` |
+| `probe_status` | `'pending'` |
+| `probe_confirmed` | `False` |
+
+```text
+TradingView plan:  'pro_premium'
+Tier:              'premium'
+Max bars:          20000
+Source:            'estimate'
+Probe status:      'pending'
+Probe confirmed:   False
+```
+
+In anonymous or direct-token mode `account` is `None` and the first branch prints
+`No account info — 5,000-bar default applies`.
+
+# derived from tvkit/auth/models.py and PLAN_TO_BARS / PLAN_TO_TIER, not a live capture
+
 See [TradingView Pricing](https://www.tradingview.com/pricing/) for the full plan comparison and the [Account Capabilities concept page](../concepts/capabilities.md) for how plan slugs map to tvkit tiers.
 
 ---
@@ -204,6 +279,14 @@ async with OHLCV(browser="chrome") as client:
     if account:
         print(f"Confirmed max_bars: {account.max_bars} (source: {account.max_bars_source!r})")
 ```
+
+**Output** — after a probe that succeeded:
+
+```text
+Confirmed max_bars: 20000 (source: 'probe')
+```
+
+`source` stays `'estimate'` when the probe was throttled, failed, or was cancelled.
 
 `wait_until_ready()` adds startup latency equal to the probe duration (typically a few seconds). If the probe fails or is cancelled, the method returns without raising and the plan estimate remains in effect.
 

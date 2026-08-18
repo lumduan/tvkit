@@ -1,0 +1,25 @@
+### Basic Stream (realtime-streaming.md:20) — BINANCE:BTCUSDT interval=1
+close=64211.63  volume=4
+close=64215.76  volume=2
+close=64226.30  volume=5
+close=64202.81  volume=8
+close=64200.08  volume=2
+
+### Multiple Symbol Monitoring (realtime-streaming.md:73) — get_latest_trade_info(6 symbols)
+Update: {'session_id': '0.9329114.0_hkg1-charts-free-3-tvbs-53vcz-2', 'timestamp': 1787032586, 'timestampMs': 1787032586882, 'release': 'release_209-23', 'studies_metadata_hash': '0fd29e4fdd03e654cf64f97efb4cd78bef47feac', 'auth_scheme_vsn': 2, 'protocol': 'json', 'via': '45.135.231.58:443', 'javastudies': ['3.66']}
+Update: {'m': 'qsd', 'p': ['qs_afcyponiwryy', {'n': '={"adjustment":"splits","currency-id":"USD","session":"regular","symbol":"BINANCE:BTCUSDT"}', 's': 'ok', 'v': {'pro_name': 'BINANCE:BTCUSDT', 'fractional': False, 'minmov': 1, 'minmove2': 0, 'lp': 64151.901279000005, 'ch': -309.87, 'chp': -0.48, 'current_session': 'market', 'currency_code': 'USD', 'original_name': 'BINANCE:BTCUSDT', 'is_tradable': False, 'update_mode': 'streaming', 'volume': 3547.22502, 'pricescale': 100, 'short_name': 'BTCUSDT', 'description': 'Bitcoin / TetherUS', 'exchange': 'Binance', 'type': 'spot'}}]}
+Update: {'m': 'qsd', 'p': ['qs_afcyponiwryy', {'n': 'FOREX:EURUSD', 's': 'error', 'errmsg': 'no_such_symbol', 'v': {}}]}
+Update: {'m': 'qsd', 'p': ['qs_afcyponiwryy', {'n': 'OANDA:XAUUSD', 's': 'ok', 'v': {'pro_name': 'OANDA:XAUUSD', 'fractional': False, 'minmov': 1, 'minmove2': 10, 'rchp': None, 'rtc': None, 'lp': 4396.09, 'ch': -20.59, 'chp': -0.47, 'lp_time': 1787032585, 'current_session': 'market', 'currency_code': 'USD', 'original_name': 'OANDA:XAUUSD', 'is_tradable': True, 'update_mode': 'streaming', 'volume': 171265.0, 'pricescale': 1000, 'short_name': 'XAUUSD', 'description': 'Gold', 'exchange': 'OANDA', 'type': 'commodity'}}]}
+
+### Automatic Reconnection (realtime-streaming.md:118) — NASDAQ:AAPL 1D
+309.38
+311.0
+312.41
+313.33
+308.26
+
+### Handling Attempt Exhaustion (realtime-streaming.md:164) — max_attempts=3, normal path
+309.38
+311.0
+312.41
+313.33

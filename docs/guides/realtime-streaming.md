@@ -29,6 +29,21 @@ async def stream_bitcoin() -> None:
 asyncio.run(stream_bitcoin())
 ```
 
+**Output:**
+
+```text
+close=64211.63  volume=4
+close=64215.76  volume=2
+close=64226.30  volume=5
+close=64202.81  volume=8
+...
+```
+
+The loop never ends on its own. `volume` is small because BTC 1-minute volume is denominated in
+BTC and `:,.0f` rounds it to whole units.
+
+*Example output — live market values will differ.*
+
 The `async with OHLCV()` context manager opens the connection on entry and closes it cleanly on exit. Always use the context manager — do not instantiate `OHLCV()` without it.
 
 ---
@@ -52,7 +67,7 @@ Break out of the loop after receiving the desired number of bars:
 
 ```python
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.api.chart.models.ohlcv import OHLCV as OHLCVBar
+from tvkit.api.chart.models.ohlcv import OHLCVBar
 
 async def stream_n_bars(symbol: str, interval: str, n: int) -> list[OHLCVBar]:
     bars: list[OHLCVBar] = []
@@ -78,7 +93,7 @@ async def monitor_portfolio() -> None:
     symbols = [
         "BINANCE:BTCUSDT",
         "NASDAQ:AAPL",
-        "FOREX:EURUSD",
+        "FX_IDC:EURUSD",
         "OANDA:XAUUSD",
         "INDEX:NDFI",
         "USI:PCC",
@@ -90,6 +105,27 @@ async def monitor_portfolio() -> None:
 
 asyncio.run(monitor_portfolio())
 ```
+
+**Output:**
+
+```text
+Update: {'session_id': '0.9329114.0_hkg1-charts-free-3-tvbs-53vcz-2', 'timestamp': 1787032586,
+         'timestampMs': 1787032586882, 'release': 'release_209-23', 'protocol': 'json', ...}
+Update: {'m': 'qsd', 'p': ['qs_afcyponiwryy', {'n': '={"adjustment":"splits",...,"symbol":"BINANCE:BTCUSDT"}',
+         's': 'ok', 'v': {'pro_name': 'BINANCE:BTCUSDT', 'lp': 64151.901279000005, 'ch': -309.87,
+         'chp': -0.48, 'volume': 3547.22502, 'short_name': 'BTCUSDT', 'type': 'spot', ...}}]}
+Update: {'m': 'qsd', 'p': ['qs_afcyponiwryy', {'n': 'OANDA:XAUUSD', 's': 'ok',
+         'v': {'pro_name': 'OANDA:XAUUSD', 'lp': 4396.09, 'ch': -20.59, 'chp': -0.47,
+         'volume': 171265.0, 'short_name': 'XAUUSD', 'type': 'commodity', ...}}]}
+...
+```
+
+# dict keys elided with `...`; the real frames carry ~18 keys under `v`
+
+`get_latest_trade_info()` yields **raw protocol dicts**, not `OHLCVBar` objects. The first frame is
+the connection handshake; subsequent frames are `qsd` quote updates, one per symbol. The last price
+is at `p[1]["v"]["lp"]`. A symbol the server rejects arrives as a frame with
+`'s': 'error', 'errmsg': 'no_such_symbol'` rather than raising.
 
 Use `get_latest_trade_info()` when you need real-time price ticks across a portfolio rather than full OHLCV bars.
 
@@ -129,6 +165,16 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+**Output:**
+
+```text
+309.38
+311.0
+312.41
+313.33
+...
+```
+
 ### Default Retry Behaviour
 
 | Parameter | Default | Description |
@@ -157,6 +203,19 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+**Output:**
+
+```text
+309.38
+311.0
+312.41
+313.33
+...
+```
+
+Identical to the default configuration while the connection holds — the retry settings only
+change behaviour after a disconnect.
+
 ### Handling Attempt Exhaustion
 
 After all attempts fail, `StreamConnectionError` is raised. Catch it to alert, fall back, or exit cleanly:
@@ -177,6 +236,25 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+**Output:**
+
+```text
+309.38
+311.0
+312.41
+313.33
+...
+```
+
+That is the healthy path. Only after 3 failed attempts does the `except` branch run:
+
+```text
+Stream permanently disconnected after 3 attempts: WebSocket reconnection failed after 3 attempts.
+```
+
+`exc.last_error` holds the underlying `TimeoutError`/`OSError`/`WebSocketException` when one was
+captured, or `None`.
 
 If bars were missed during a disconnect, backfill the gap using `get_historical_ohlcv()` before resuming the live stream.
 
@@ -201,7 +279,7 @@ Long-running streams accumulate bars in memory if they are stored indefinitely. 
 ```python
 import asyncio
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.api.chart.models.ohlcv import OHLCV as OHLCVBar
+from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.export import DataExporter
 
 async def stream_and_export(symbol: str, flush_every: int = 100) -> None:
@@ -217,6 +295,29 @@ async def stream_and_export(symbol: str, flush_every: int = 100) -> None:
 
 asyncio.run(stream_and_export("BINANCE:BTCUSDT"))
 ```
+
+**Output:**
+
+Nothing is printed — the observable effect is on disk. After the first flush, `./export/` holds:
+
+```text
+export/BINANCE_BTCUSDT.csv           (386 bytes)
+export/BINANCE_BTCUSDT.metadata.txt  (378 bytes)
+```
+
+with the CSV containing one row per buffered bar:
+
+```text
+timestamp,open,high,low,close,volume
+2026-08-18T05:49:00+00:00,64215.75,64226.31,64215.75,64226.3,4.99708
+2026-08-18T05:50:00+00:00,64226.31,64226.31,64202.81,64202.81,8.26398
+2026-08-18T05:51:00+00:00,64202.81,64202.82,64200.08,64200.08,2.02024
+...
+```
+
+# captured with flush_every=5 so the run finished quickly; flush_every=100 behaves identically
+# `to_csv` overwrites the file on each flush — append or rotate filenames to retain history
+# `./export/` must already exist
 
 ---
 

@@ -28,6 +28,20 @@ else:
         print(f"[{v.check}] {v.message} (rows: {v.affected_rows})")
 ```
 
+**Output** — 365 real AAPL daily bars:
+
+```text
+Clean: 365 bars, no errors
+```
+
+`df["timestamp"]` must be `Float64`, `Int64`, `Datetime` or `Date`. `DataExporter.to_polars()`
+defaults to `timestamp_format="iso"`, which yields a `String` column and raises
+`ValueError: Column 'timestamp' has unsupported dtype String`. Build the frame with
+`ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")` — see
+[Standalone Validation Without Export](#standalone-validation-without-export).
+
+*Example output — live market values will differ.*
+
 ---
 
 ## Validation Before Export
@@ -51,11 +65,29 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-When violations are found, each one is logged at `WARNING` level with structured fields:
+**Output:**
 
+```text
+WARNING  tvkit.export.data_exporter: Gap detected between rows 2 and 3: expected 86400s, got 255600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 7 and 8: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 12 and 13: expected 86400s, got 259200s
+...
 ```
-WARNING  tvkit.export.data_exporter: duplicate timestamp at 2023-06-01T00:00:00
-         extra={"check": "duplicate_timestamp", "rows": [42, 43]}
+
+# 80 GAP_DETECTED warnings across 365 daily bars — every weekend and market holiday
+# the export still proceeds and `to_csv` returns `aapl.csv`
+
+When violations are found, each one is logged at `WARNING` level. A duplicate looks like this:
+
+```text
+WARNING  tvkit.export.data_exporter: Duplicate timestamp '1735689600.0' appears 2 time(s) at rows [0, 1]
+```
+
+with the structured fields carried on the `Violation` itself:
+
+```text
+context={'expected_interval': '1D', 'actual_gap': '255600s',
+         'prev_timestamp': '1741357800.0', 'curr_timestamp': '1741613400.0'}
 ```
 
 ---
@@ -74,6 +106,18 @@ except DataIntegrityError as e:
     for v in e.result.errors:
         print(f"  [{v.check}] {v.message} (rows {v.affected_rows})")
 ```
+
+**Output** — with two bars sharing a timestamp:
+
+```text
+Export blocked: 2 error(s) found
+  [duplicate_timestamp] Duplicate timestamp '1735689600.0' appears 2 time(s) at rows [0, 1]
+  [non_monotonic_timestamp] Timestamp at row 1 ('1735689600.0') is not strictly greater than row 0 ('1735689600.0')
+```
+
+# one duplicate trips two checks — `aapl.csv` is not written
+# `str(exc)` is: OHLCV data integrity check failed: 2 error(s) found. Inspect result.errors for details.
+# `v.check` is a StrEnum, so it prints as `duplicate_timestamp`, not `ViolationType.DUPLICATE_TIMESTAMP`
 
 `DataIntegrityError.result` is the full `ValidationResult` — use it for structured logging or retry logic.
 
@@ -95,6 +139,16 @@ await exporter.to_csv(
     equity_bars, "spy.csv", validate=True, strict=True, interval="1D"
 )
 ```
+
+**Output:**
+
+```text
+WARNING  tvkit.export.data_exporter: Gap detected between rows 2 and 3: expected 86400s, got 255600s
+...
+```
+
+Returns `spy.csv`. 80 warnings, no exception — `is_valid` stays `True` because no violation has
+`severity == "ERROR"`.
 
 ---
 
@@ -146,10 +200,14 @@ result = validate_ohlcv(
 `validate_ohlcv()` is a pure function — it does not write files or log. Use it anywhere in your pipeline:
 
 ```python
+from tvkit.export import ExportConfig, ExportFormat
 from tvkit.validation import validate_ohlcv, ValidationResult, ViolationType
 
-# After fetching, before caching
-df = await exporter.to_polars(bars)
+# After fetching, before caching.
+# validate_ohlcv needs a numeric timestamp column, so build the frame with
+# timestamp_format="unix" rather than to_polars()'s default "iso" (a String column).
+config = ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")
+df = (await exporter.export_ohlcv_data(bars, ExportFormat.POLARS, config=config)).data
 result: ValidationResult = validate_ohlcv(df, interval="1D")
 
 # Log structured violations
@@ -169,6 +227,22 @@ for v in result.violations:
 if not result.is_valid:
     raise ValueError(f"Data integrity failed: {len(result.errors)} error(s)")
 ```
+
+**Output** — the `ValidationResult` for 365 clean AAPL daily bars:
+
+| field | value |
+|---|---|
+| `is_valid` | `True` |
+| `bars_checked` | `365` |
+| `checks_run` | `['duplicate_timestamp', 'non_monotonic_timestamp', 'ohlc_inconsistency', 'negative_volume', 'gap_detected']` |
+| `violations` | 80 entries, all `severity='WARNING'`, all `gap_detected` |
+
+```text
+WARNING  Gap detected between rows 2 and 3: expected 86400s, got 255600s
+```
+
+# `result.model_dump()` returns only ['is_valid', 'violations', 'bars_checked', 'checks_run'] —
+# `.errors` and `.warnings` are plain properties and are not serialized
 
 ---
 

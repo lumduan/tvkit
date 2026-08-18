@@ -91,6 +91,20 @@ print(f"Starts with '{{': {raw.startswith('{')}")
 print(f"Ends with '}}': {raw.endswith('}')}")
 ```
 
+**Output** — a healthy secret holding the 5 auth-essential cookies:
+
+```text
+Length: <a few hundred characters>
+Starts with '{': True
+Ends with '}': True
+```
+
+<!-- TODO: output unverified -->
+
+> Not captured: `google.colab.userdata` only exists inside Colab, and the length is specific to
+> your session. Both booleans must be `True`; if `Ends with '}'` is `False` the secret was
+> truncated on paste.
+
 A correct value starts with `{` and ends with `}`. If it is truncated or missing the closing `}`, re-run the export script and update the secret.
 
 If those checks pass but `json.loads(...)` still fails, the secret was usually copied in a format that is not strict JSON anymore, for example:
@@ -106,6 +120,8 @@ Use the safer loader below instead of calling `json.loads(userdata.get("TV_COOKI
 ```python
 !pip install tvkit -q
 ```
+
+**Output:** nothing — `-q` suppresses pip's progress output. Drop `-q` to see the resolution log.
 
 ### Cell 2 — Load cookies from Colab Secrets
 
@@ -183,6 +199,23 @@ except AuthError as e:
     raise
 ```
 
+**Output** — on a Premium session:
+
+```text
+Logged in:  your_username
+Plan:       pro_premium  |  Tier: premium
+Max bars:   20000
+
+Fetched 10,000 bars
+```
+
+<!-- TODO: output unverified -->
+
+> The three account lines could not be captured here — they need a real TradingView session.
+> They are derived from `TradingViewAccount` and `PLAN_TO_BARS`. The bar count **was** measured:
+> the same call with no cookies prints `client.account = None` and `Fetched 5,503 bars`, because
+> anonymous access is capped well below the requested 10,000.
+
 Colab notebooks already run an event loop — use top-level `await` in cells, not `asyncio.run(...)`.
 
 `account.max_bars` is a plan-based estimate derived from your TradingView plan (e.g., 20,000 for Premium). It is available immediately after the context manager opens.
@@ -211,6 +244,28 @@ print(f"{SYMBOL} [{INTERVAL}] — {len(df):,} bars")
 df.tail(10)          # Colab renders DataFrames as formatted HTML tables
 ```
 
+**Output:**
+
+```text
+BINANCE:BTCUSDT [1H] — 5,503 bars
+              datetime      open      high       low     close      volume
+5493  2026-08-17 21:00  64392.72  64434.76  64296.00  64382.02   218.14648
+5494  2026-08-17 22:00  64382.02  64416.00  64283.49  64291.25   321.62233
+5495  2026-08-17 23:00  64291.26  64578.00  64288.24  64532.10   350.04837
+5496  2026-08-18 00:00  64532.11  64568.46  64367.27  64383.71   332.90310
+5497  2026-08-18 01:00  64383.72  64387.71  64156.00  64200.06   378.48537
+5498  2026-08-18 02:00  64200.06  64272.00  64048.00  64103.22   442.34864
+5499  2026-08-18 03:00  64103.22  64195.45  64047.73  64185.01   577.49413
+5500  2026-08-18 04:00  64185.00  64250.69  64090.00  64210.32   739.25374
+5501  2026-08-18 05:00  64210.33  64276.00  64140.00  64242.76  1323.90812
+5502  2026-08-18 06:00  64242.76  64279.93  64170.00  64230.00   204.89910
+```
+
+# plain-text repr shown here; in Colab the same cell renders as a styled HTML table
+# the index is positional — `datetime` stays an ordinary String column
+
+*Example output — live market values will differ.*
+
 `df.tail(10)` as the last expression in a cell renders the DataFrame as a styled HTML table in Colab output. Use `df.head(10)` to see the oldest bars, or `df` for the full set (slow for 10k+ rows).
 
 ---
@@ -235,6 +290,11 @@ except ProfileFetchError:
 except AuthError as e:
     print(f"Auth error: {e}")
 ```
+
+<!-- TODO: output unverified -->
+
+> Not captured: both branches need a real (and in the `ProfileFetchError` case, an expired)
+> TradingView session. On success nothing is printed and `bars` is bound.
 
 ---
 
@@ -264,6 +324,11 @@ async def fetch():
 bars = await fetch()
 ```
 
+<!-- TODO: output unverified -->
+
+> Not captured: requires a `TV_AUTH_TOKEN` secret. Nothing is printed; `client.account` is `None`
+> in this mode.
+
 To get your `auth_token`, open TradingView in a browser, open DevTools → Application → Cookies → find `tradingview.com`, and copy the `auth_token` cookie value. Store it as the Colab secret `TV_AUTH_TOKEN`.
 
 ---
@@ -284,6 +349,12 @@ async def fetch():
 
 bars = await fetch()
 ```
+
+<!-- TODO: output unverified -->
+
+> Not captured: needs a logged-in local Chrome/Firefox profile. Without one, entering the context
+> manager raises `BrowserCookieError` — see
+> [Authenticated Sessions](authenticated-sessions.md#failure-recovery).
 
 If you are running a local notebook kernel that does not support top-level `await`, use:
 

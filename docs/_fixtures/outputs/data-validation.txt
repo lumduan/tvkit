@@ -1,0 +1,187 @@
+WARNING  tvkit.export.data_exporter: Gap detected between rows 2 and 3: expected 86400s, got 255600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 7 and 8: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 12 and 13: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 17 and 18: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 22 and 23: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 27 and 28: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 31 and 32: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 36 and 37: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 41 and 42: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 46 and 47: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 51 and 52: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 56 and 57: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 60 and 61: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 65 and 66: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 70 and 71: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 73 and 74: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 74 and 75: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 79 and 80: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 83 and 84: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 88 and 89: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 93 and 94: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 98 and 99: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 103 and 104: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 108 and 109: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 113 and 114: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 118 and 119: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 123 and 124: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 127 and 128: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 132 and 133: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 137 and 138: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 142 and 143: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 147 and 148: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 152 and 153: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 157 and 158: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 162 and 163: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 167 and 168: expected 86400s, got 262800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 172 and 173: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 177 and 178: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 182 and 183: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 185 and 186: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 186 and 187: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 191 and 192: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 196 and 197: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 201 and 202: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 204 and 205: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 205 and 206: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 208 and 209: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 209 and 210: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 214 and 215: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 219 and 220: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 223 and 224: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 228 and 229: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 233 and 234: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 238 and 239: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 242 and 243: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 247 and 248: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 252 and 253: expected 86400s, got 255600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 257 and 258: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 262 and 263: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 267 and 268: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 271 and 272: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 276 and 277: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 281 and 282: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 286 and 287: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 291 and 292: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 296 and 297: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 301 and 302: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 306 and 307: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 310 and 311: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 315 and 316: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 320 and 321: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 324 and 325: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 329 and 330: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 333 and 334: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 338 and 339: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 343 and 344: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 348 and 349: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 353 and 354: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 358 and 359: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 363 and 364: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Duplicate timestamp '1735689600.0' appears 2 time(s) at rows [0, 1]
+WARNING  tvkit.export.data_exporter: Timestamp at row 1 ('1735689600.0') is not strictly greater than row 0 ('1735689600.0')
+WARNING  tvkit.export.data_exporter: Gap detected between rows 2 and 3: expected 86400s, got 255600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 7 and 8: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 12 and 13: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 17 and 18: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 22 and 23: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 27 and 28: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 31 and 32: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 36 and 37: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 41 and 42: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 46 and 47: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 51 and 52: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 56 and 57: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 60 and 61: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 65 and 66: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 70 and 71: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 73 and 74: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 74 and 75: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 79 and 80: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 83 and 84: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 88 and 89: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 93 and 94: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 98 and 99: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 103 and 104: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 108 and 109: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 113 and 114: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 118 and 119: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 123 and 124: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 127 and 128: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 132 and 133: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 137 and 138: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 142 and 143: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 147 and 148: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 152 and 153: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 157 and 158: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 162 and 163: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 167 and 168: expected 86400s, got 262800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 172 and 173: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 177 and 178: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 182 and 183: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 185 and 186: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 186 and 187: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 191 and 192: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 196 and 197: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 201 and 202: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 204 and 205: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 205 and 206: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 208 and 209: expected 86400s, got 172800s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 209 and 210: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 214 and 215: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 219 and 220: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 223 and 224: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 228 and 229: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 233 and 234: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 238 and 239: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 242 and 243: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 247 and 248: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 252 and 253: expected 86400s, got 255600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 257 and 258: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 262 and 263: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 267 and 268: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 271 and 272: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 276 and 277: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 281 and 282: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 286 and 287: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 291 and 292: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 296 and 297: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 301 and 302: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 306 and 307: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 310 and 311: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 315 and 316: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 320 and 321: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 324 and 325: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 329 and 330: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 333 and 334: expected 86400s, got 345600s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 338 and 339: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 343 and 344: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 348 and 349: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 353 and 354: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 358 and 359: expected 86400s, got 259200s
+WARNING  tvkit.export.data_exporter: Gap detected between rows 363 and 364: expected 86400s, got 259200s
+### Validation in One Line (data-validation.md:18) — 365 real AAPL daily bars
+df timestamp dtype: Float64
+Clean: 365 bars, no errors
+
+### same df WITH interval='1D' (gap detection on)
+is_valid: True | bars_checked: 365
+checks_run: ['duplicate_timestamp', 'non_monotonic_timestamp', 'ohlc_inconsistency', 'negative_volume', 'gap_detected']
+errors: 0 | warnings: 80
+  [gap_detected] Gap detected between rows 2 and 3: expected 86400s, got 255600s (rows [3]) context={'expected_interval': '1D', 'actual_gap': '255600s', 'prev_timestamp': '1741357800.0', 'curr_timestamp': '1741613400.0'}
+  [gap_detected] Gap detected between rows 7 and 8: expected 86400s, got 259200s (rows [8]) context={'expected_interval': '1D', 'actual_gap': '259200s', 'prev_timestamp': '1741959000.0', 'curr_timestamp': '1742218200.0'}
+
+### Validation Before Export (data-validation.md:37) — to_csv(validate=True, interval='1D')
+returned path: aapl.csv
+
+### Strict Mode (data-validation.md:67) — synthetic duplicate timestamp
+Export blocked: 2 error(s) found
+  [duplicate_timestamp] Duplicate timestamp '1735689600.0' appears 2 time(s) at rows [0, 1] (rows [0, 1])
+  [non_monotonic_timestamp] Timestamp at row 1 ('1735689600.0') is not strictly greater than row 0 ('1735689600.0') (rows [0, 1])
+  str(exc): OHLCV data integrity check failed: 2 error(s) found. Inspect result.errors for details.
+
+### WARNING-only + strict=True must NOT block (data-validation.md:91)
+returned path: spy.csv -> not blocked
+
+### ValidationResult shape
+model_dump keys: ['is_valid', 'violations', 'bars_checked', 'checks_run']

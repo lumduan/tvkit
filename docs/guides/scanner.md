@@ -59,7 +59,7 @@ async def scan_us_market() -> None:
         range_end=10,
     )
 
-    response = await service.scan_market(Market.US, request)
+    response = await service.scan_market(Market.AMERICA, request)
 
     for stock in response.data:
         print(f"{stock.name:12s}  price={stock.close}  market_cap={stock.market_cap_basic:,.0f}")
@@ -67,15 +67,21 @@ async def scan_us_market() -> None:
 asyncio.run(scan_us_market())
 ```
 
-Example output:
+**Output:**
 
-```text
-AAPL          price=192.31  market_cap=3,004,000,000,000
-MSFT          price=411.82  market_cap=3,062,000,000,000
-NVDA          price=875.28  market_cap=2,160,000,000,000
-```
+| name | close | market_cap_basic |
+|---|---|---|
+| NVDA | 225.01 | 5,445,242,088,564 |
+| AAPL | 305.59 | 4,459,835,263,931 |
+| GOOG | 341.45 | 4,191,656,347,478 |
+| MSFT | 480.35 | 3,566,860,693,823 |
+| AMZN | 261.31 | 2,818,571,764,248 |
 
-`Market.US` covers both NASDAQ and NYSE. `range_end=10` returns the top 10 results.
+# 10 rows total, showing 5 — `total_count` reports 4943 matching symbols
+
+*Example output — live market values will differ.*
+
+`Market.AMERICA` covers both NASDAQ and NYSE. `range_end=10` returns the top 10 results.
 
 ---
 
@@ -99,6 +105,14 @@ request = create_comprehensive_request(
 )
 ```
 
+<!-- TODO: output unverified -->
+
+> **This block does not run against tvkit 0.12.0.** `ScannerFilter` does not exist in
+> `tvkit.api.scanner.models.scanner`, and `create_comprehensive_request()` takes no `filters`
+> argument — its parameters are `sort_by`, `sort_order`, `range_start`, `range_end`, `language`.
+> `ScannerRequest` has no filter field either (`columns`, `ignore_unknown_fields`, `options`,
+> `range`, `sort`, `preset`). Server-side filtering is not implemented, so no output can be shown.
+
 Common filter operations: `"equal"`, `"greater"`, `"less"`, `"in_range"`, `"not_equal"`.
 
 ---
@@ -120,11 +134,11 @@ Increment `range_start` by `range_end` to page through results:
 
 ```python
 from tvkit.api.scanner import ScannerService, Market
-from tvkit.api.scanner.models.scanner import ScannerStock
+from tvkit.api.scanner.models.scanner import StockData
 
-async def paginate_scan(market: Market, page_size: int = 25) -> list[ScannerStock]:
+async def paginate_scan(market: Market, page_size: int = 25) -> list[StockData]:
     service = ScannerService()
-    all_stocks: list[ScannerStock] = []
+    all_stocks: list[StockData] = []
     offset = 0
 
     while True:
@@ -173,7 +187,20 @@ async def scan_asia_pacific() -> None:
 asyncio.run(scan_asia_pacific())
 ```
 
-Available regions: `NORTH_AMERICA`, `EUROPE`, `ASIA_PACIFIC`, `MIDDLE_EAST_AFRICA`, `LATIN_AMERICA`.
+**Output:**
+
+| market | leader | market_cap_basic |
+|---|---|---|
+| australia | BHP | 311,700,320,153 |
+| bangladesh | GP | 337,980,106,342 |
+| china | 688825 | 3,690,487,319,188 |
+| hongkong | 700 | 3,968,954,687,500 |
+| indonesia | BBCA | 782,796,547,656,250 |
+
+# 17 markets in ASIA_PACIFIC, showing 5
+# caps are in each market's own reporting currency — IDR and KRW are not comparable to USD
+
+Available regions: `GLOBAL`, `NORTH_AMERICA`, `EUROPE`, `MIDDLE_EAST_AFRICA`, `MEXICO_SOUTH_AMERICA`, `ASIA_PACIFIC`.
 
 ---
 
@@ -202,7 +229,7 @@ async def screen_us_tech() -> None:
         ],
     )
 
-    response = await service.scan_market(Market.US, request)
+    response = await service.scan_market(Market.AMERICA, request)
 
     print(f"Found {len(response.data)} qualifying stocks\n")
     for stock in response.data:
@@ -214,6 +241,14 @@ async def screen_us_tech() -> None:
 
 asyncio.run(screen_us_tech())
 ```
+
+<!-- TODO: output unverified -->
+
+> **This block does not run against tvkit 0.12.0.** Besides the missing `ScannerFilter` and
+> `filters=` argument, `StockData` has no `return_on_equity` or `gross_profit_margin_ttm` field —
+> it declares 20 fields, of which the fundamentals ones are `price_earnings_ttm`,
+> `earnings_per_share_diluted_ttm`, `earnings_per_share_diluted_yoy_growth_ttm`,
+> `dividends_yield_current` and `recommendation_mark`.
 
 ---
 
@@ -233,7 +268,7 @@ The `Market` enum includes 69 exchanges across five global regions. Examples:
 
 | Region | Market Enum | Exchange(s) |
 |--------|------------|-------------|
-| North America | `Market.US` | NASDAQ, NYSE |
+| North America | `Market.AMERICA` | NASDAQ, NYSE |
 | North America | `Market.CANADA` | TSX, TSXV |
 | Europe | `Market.GERMANY` | XETRA |
 | Europe | `Market.UK` | LSE |

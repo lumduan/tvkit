@@ -1,0 +1,27 @@
+### Anonymous (default) (authenticated-sessions.md:95) — 100 bars
+len(bars)=100  client.account=None
+first=1774445400.0 last=1786973400.0 last_close=305.59
+
+### Typical Startup Flow (authenticated-sessions.md:133) — no logged-in browser here
+Browser error: browser_cookie3 failed to extract cookies from 'chrome': Failed to find cookies for Chrome browser. Ensure the browser is installed and not currently writing to its database.
+Fix: Log in to TradingView in Chrome, then run again.
+
+### DERIVED (no login available) — TradingViewAccount for plan 'pro_premium'
+estimate_from_plan('pro_premium', []) -> (20000, 'premium')
+repr: TradingViewAccount(user_id=1234567, username='tra***', plan='pro_premium', tier='premium', max_bars=20000, max_bars_source='estimate', probe_confirmed=False)
+
+--- Typical Startup Flow prints (authenticated-sessions.md:133) ---
+Authenticated: tier='premium', max_bars=20000
+Probe: status='pending', source='estimate'
+
+--- Checking Capabilities prints (authenticated-sessions.md:175) ---
+TradingView plan:  'pro_premium'
+Tier:              'premium'
+Max bars:          20000
+Source:            'estimate'
+Probe status:      'pending'
+Probe confirmed:   False
+
+--- after a successful probe (probe_status='success', source='probe') ---
+Confirmed max_bars: 20000 (source: 'probe')
+anonymous bars_count=50_000 -> Fetched 6240 bars

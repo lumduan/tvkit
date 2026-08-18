@@ -1,0 +1,14 @@
+ERROR    Invalid symbol 'AAPL': no exchange prefix
+ERROR    Invalid symbol '': symbol must not be empty
+ERROR    Invalid symbol 'INVALID SYMBOL': symbol must not contain internal whitespace
+ERROR    Invalid symbol 'A:B:C': symbol contains multiple ':' separators
+### Error handling (symbol-normalization.md) — invalid_cases loop
+has .original=True .reason=True
+has .original=True .reason=True
+has .original=True .reason=True
+has .original=True .reason=True
+
+### OHLCV integration (symbol-normalization.md:101) — three spellings, one result
+len: 100 / 100 / 100
+identical last close: 305.59 / 305.59 / 305.59
+all equal: True

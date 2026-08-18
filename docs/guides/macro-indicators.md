@@ -64,6 +64,20 @@ async def fetch_macro_indicators() -> None:
 asyncio.run(fetch_macro_indicators())
 ```
 
+**Output:**
+
+```text
+NDFI: 100 bars  latest=58.820000
+PCC:  100 bars  latest=0.9133
+  2026-08-11  NDFI=52.940000
+  2026-08-12  NDFI=56.860000
+  2026-08-13  NDFI=62.740000
+  2026-08-14  NDFI=64.700000
+  2026-08-17  NDFI=58.820000
+```
+
+*Example output — live market values will differ.*
+
 ---
 
 ## Percentile Rank — Core Calculation
@@ -120,6 +134,13 @@ async def detect_liquidity_regime() -> None:
 asyncio.run(detect_liquidity_regime())
 ```
 
+**Output:**
+
+```text
+NDFI = 58.820000  (88.5th percentile)
+Regime: DEFENSIVE — strong demand for income assets
+```
+
 ---
 
 ## Sentiment Analysis (USI:PCC)
@@ -160,6 +181,15 @@ async def analyze_sentiment() -> None:
 asyncio.run(analyze_sentiment())
 ```
 
+**Output:**
+
+```text
+PCC = 0.9133  (76.6th percentile)
+Sentiment: NEUTRAL
+```
+
+76.6 sits inside the 20–80 band, so no contrarian signal fires.
+
 ---
 
 ## Combined Regime Score
@@ -196,6 +226,16 @@ async def combined_regime_score() -> None:
 asyncio.run(combined_regime_score())
 ```
 
+**Output:**
+
+```text
+NDFI percentile: 88.5
+PCC percentile:  76.6
+Risk score:      82.5  →  Risk-OFF: consider reducing equity exposure
+```
+
+Both readings elevated at once — the risk-off case the section describes.
+
 ---
 
 ## Real-time Monitoring
@@ -213,6 +253,18 @@ async def stream_macro_indicators() -> None:
 
 asyncio.run(stream_macro_indicators())
 ```
+
+**Output:**
+
+```text
+NDFI daily close update: 60.190000
+NDFI daily close update: 56.310000
+NDFI daily close update: 51.960000
+...
+```
+
+The first emissions replay the recent daily bars; after that the stream stays open and emits once
+per trading day.
 
 ---
 

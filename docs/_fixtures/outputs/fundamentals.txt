@@ -1,0 +1,37 @@
+### Revenue Segments (fundamentals.md:27) — SET:AOT
+SET:AOT 2025 (THB)
+  Airport: 62432730000.0
+  Ground Aviation Services: 3545640000.0
+  Hotel: 671470000.0
+  Security: 22990000.0
+
+### Financial Statements (fundamentals.md:46) — NASDAQ:AAPL FY max_periods=5
+Currency: USD Columns: ['2025', '2024', '2023', '2022', '2021']
+Total revenue: [416161000000.0, 391035000000.0, 383285000000.0, 394328000000.0, 365817000000.0]
+report_template: industrial
+first 6 line labels: ['Total revenue', 'Cost of goods sold', 'Gross profit', 'Operating expenses (excl. COGS)', 'Operating income', 'Non-operating income (total)']
+
+### Everything at Once (fundamentals.md:64) — NASDAQ:AAPL
+USD
+[RevenueSegment(label='United States', value=151790000000.0), RevenueSegment(label='Europe', value=111032000000.0), RevenueSegment(label='Greater China', value=64377000000.0), RevenueSegment(label='Rest of Asia Pacific', value=33696000000.0), RevenueSegment(label='Japan', value=28703000000.0), RevenueSegment(label='Americas', value=26563000000.0)]
+0.353021933121956
+1.0590062675549348
+
+### Exporting (fundamentals.md:77) — SET:AOT -> polars + csv
+shape: (1689, 8)
+schema: {'symbol': String, 'dataset': String, 'row': String, 'label': String, 'period': String, 'period_end': String, 'value': Float64, 'currency': String}
+shape: (6, 8)
+┌─────────┬─────────┬───────────────┬───────────────┬────────┬─────────────────────────┬───────────┬──────────┐
+│ symbol  ┆ dataset ┆ row           ┆ label         ┆ period ┆ period_end              ┆ value     ┆ currency │
+│ ---     ┆ ---     ┆ ---           ┆ ---           ┆ ---    ┆ ---                     ┆ ---       ┆ ---      │
+│ str     ┆ str     ┆ str           ┆ str           ┆ str    ┆ str                     ┆ f64       ┆ str      │
+╞═════════╪═════════╪═══════════════╪═══════════════╪════════╪═════════════════════════╪═══════════╪══════════╡
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2025   ┆ 2025-09-30T00:00:00+00… ┆ 6.6679e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2024   ┆ 2024-09-30T00:00:00+00… ┆ 6.7121e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2023   ┆ 2023-09-30T00:00:00+00… ┆ 4.8141e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2022   ┆ 2022-09-30T00:00:00+00… ┆ 1.6560e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2021   ┆ 2021-09-30T00:00:00+00… ┆ 7.0856e9  ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2020   ┆ 2020-09-30T00:00:00+00… ┆ 3.1179e10 ┆ THB      │
+└─────────┴─────────┴───────────────┴───────────────┴────────┴─────────────────────────┴───────────┴──────────┘
+datasets present: ['income', 'balance', 'cash_flow', 'statistics', 'segment_business', 'segment_region', 'dividend', 'earnings']
+csv result: True aot_financials.csv
