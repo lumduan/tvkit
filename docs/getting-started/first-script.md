@@ -91,7 +91,7 @@ Bitcoin (BTCUSDT) — last 5 daily closes:
 | Element | What It Is |
 |---------|-----------|
 | `async with OHLCV()` | Context manager that opens and closes the WebSocket connection |
-| `await client.get_historical_ohlcv()` | Async call that returns a `list[OHLCV]` |
+| `await client.get_historical_ohlcv()` | Async call that returns a `list[OHLCVBar]` |
 | `exchange_symbol="NASDAQ:AAPL"` | Exchange prefix + ticker in colon format — see [Symbols](../concepts/symbols.md) |
 | `interval="1D"` | TradingView interval string — see [Intervals](../concepts/intervals.md) |
 | `bars_count=5` | Number of most recent bars to fetch |

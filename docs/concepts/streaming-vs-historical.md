@@ -24,7 +24,7 @@ tvkit provides two ways to access market data:
 
 | Property | `get_historical_ohlcv()` | `get_ohlcv()` |
 |----------|--------------------------|---------------|
-| Return type | `list[OHLCV]` — all bars at once | `AsyncGenerator[OHLCV, None]` — one bar per yield |
+| Return type | `list[OHLCVBar]` — all bars at once | `AsyncGenerator[OHLCVBar, None]` — one bar per yield |
 | Connection | Opens, fetches, closes | Stays open until you break or cancel |
 | Latency | One round-trip (~100–500ms) | Each bar delivered as it closes (<50ms) |
 | Data completeness | All requested bars guaranteed | Bars may be skipped if connection drops — backfill with `get_historical_ohlcv()` |

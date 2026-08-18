@@ -32,8 +32,8 @@ OHLCV bars / scanner results
 
 `DataExporter` accepts:
 
-- `list[OHLCV]` — bars from `get_historical_ohlcv()` or a streaming buffer
-- `list[ScannerStock]` — results from `ScannerService.scan_market()`
+- `list[OHLCVBar]` — bars from `get_historical_ohlcv()` or a streaming buffer
+- `list[StockData]` — results from `ScannerService.scan_market()`
 
 ---
 

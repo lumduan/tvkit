@@ -25,7 +25,7 @@ The colon separator is required. TradingView's WebSocket API rejects symbols tha
 | US Equity | `NYSE:IBM` | — |
 | Crypto | `BINANCE:BTCUSDT` | Perpetual futures use exchange-specific notation |
 | Crypto | `COINBASE:ETHUSD` | — |
-| Forex | `FOREX:EURUSD` | Uses `FOREX` as the exchange prefix |
+| Forex | `FX_IDC:EURUSD` | `FOREX:` is not a TradingView exchange prefix |
 | Forex | `OANDA:XAUUSD` | Gold quoted in USD |
 | Index | `INDEX:SPX` | TradingView index identifiers |
 | Macro Indicator | `INDEX:NDFI` | Net Demand For Income |

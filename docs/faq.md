@@ -154,7 +154,7 @@ Polars DataFrames, CSV files, and JSON files. Parquet export is possible via Pol
 
 ### Can I export scanner results?
 
-Yes. Pass a `list[ScannerStock]` to `DataExporter`. See [Exporting Data](guides/exporting.md#scanner-results-export).
+Yes. Pass a `list[StockData]` to `DataExporter`. See [Exporting Data](guides/exporting.md#scanner-results-export).
 
 ---
 
