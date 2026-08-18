@@ -162,7 +162,7 @@ timezone — so bar times align with market open/close hours.
 import asyncio
 import polars as pl
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.export import DataExporter, ExportConfig, ExportFormat
+from tvkit.export import DataExporter
 from tvkit.time import convert_to_exchange_timezone
 
 async def fetch_and_display() -> None:
@@ -170,9 +170,8 @@ async def fetch_and_display() -> None:
         bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "60", bars_count=10)
 
     exporter = DataExporter()
-    # tvkit.time needs a numeric epoch column; to_polars() defaults to an ISO String column.
-    config = ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")
-    df = (await exporter.export_ohlcv_data(bars, ExportFormat.POLARS, config=config)).data
+    # tvkit.time needs a numeric epoch column; the default is an ISO String column.
+    df = await exporter.to_polars(bars, timestamp_format="unix")
 
     # Convert UTC epoch → America/New_York for display
     df_local = convert_to_exchange_timezone(df, "NASDAQ")

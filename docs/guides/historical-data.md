@@ -233,7 +233,7 @@ The most common pattern — download bars, export to a DataFrame, then convert t
 import asyncio
 import polars as pl
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.export import DataExporter, ExportConfig, ExportFormat
+from tvkit.export import DataExporter
 from tvkit.time import convert_to_exchange_timezone
 
 async def fetch_with_local_time(symbol: str, exchange: str) -> pl.DataFrame:
@@ -242,10 +242,8 @@ async def fetch_with_local_time(symbol: str, exchange: str) -> pl.DataFrame:
 
     exporter = DataExporter()
     # timestamp_format="unix" keeps the column numeric. tvkit.time needs an epoch column —
-    # to_polars() defaults to "iso", which produces a String column the converters reject.
-    config = ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")
-    result = await exporter.export_ohlcv_data(bars, ExportFormat.POLARS, config=config)
-    df = result.data
+    # the default "iso" produces a String column the converters reject.
+    df = await exporter.to_polars(bars, timestamp_format="unix")
 
     # Internal timestamps are UTC — convert for display
     print("UTC epoch:", df["timestamp"].head(3))

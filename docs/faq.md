@@ -216,7 +216,7 @@ as `2026-08-14 13:30:00 EDT`. Column count and order are unchanged, and `df` is 
 `df` must carry a **numeric** epoch column. `DataExporter.to_polars()` defaults to
 `timestamp_format="iso"`, which produces a `String` column and raises
 `InvalidOperationError: arithmetic on string and numeric not allowed`. Build the frame with
-`ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")` — see
+`to_polars(bars, timestamp_format="unix")` — see
 [Timezones](concepts/timezones.md#research-timezone-convention).
 
 See [Concepts: Timezones](concepts/timezones.md).

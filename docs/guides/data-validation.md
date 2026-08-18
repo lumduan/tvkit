@@ -37,7 +37,7 @@ Clean: 365 bars, no errors
 `df["timestamp"]` must be `Float64`, `Int64`, `Datetime` or `Date`. `DataExporter.to_polars()`
 defaults to `timestamp_format="iso"`, which yields a `String` column and raises
 `ValueError: Column 'timestamp' has unsupported dtype String`. Build the frame with
-`ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")` — see
+`to_polars(bars, timestamp_format="unix")` — see
 [Standalone Validation Without Export](#standalone-validation-without-export).
 
 *Example output — live market values will differ.*
@@ -200,14 +200,12 @@ result = validate_ohlcv(
 `validate_ohlcv()` is a pure function — it does not write files or log. Use it anywhere in your pipeline:
 
 ```python
-from tvkit.export import ExportConfig, ExportFormat
 from tvkit.validation import validate_ohlcv, ValidationResult, ViolationType
 
 # After fetching, before caching.
-# validate_ohlcv needs a numeric timestamp column, so build the frame with
-# timestamp_format="unix" rather than to_polars()'s default "iso" (a String column).
-config = ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")
-df = (await exporter.export_ohlcv_data(bars, ExportFormat.POLARS, config=config)).data
+# validate_ohlcv needs a numeric timestamp column, so ask for one — the
+# default timestamp_format="iso" yields a String column it rejects.
+df = await exporter.to_polars(bars, timestamp_format="unix")
 result: ValidationResult = validate_ohlcv(df, interval="1D")
 
 # Log structured violations
