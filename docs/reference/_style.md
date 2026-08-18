@@ -95,6 +95,12 @@ async with ClassName() as obj:
     result = await obj.method_name(...)
 \`\`\`
 
+**Output:**
+
+\`\`\`text
+<the rendered output — see Style Rule 11>
+\`\`\`
+
 ---
 
 ## Type Definitions
@@ -201,6 +207,47 @@ Replace with direct specification language:
 
 Reference pages document the public API only. Do not reference private methods, internal constants, or implementation details unless they affect the caller (e.g., timeout values that the caller needs to know about).
 
+### 11. Output block — required
+
+Every runnable example is followed by an output section. A reader must be able to see the shape of
+the result without running the code.
+
+```markdown
+**Output:**
+
+<the rendered output>
+```
+
+Choose the rendering by return type:
+
+| What the code returns | Render as |
+|-----------------------|-----------|
+| `list[OHLCVBar]`, `list[StockData]`, scanner rows | Markdown table — one row per record |
+| Polars DataFrame | Fenced `text` block with the real DataFrame repr (shape header, dtype row, box-drawing borders) |
+| Single Pydantic model | Field/value Markdown table |
+| Streaming (`async for`) | Fenced `text` block, 3–5 emitted lines then `...` |
+| Export to file | Fenced `text` block showing the printed path + first rows of the file |
+| JSON payloads | Fenced `json` block, truncated |
+| Import-only, config-only, or signature-only snippets | No output section |
+
+Rules:
+
+- **Never invent a field.** Every field name, type, and nesting level must be verified against the
+  Pydantic model or return type in `tvkit/`. Read the source before writing an output block.
+- Prefer a real captured run over a plausible one. Save captures under
+  `docs/_fixtures/outputs/<page>.txt` so a later edit does not require another network call.
+- Max 5–8 rows. Truncate with `...` and a line like `# 250 rows total, showing 5`.
+- Wide DataFrames: show 5–7 relevant columns and add `# showing 6 of 17 columns`.
+- Format numbers the way the code formats them — respect the f-strings in the example. Use K/M/B
+  abbreviation only for financial-statement magnitudes, where TradingView's own UI abbreviates.
+- Tables carry no alignment markers (`|---|---|`). Use U+2212 `−` for negative numbers, `—` for a
+  missing value, and put annotations in lowercase parentheses, e.g. `(hidden)`.
+- Add one italic note per page: *Example output — live market values will differ.*
+- Do not fabricate future timestamps or impossible values (negative volume, `high < low`, a close
+  outside the high/low range).
+- If the true output cannot be determined — it needs credentials, a paid tier, or an unimplemented
+  API — leave `<!-- TODO: output unverified -->` and a one-line note saying why. Never guess.
+
 ---
 
 ## Checklist for New Reference Pages
@@ -212,6 +259,7 @@ Before submitting a reference page, verify:
 - [ ] Import block present and correct
 - [ ] Every public method documented
 - [ ] Every method has: signature, parameter table, returns, raises table, example
+- [ ] Every runnable example is followed by an `**Output:**` block (Style Rule 11)
 - [ ] All Pydantic models in public method signatures have a fields table
 - [ ] "See also" section present with at least one link
 - [ ] No `<!-- TODO -->` placeholders
