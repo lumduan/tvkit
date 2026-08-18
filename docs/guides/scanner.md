@@ -20,6 +20,10 @@ The scanner is useful for:
 - Ranking stocks within a market or region
 - Building watchlists or investment universes for systematic strategies
 
+tvkit does not send filter criteria to TradingView — a request selects columns, a sort order and a
+row range. Narrow the result set with `sort_by` / `range_end`, then filter the returned
+`list[StockData]` in Python.
+
 ---
 
 ## Data Flow
@@ -82,38 +86,6 @@ asyncio.run(scan_us_market())
 *Example output — live market values will differ.*
 
 `Market.AMERICA` covers both NASDAQ and NYSE. `range_end=10` returns the top 10 results.
-
----
-
-## Filter Syntax
-
-Apply criteria to narrow results. Filter field names must match TradingView column identifiers exactly — see [Scanner Column Sets](../concepts/scanner-columns.md) for available fields.
-
-```python
-from tvkit.api.scanner import create_comprehensive_request
-from tvkit.api.scanner.models.scanner import ScannerFilter
-
-request = create_comprehensive_request(
-    sort_by="market_cap_basic",
-    sort_order="desc",
-    range_end=50,
-    filters=[
-        ScannerFilter(left="market_cap_basic", operation="greater", right=1_000_000_000),
-        ScannerFilter(left="price_earnings_ttm", operation="in_range", right=[5, 25]),
-        ScannerFilter(left="sector", operation="equal", right="Technology"),
-    ],
-)
-```
-
-<!-- TODO: output unverified -->
-
-> **This block does not run against tvkit 0.12.0.** `ScannerFilter` does not exist in
-> `tvkit.api.scanner.models.scanner`, and `create_comprehensive_request()` takes no `filters`
-> argument — its parameters are `sort_by`, `sort_order`, `range_start`, `range_end`, `language`.
-> `ScannerRequest` has no filter field either (`columns`, `ignore_unknown_fields`, `options`,
-> `range`, `sort`, `preset`). Server-side filtering is not implemented, so no output can be shown.
-
-Common filter operations: `"equal"`, `"greater"`, `"less"`, `"in_range"`, `"not_equal"`.
 
 ---
 
@@ -204,54 +176,6 @@ Available regions: `GLOBAL`, `NORTH_AMERICA`, `EUROPE`, `MIDDLE_EAST_AFRICA`, `M
 
 ---
 
-## SP500-Style Screening Example
-
-Screen for large-cap US technology stocks with strong fundamentals:
-
-```python
-import asyncio
-from tvkit.api.scanner import ScannerService, Market
-from tvkit.api.scanner import create_comprehensive_request
-from tvkit.api.scanner.models.scanner import ScannerFilter
-
-async def screen_us_tech() -> None:
-    service = ScannerService()
-
-    request = create_comprehensive_request(
-        sort_by="market_cap_basic",
-        sort_order="desc",
-        range_end=20,
-        filters=[
-            ScannerFilter(left="market_cap_basic", operation="greater", right=10_000_000_000),
-            ScannerFilter(left="sector", operation="equal", right="Technology"),
-            ScannerFilter(left="return_on_equity", operation="greater", right=0.15),
-            ScannerFilter(left="gross_profit_margin_ttm", operation="greater", right=0.40),
-        ],
-    )
-
-    response = await service.scan_market(Market.AMERICA, request)
-
-    print(f"Found {len(response.data)} qualifying stocks\n")
-    for stock in response.data:
-        print(
-            f"{stock.name:10s}  P/E={stock.price_earnings_ttm or 'N/A':>6}  "
-            f"ROE={stock.return_on_equity or 'N/A':>6.1%}  "
-            f"Cap=${stock.market_cap_basic / 1e9:.1f}B"
-        )
-
-asyncio.run(screen_us_tech())
-```
-
-<!-- TODO: output unverified -->
-
-> **This block does not run against tvkit 0.12.0.** Besides the missing `ScannerFilter` and
-> `filters=` argument, `StockData` has no `return_on_equity` or `gross_profit_margin_ttm` field —
-> it declares 20 fields, of which the fundamentals ones are `price_earnings_ttm`,
-> `earnings_per_share_diluted_ttm`, `earnings_per_share_diluted_yoy_growth_ttm`,
-> `dividends_yield_current` and `recommendation_mark`.
-
----
-
 ## Performance Notes
 
 Scanner queries are stateless HTTP requests. For large-scale scans:
@@ -286,5 +210,5 @@ See [Markets reference](../reference/scanner/markets.md) for the full list of 69
 
 - [Scanner Column Sets](../concepts/scanner-columns.md) — choosing the right column set
 - [Exporting Data guide](exporting.md) — saving scanner results to CSV, JSON, or Polars
-- [Scanner API reference](../reference/scanner/scanner.md) — full filter and request specification
+- [Scanner API reference](../reference/scanner/scanner.md) — full request specification
 - [Markets reference](../reference/scanner/markets.md) — complete market list

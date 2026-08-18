@@ -113,7 +113,32 @@ tvkit supports all TradingView intervals: seconds (`1S`, `5S`), minutes (`1`, `5
 
 ### Can I filter scanner results by multiple criteria?
 
-Yes. Pass a list of filter objects to the `filters` parameter. All filters are combined with AND logic. See [Scanner Guide](guides/scanner.md).
+Not server-side — tvkit sends columns, a sort order and a row range, but no filter criteria. Narrow
+the result set with `sort_by` and `range_end`, then filter the returned `list[StockData]` in Python:
+
+```python
+response = await service.scan_market(Market.AMERICA, request)
+
+large_tech = [
+    s for s in response.data
+    if s.sector == "Electronic Technology"
+    and s.market_cap_basic is not None
+    and s.market_cap_basic > 10_000_000_000
+]
+print(f"{len(large_tech)} of {len(response.data)} rows matched")
+```
+
+**Output:**
+
+```text
+6 of 20 rows matched
+```
+
+# matched: NVDA, AAPL, AVGO, MU, AMD, INTC
+# `sector` is TradingView's own taxonomy — the top 20 US rows span 8 sectors, and semiconductors
+# sit under `Electronic Technology`, not a "Technology" label
+
+See the [Scanner Guide](guides/scanner.md).
 
 ### What columns are available in scanner results?
 

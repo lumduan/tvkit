@@ -209,7 +209,7 @@ Full documentation index → [docs/index.md](docs/index.md)
 - [Historical Data](docs/guides/historical-data.md) — Bar count mode, date-range mode, Polars integration
 - [Real-time Streaming](docs/guides/realtime-streaming.md) — WebSocket streaming, multiple symbols, reconnection
 - [Authenticated Sessions](docs/guides/authenticated-sessions.md) — Browser cookies, token injection, capability detection
-- [Scanner](docs/guides/scanner.md) — 69 global markets, filters, sorting, regional analysis
+- [Scanner](docs/guides/scanner.md) — 69 global markets, sorting, pagination, regional analysis
 - [Exporting Data](docs/guides/exporting.md) — DataExporter, CSV, JSON, Polars with metadata
 - [Macro Indicators](docs/guides/macro-indicators.md) — INDEX:NDFI, USI:PCC, regime detection
 
@@ -218,7 +218,7 @@ Full documentation index → [docs/index.md](docs/index.md)
 - [Chart API](docs/reference/chart/ohlcv.md) — OHLCV client: all methods, parameters, return types
 - [Authentication — tvkit.auth](docs/reference/auth/index.md) — AuthManager, TradingViewCredentials, TradingViewAccount
 - [Chart Utils](docs/reference/chart/utils.md) — Interval validation, timestamp utilities
-- [Scanner API](docs/reference/scanner/scanner.md) — ScannerService interface and filter syntax
+- [Scanner API](docs/reference/scanner/scanner.md) — ScannerService interface and request models
 - [Markets](docs/reference/scanner/markets.md) — All 69 markets, regions, exchange identifiers
 - [Export API](docs/reference/export/exporter.md) — DataExporter interface and export formats
 - [Full Reference Index](docs/reference/index.md)

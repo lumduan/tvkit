@@ -82,7 +82,7 @@ out of `total_count=4943`:
 
 *Example output — live market values will differ.*
 
-See the [Scanner guide](../guides/scanner.md) for full request construction and filtering examples.
+See the [Scanner guide](../guides/scanner.md) for full request construction.
 
 ## Inspecting Available Columns
 
@@ -92,5 +92,5 @@ For the complete list of available scanner fields including exact column names, 
 
 ## See Also
 
-- [Scanner guide](../guides/scanner.md) — building requests, applying filters, regional scanning
+- [Scanner guide](../guides/scanner.md) — building requests, sorting, pagination, regional scanning
 - [Scanner API reference](../reference/scanner/scanner.md) — full column list and field names
