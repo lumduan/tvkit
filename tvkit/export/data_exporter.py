@@ -7,7 +7,7 @@ from tvkit APIs to various formats including Polars DataFrames, JSON, and CSV.
 
 import logging
 from pathlib import Path
-from typing import Any, cast, overload
+from typing import Any, Literal, cast, overload
 
 import polars as pl
 
@@ -319,18 +319,38 @@ class DataExporter:
         return rows
 
     @overload
-    async def to_polars(self, data: list[OHLCVBar], add_analysis: bool = False) -> Any: ...
+    async def to_polars(
+        self,
+        data: list[OHLCVBar],
+        add_analysis: bool = False,
+        *,
+        timestamp_format: Literal["iso", "unix", "datetime"] = "iso",
+    ) -> Any: ...
 
     @overload
-    async def to_polars(self, data: list[StockData], add_analysis: bool = False) -> Any: ...
+    async def to_polars(
+        self,
+        data: list[StockData],
+        add_analysis: bool = False,
+        *,
+        timestamp_format: Literal["iso", "unix", "datetime"] = "iso",
+    ) -> Any: ...
 
     @overload
-    async def to_polars(self, data: list[FundamentalsInput], add_analysis: bool = False) -> Any: ...
+    async def to_polars(
+        self,
+        data: list[FundamentalsInput],
+        add_analysis: bool = False,
+        *,
+        timestamp_format: Literal["iso", "unix", "datetime"] = "iso",
+    ) -> Any: ...
 
     async def to_polars(
         self,
         data: list[OHLCVBar] | list[StockData] | list[FundamentalsInput],
         add_analysis: bool = False,
+        *,
+        timestamp_format: Literal["iso", "unix", "datetime"] = "iso",
     ) -> Any:
         """
         Convenience method to export data directly to Polars DataFrame.
@@ -338,6 +358,19 @@ class DataExporter:
         Args:
             data: OHLCV bars or scanner data
             add_analysis: Whether to add financial analysis columns (OHLCV only)
+            timestamp_format: Dtype of the ``timestamp`` column for OHLCV input.
+
+                - ``"iso"`` (default) — ``String`` of ISO-8601 text, e.g.
+                  ``"2026-08-11T13:30:00+00:00"``. Readable, but **not accepted** by
+                  :func:`tvkit.validation.validate_ohlcv` or
+                  :func:`tvkit.time.convert_to_timezone`.
+                - ``"unix"`` — ``Float64`` epoch seconds. Accepted by both.
+                - ``"datetime"`` — tz-aware ``Datetime(time_unit="us", time_zone="UTC")``.
+                  Accepted by ``validate_ohlcv``; ``convert_to_timezone`` needs a numeric
+                  column, so use ``"unix"`` for timezone conversion.
+
+                Ignored for scanner and fundamentals input, whose timestamp-like columns
+                (``export_timestamp``, ``period_end``) are always ISO strings.
 
         Returns:
             Polars DataFrame with the exported data
@@ -346,9 +379,17 @@ class DataExporter:
             >>> exporter = DataExporter()
             >>> df = await exporter.to_polars(ohlcv_bars, add_analysis=True)
             >>> print(df.head())
+
+            Chaining into validation or timezone conversion needs a numeric column:
+
+            >>> df = await exporter.to_polars(ohlcv_bars, timestamp_format="unix")
+            >>> result = validate_ohlcv(df, interval="1D")
+            >>> df_local = convert_to_exchange_timezone(df, "NASDAQ")
         """
         config: ExportConfig = ExportConfig(
-            format=ExportFormat.POLARS, options={"add_analysis": add_analysis}
+            format=ExportFormat.POLARS,
+            timestamp_format=timestamp_format,
+            options={"add_analysis": add_analysis},
         )
 
         if data and isinstance(data[0], OHLCVBar):

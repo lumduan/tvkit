@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`DataExporter.to_polars(timestamp_format=...)`** (`tvkit.export`)  
+  New keyword-only argument selecting the dtype of the `timestamp` column for OHLCV input:
+  `"iso"` (default, unchanged — `String` ISO-8601 text), `"unix"` (`Float64` epoch seconds), or
+  `"datetime"` (tz-aware `Datetime(time_unit="us", time_zone="UTC")`). Previously `to_polars()`
+  hard-coded the default `ExportConfig`, so its `String` column could not be changed without
+  dropping down to `export_ohlcv_data()` with a hand-built config — and that `String` column is
+  rejected by both `validate_ohlcv()` and `convert_to_timezone()`, meaning tvkit's own documented
+  fetch → export → validate/convert pipeline did not compose. `"unix"` and `"datetime"` are now
+  accepted by both consumers. Ignored for scanner and fundamentals input, whose timestamp-like
+  columns are always ISO strings.
+
+### Changed
+
+- **`convert_to_timezone()` accepts an existing `Datetime` column** (`tvkit.time`)  
+  A column that is already temporal skips the epoch-decode step and is only re-zoned; a naive
+  column is assumed UTC, consistent with `to_utc()`. This makes
+  `to_polars(timestamp_format="datetime")` chain directly into a timezone conversion.
+- **Actionable errors for a non-numeric timestamp column** (`tvkit.time`, `tvkit.validation`)  
+  `convert_to_timezone()` previously let polars raise `InvalidOperationError: arithmetic on string
+  and numeric not allowed`, which named neither the column nor the fix. It now raises `ValueError`
+  identifying the column, its dtype, and the `timestamp_format` argument to pass.
+  `validate_ohlcv()`'s existing dtype error gains the same hint when the column is a `String`.
+
+  **Migration:** none required. `timestamp_format` defaults to the previous behaviour. If you
+  caught `polars.exceptions.InvalidOperationError` around `convert_to_timezone()`, catch
+  `ValueError` instead.
+
 ## [0.12.0] — 2026-08-17
 
 ### Added
