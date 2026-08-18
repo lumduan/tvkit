@@ -280,6 +280,8 @@ async def to_polars(
     self,
     data: list[OHLCVBar] | list[StockData],
     add_analysis: bool = False,
+    *,
+    timestamp_format: Literal["iso", "unix", "datetime"] = "iso",
 ) -> pl.DataFrame: ...
 ```
 
@@ -289,6 +291,18 @@ async def to_polars(
 |-----------|------|---------|-------------|
 | `data` | `list[OHLCVBar] \| list[StockData]` | required | OHLCV bars or scanner rows |
 | `add_analysis` | `bool` | `False` | When `True` and data is `list[OHLCVBar]`, adds financial analysis columns (SMA, VWAP, etc.) to the DataFrame |
+| `timestamp_format` | `Literal["iso", "unix", "datetime"]` | `"iso"` | Dtype of the `timestamp` column for OHLCV input. Keyword-only. `"iso"` → `String` ISO-8601 text; `"unix"` → `Float64` epoch seconds; `"datetime"` → tz-aware `Datetime(time_unit="us", time_zone="UTC")`. Ignored for scanner and fundamentals input. |
+
+> **Chaining into validation or timezone conversion.** The default `"iso"` gives a readable
+> `String` column, which [`validate_ohlcv()`](../validation/validate_ohlcv.md) and
+> [`convert_to_timezone()`](../time/index.md) both reject. Pass `timestamp_format="unix"` when the
+> frame is going on to either of them:
+>
+> | `timestamp_format` | dtype | `validate_ohlcv()` | `convert_to_timezone()` |
+> |---|---|---|---|
+> | `"iso"` (default) | `String` | ✗ | ✗ |
+> | `"unix"` | `Float64` | ✓ | ✓ |
+> | `"datetime"` | `Datetime(us, UTC)` | ✓ | ✓ |
 
 #### Returns
 

@@ -303,25 +303,47 @@ class TestConvertToTimezone:
         result = convert_to_timezone(df, "UTC")
         assert isinstance(result["timestamp"].dtype, pl.Datetime)
 
-    def test_idempotency_data_corruption(self, df_seconds: pl.DataFrame) -> None:
+    def test_double_conversion_is_idempotent(self, df_seconds: pl.DataFrame) -> None:
         """
-        Calling convert_to_timezone on an already-converted Datetime column must
-        not silently produce a usable result.
+        Calling convert_to_timezone on an already-converted Datetime column is safe.
 
-        Polars behaviour varies by version:
-        - Older Polars: pl.from_epoch treats the datetime's internal microsecond
-          integer as a raw epoch, silently producing a corrupted value that overflows
-          Python's datetime range (OverflowError on value access).
-        - Newer Polars: pl.from_epoch explicitly rejects the operation and raises
-          InvalidOperationError during the conversion itself.
-
-        Both outcomes satisfy the API contract: convert_to_timezone expects an
-        integer/float epoch column. Never call it twice on the same column.
+        This used to be a footgun: pl.from_epoch was handed the datetime's internal
+        microsecond integer and either produced a corrupted value that overflowed
+        Python's datetime range, or raised InvalidOperationError, depending on the
+        Polars version. convert_to_timezone now detects an existing Datetime column
+        and only re-zones it, so a second call to the same timezone is a no-op.
         """
         converted = convert_to_timezone(df_seconds, "Asia/Bangkok")
-        with pytest.raises((OverflowError, pl.exceptions.InvalidOperationError)):
-            corrupted = convert_to_timezone(converted, "Asia/Bangkok")
-            _ = corrupted["timestamp"][0]
+        again = convert_to_timezone(converted, "Asia/Bangkok")
+
+        assert again["timestamp"].dtype == converted["timestamp"].dtype
+        assert again["timestamp"].to_list() == converted["timestamp"].to_list()
+
+    def test_reconversion_preserves_the_instant(self, df_seconds: pl.DataFrame) -> None:
+        """Re-zoning an already-converted column changes rendering, not the instant."""
+        bangkok = convert_to_timezone(df_seconds, "Asia/Bangkok")
+        new_york = convert_to_timezone(bangkok, "America/New_York")
+
+        assert new_york["timestamp"].dtype == pl.Datetime(
+            time_unit="us", time_zone="America/New_York"
+        )
+        assert new_york["timestamp"].to_list() == bangkok["timestamp"].to_list()
+
+    def test_naive_datetime_column_is_assumed_utc(self) -> None:
+        """A tz-naive Datetime column is treated as UTC, consistent with to_utc()."""
+        df = pl.DataFrame({"timestamp": [datetime(2026, 1, 1, 0, 0)]})
+
+        result = convert_to_timezone(df, "Asia/Bangkok")
+
+        assert result["timestamp"].dtype == pl.Datetime(time_unit="us", time_zone="Asia/Bangkok")
+        assert result["timestamp"][0].hour == 7
+
+    def test_string_column_raises_naming_the_fix(self) -> None:
+        """A String column raises ValueError pointing at to_polars(timestamp_format=...)."""
+        df = pl.DataFrame({"timestamp": ["2026-01-01T00:00:00+00:00"]})
+
+        with pytest.raises(ValueError, match=r'timestamp_format="unix"'):
+            convert_to_timezone(df, "Asia/Bangkok")
 
 
 # ── TestExchangeTimezone ──────────────────────────────────────────────────────

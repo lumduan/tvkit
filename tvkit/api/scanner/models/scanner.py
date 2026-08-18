@@ -5,9 +5,12 @@ This module provides Pydantic models for interacting with the TradingView
 scanner API, including request payloads and response parsing.
 """
 
+import logging
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class SortConfig(BaseModel):
@@ -317,6 +320,15 @@ class ScannerResponse(BaseModel):
     next_page_token: str | None = Field(
         default=None, description="Token for retrieving next page of results"
     )
+    dropped_row_count: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of rows present in the API payload that could not be parsed and were "
+            "discarded. Non-zero means data loss: len(data) is short by this many rows for a "
+            "reason unrelated to the requested range. Each drop is logged at WARNING."
+        ),
+    )
 
     @classmethod
     def from_api_response(
@@ -342,8 +354,9 @@ class ScannerResponse(BaseModel):
         """
         # Parse rows into StockData instances
         stocks: list[StockData] = []
+        dropped: int = 0
         if "data" in response_data:
-            for item in response_data["data"]:
+            for index, item in enumerate(response_data["data"]):
                 try:
                     # Handle new API format: {"s": "NASDAQ:AAPL", "d": [data_array]}
                     if isinstance(item, dict) and "d" in item:
@@ -363,15 +376,40 @@ class ScannerResponse(BaseModel):
 
                     stock = StockData.from_scanner_row(row_data, columns)
                     stocks.append(stock)
-                except Exception:
-                    # Log error but continue processing other rows
-                    # In production, you'd want proper logging here
+                except ValueError as exc:
+                    # Malformed upstream row: wrong length, or a value that fails validation.
+                    # pydantic's ValidationError subclasses ValueError, so both land here.
+                    # Skip the row so one bad record cannot discard a whole response, but never
+                    # skip it silently — see the dropped_row_count field.
+                    dropped += 1
+                    symbol_label: str = (
+                        str(item.get("s"))
+                        if isinstance(item, dict) and "s" in item
+                        else "<unknown>"
+                    )
+                    logger.warning(
+                        "Discarding unparseable scanner row %d (%s): %s",
+                        index,
+                        symbol_label,
+                        exc,
+                        extra={"row_index": index, "symbol": symbol_label},
+                    )
                     continue
+
+        if dropped:
+            logger.warning(
+                "Scanner response: discarded %d of %d row(s); len(data)=%d",
+                dropped,
+                len(response_data.get("data", [])),
+                len(stocks),
+                extra={"dropped_row_count": dropped},
+            )
 
         return cls(
             data=stocks,
             total_count=response_data.get("totalCount"),
             next_page_token=response_data.get("nextPageToken"),
+            dropped_row_count=dropped,
         )
 
 

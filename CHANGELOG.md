@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`DataExporter.to_polars(timestamp_format=...)`** (`tvkit.export`)  
+  New keyword-only argument selecting the dtype of the `timestamp` column for OHLCV input:
+  `"iso"` (default, unchanged — `String` ISO-8601 text), `"unix"` (`Float64` epoch seconds), or
+  `"datetime"` (tz-aware `Datetime(time_unit="us", time_zone="UTC")`). Previously `to_polars()`
+  hard-coded the default `ExportConfig`, so its `String` column could not be changed without
+  dropping down to `export_ohlcv_data()` with a hand-built config — and that `String` column is
+  rejected by both `validate_ohlcv()` and `convert_to_timezone()`, meaning tvkit's own documented
+  fetch → export → validate/convert pipeline did not compose. `"unix"` and `"datetime"` are now
+  accepted by both consumers. Ignored for scanner and fundamentals input, whose timestamp-like
+  columns are always ISO strings.
+- **`ScannerResponse.dropped_row_count`** (`tvkit.api.scanner.models.scanner`)  
+  Number of rows present in the API payload that could not be parsed and were discarded. Non-zero
+  means data loss unrelated to the requested range, so a pipeline can assert
+  `response.dropped_row_count == 0`.
+
+### Changed
+
+- **Scanner: unparseable rows are now reported instead of silently discarded**
+  (`tvkit.api.scanner.models.scanner`)  
+  `ScannerResponse.from_api_response()` skipped rows it could not parse behind a bare
+  `except Exception: continue` with no logging. That made `len(data) < total_count` ambiguous —
+  it could mean either "the requested range was smaller" or "rows were thrown away" — and it hid
+  a real defect in which every US and UK row failed validation, so `scan_market()` returned zero
+  rows while reporting `total_count=4943`. Each discarded row is now logged at `WARNING` with its
+  index, symbol and the underlying error, followed by a one-line summary. Rows are still skipped
+  rather than raising, so a single bad record cannot discard a whole response.
+- **Scanner: caller errors are no longer swallowed** (`tvkit.api.scanner.models.scanner`)  
+  The same `except` clause is narrowed from `Exception` to `ValueError` (which covers pydantic's
+  `ValidationError`). A malformed *payload* is still skipped, but a bug in the *call* — for example
+  passing `columns=None` — now raises instead of returning an empty response.
+- **`convert_to_timezone()` accepts an existing `Datetime` column** (`tvkit.time`)  
+  A column that is already temporal skips the epoch-decode step and is only re-zoned; a naive
+  column is assumed UTC, consistent with `to_utc()`. This makes
+  `to_polars(timestamp_format="datetime")` chain directly into a timezone conversion, and makes a
+  second call to the same timezone idempotent — it previously corrupted the value or raised,
+  depending on the polars version.
+- **Actionable errors for a non-numeric timestamp column** (`tvkit.time`, `tvkit.validation`)  
+  `convert_to_timezone()` previously let polars raise `InvalidOperationError: arithmetic on string
+  and numeric not allowed`, which named neither the column nor the fix. It now raises `ValueError`
+  identifying the column, its dtype, and the `timestamp_format` argument to pass.
+  `validate_ohlcv()`'s existing dtype error gains the same hint when the column is a `String`.
+
+**Migration:** no source changes required. `timestamp_format` defaults to the previous behaviour,
+and `dropped_row_count` is additive with a default. Two things to know:
+
+- If you caught `polars.exceptions.InvalidOperationError` around `convert_to_timezone()`, catch
+  `ValueError` instead.
+- If you assert on the exact key set of `ScannerResponse.model_dump()`, add `dropped_row_count`.
+
 ## [0.12.0] — 2026-08-17
 
 ### Added
