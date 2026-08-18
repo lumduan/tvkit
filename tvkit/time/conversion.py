@@ -140,6 +140,11 @@ def convert_to_timezone(
     Without it, Polars treats the intermediate datetime column as naive and raises an error
     on ``convert_time_zone()``.
 
+    A column that is **already** a ``Datetime`` skips the epoch step and is only re-zoned
+    (a naive column is assumed UTC first). A non-numeric, non-temporal column — most often the
+    ``String`` produced by ``DataExporter.to_polars()`` under its default
+    ``timestamp_format="iso"`` — raises ``ValueError`` naming the fix.
+
     Args:
         df: Polars DataFrame containing the epoch numeric column.
         tz: IANA timezone string (e.g. ``"Asia/Bangkok"``, ``"America/New_York"``).
@@ -155,12 +160,34 @@ def convert_to_timezone(
     Raises:
         ZoneInfoNotFoundError: If ``tz`` is not a valid IANA timezone string.
         ColumnNotFoundError: If ``column`` is not present in ``df``.
+        ValueError: If ``column`` is not a numeric epoch column.
 
     Example:
         >>> from tvkit.time import convert_to_timezone
         >>> df_bkk = convert_to_timezone(df, "Asia/Bangkok")
         >>> df_ms  = convert_to_timezone(df_ms, "UTC", unit="ms")
     """
+    dtype = df[column].dtype if column in df.columns else None
+
+    if isinstance(dtype, pl.Datetime):
+        # Already temporal — there is no epoch to decode, only a zone to change. A naive
+        # column is assumed UTC, consistent with tvkit.time.to_utc().
+        expr = pl.col(column)
+        if dtype.time_zone is None:
+            expr = expr.dt.replace_time_zone("UTC")
+        return df.with_columns(expr.dt.convert_time_zone(tz).alias(column))
+
+    if dtype is not None and not dtype.is_numeric():
+        # Without this guard polars raises "arithmetic on string and numeric not allowed",
+        # which says nothing about which column or how to fix it. The overwhelmingly common
+        # cause is DataExporter.to_polars() defaulting to timestamp_format="iso".
+        raise ValueError(
+            f"Column {column!r} has dtype {dtype!r}, but an epoch conversion needs a numeric "
+            f"column. If this frame came from DataExporter.to_polars(), pass "
+            f'timestamp_format="unix" (Float64 epoch) or timestamp_format="datetime" '
+            f'(tz-aware Datetime) instead of the default "iso" (String).'
+        )
+
     return df.with_columns(
         pl.from_epoch(pl.col(column), time_unit=unit)
         .dt.replace_time_zone("UTC")

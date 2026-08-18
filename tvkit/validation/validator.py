@@ -74,8 +74,15 @@ def _require_ohlcv_schema(df: pl.DataFrame) -> None:
                 accepted_names = "Float64, Int64, Datetime, Date"
             else:
                 accepted_names = ", ".join(str(d) for d in accepted)
+            hint = ""
+            if col == "timestamp" and dtype == pl.String:
+                hint = (
+                    " If this frame came from DataExporter.to_polars(), pass "
+                    'timestamp_format="unix" (Float64) or timestamp_format="datetime" '
+                    'instead of the default "iso" (String).'
+                )
             raise ValueError(
-                f"Column {col!r} has unsupported dtype {dtype!r}. Accepted: {accepted_names}"
+                f"Column {col!r} has unsupported dtype {dtype!r}. Accepted: {accepted_names}.{hint}"
             )
 
 
