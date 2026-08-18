@@ -105,6 +105,20 @@ async with FundamentalsClient() as fx:
         print(latest.period.label, seg.label, seg.value)
 ```
 
+**Output** — `SET:AOT`, most recent fiscal year:
+
+```text
+2025 Airport 62432730000.0
+2025 Ground Aviation Services 3545640000.0
+2025 Hotel 671470000.0
+2025 Security 22990000.0
+```
+
+Values are raw reporting-currency units (THB here) — the TradingView UI abbreviates them as
+62.43B / 3.55B / 671.47M / 22.99M. `by_business` is newest-first.
+
+*Example output — reported figures change with each filing.*
+
 ### `get_income_statement()`
 
 ```python
@@ -190,6 +204,15 @@ async with FundamentalsClient() as fx:
     snapshot = await fx.get_financials("NASDAQ:AAPL")
     print(snapshot.currency, snapshot.income.line("total_revenue").values[:3])
 ```
+
+**Output:**
+
+```text
+USD [416161000000.0, 391035000000.0, 383285000000.0]
+```
+
+Newest-first, index-aligned to `snapshot.income.periods` (`['2025', '2024', '2023', …]`).
+`line()` returns `None` when the issuer's template omits that row.
 
 ## Exceptions
 

@@ -51,10 +51,27 @@ async def main() -> None:
         )
     for bar in bars:
         print(bar.timestamp, bar.close)
-        # 2024-01-10 00:00:00  189.34
+        # 1785850200.0 309.38
 
 asyncio.run(main())
 ```
+
+**Output:**
+
+| timestamp | date | open | high | low | close | volume |
+|---|---|---|---|---|---|---|
+| 1785850200.0 | 2026-08-04 | 302.725 | 310.42 | 301.32 | 309.38 | 68,000,969 |
+| 1785936600.0 | 2026-08-05 | 309.36 | 311.71 | 305.67 | 311.0 | 49,438,763 |
+| 1786023000.0 | 2026-08-06 | 314.34 | 316.2894 | 309.23 | 312.41 | 46,139,901 |
+| 1786109400.0 | 2026-08-07 | 311.45 | 314.81 | 310.74 | 313.33 | 34,437,191 |
+| 1786368600.0 | 2026-08-10 | 306.83 | 308.26 | 304.61 | 308.26 | 44,812,503 |
+
+# 10 rows total, showing 5
+# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+
+The `print()` above emits the first and sixth columns only: `1785850200.0 309.38`.
+
+*Example output — live market values will differ.*
 
 See more working examples in [examples/](examples/).
 
@@ -119,6 +136,19 @@ async with OHLCV() as client:
         print(bar.close)
 ```
 
+**Output:**
+
+```text
+309.38
+311.0
+312.41
+313.33
+...
+```
+
+The stream replays the `bars_count` window first, then waits for live updates — it does not
+terminate on its own.
+
 Tune it for long-running pipelines:
 
 ```python
@@ -131,6 +161,19 @@ async with OHLCV(max_attempts=10, base_backoff=2.0, max_backoff=60.0) as client:
     except StreamConnectionError:
         print("Stream permanently lost after all attempts")
 ```
+
+**Output:**
+
+```text
+309.38
+311.0
+312.41
+313.33
+...
+```
+
+Identical while the connection holds. `StreamConnectionError` is raised only after all 10 attempts
+are exhausted, printing `Stream permanently lost after all attempts`.
 
 ## Symbol Format Reference
 
@@ -166,7 +209,7 @@ Full documentation index → [docs/index.md](docs/index.md)
 - [Historical Data](docs/guides/historical-data.md) — Bar count mode, date-range mode, Polars integration
 - [Real-time Streaming](docs/guides/realtime-streaming.md) — WebSocket streaming, multiple symbols, reconnection
 - [Authenticated Sessions](docs/guides/authenticated-sessions.md) — Browser cookies, token injection, capability detection
-- [Scanner](docs/guides/scanner.md) — 69 global markets, filters, sorting, regional analysis
+- [Scanner](docs/guides/scanner.md) — 69 global markets, sorting, pagination, regional analysis
 - [Exporting Data](docs/guides/exporting.md) — DataExporter, CSV, JSON, Polars with metadata
 - [Macro Indicators](docs/guides/macro-indicators.md) — INDEX:NDFI, USI:PCC, regime detection
 
@@ -175,7 +218,7 @@ Full documentation index → [docs/index.md](docs/index.md)
 - [Chart API](docs/reference/chart/ohlcv.md) — OHLCV client: all methods, parameters, return types
 - [Authentication — tvkit.auth](docs/reference/auth/index.md) — AuthManager, TradingViewCredentials, TradingViewAccount
 - [Chart Utils](docs/reference/chart/utils.md) — Interval validation, timestamp utilities
-- [Scanner API](docs/reference/scanner/scanner.md) — ScannerService interface and filter syntax
+- [Scanner API](docs/reference/scanner/scanner.md) — ScannerService interface and request models
 - [Markets](docs/reference/scanner/markets.md) — All 69 markets, regions, exchange identifiers
 - [Export API](docs/reference/export/exporter.md) — DataExporter interface and export formats
 - [Full Reference Index](docs/reference/index.md)

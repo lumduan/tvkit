@@ -1,0 +1,56 @@
+### intervals.md:82 — validate_interval
+validate_interval('1D') -> None
+validate_interval('1h') -> ValueError: Invalid interval format: '1h'. Expected formats: minutes (1, 5, 15), seconds (15S), hours (1H), days (D, 1D), weeks (W, 1W), months (M, 1M)
+
+### timezones.md:70 — to_utc on a naive datetime
+return: datetime.datetime(2024, 6, 1, 9, 30, tzinfo=datetime.timezone.utc)
+UserWarning: Naive datetime 2024-06-01 09:30:00 assumed UTC. Attach tzinfo=timezone.utc to suppress this warning.
+
+### timezones.md:19 — 3 daily bars, print(bar.timestamp)
+1786627800.0
+1786714200.0
+1786973400.0
+
+### timezones.md:145 — Research Timezone Convention (fixed recipe)
+shape: (10, 2)
+┌────────────────────────────────┬─────────┐
+│ timestamp                      ┆ close   │
+│ ---                            ┆ ---     │
+│ datetime[μs, America/New_York] ┆ f64     │
+╞════════════════════════════════╪═════════╡
+│ 2026-08-14 13:30:00 EDT        ┆ 305.98  │
+│ 2026-08-14 14:30:00 EDT        ┆ 305.94  │
+│ 2026-08-14 15:30:00 EDT        ┆ 305.98  │
+│ …                              ┆ …       │
+│ 2026-08-17 13:30:00 EDT        ┆ 304.7   │
+│ 2026-08-17 14:30:00 EDT        ┆ 306.15  │
+│ 2026-08-17 15:30:00 EDT        ┆ 305.665 │
+└────────────────────────────────┴─────────┘
+
+### scanner-columns.md:53 — Market.AMERICA range_end=20
+rows=20 total_count=4943 columns_requested=101
+  NVDA  close=225.01  cap=5,445,242,088,564  sector='Electronic Technology'
+  AAPL  close=305.59  cap=4,459,835,263,931  sector='Electronic Technology'
+  GOOG  close=341.45  cap=4,191,656,347,478  sector='Technology Services'
+
+### streaming-vs-historical.md:75 — seed 500 then stream
+Loaded 500 historical bars
+Live bar: 1787033280.0 close=64170.01
+Live bar: 1787033340.0 close=64199.21
+Live bar: 1787033400.0 close=64222.95
+
+### capabilities.md:167 — DERIVED account prints (pro_premium)
+TradingView plan: 'pro_premium'
+Tier: premium
+Max bars: 20000 (source: estimate)
+Probe status: pending
+
+### symbols.md:41 — normalize_symbol returns
+normalize_symbol('nasdaq:aapl') -> 'NASDAQ:AAPL'
+normalize_symbol('NASDAQ-AAPL') -> 'NASDAQ:AAPL'
+normalize_symbol('  NASDAQ:AAPL  ') -> 'NASDAQ:AAPL'
+normalize_symbol('NASDAQ:AAPL') -> 'NASDAQ:AAPL'
+normalize_symbol('AAPL', config=cfg) -> 'NASDAQ:AAPL'
+
+### symbols.md:94 — validate_symbols return value
+await validate_symbols('NASDAQ:AAPL') -> True

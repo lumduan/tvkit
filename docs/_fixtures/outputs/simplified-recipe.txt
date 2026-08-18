@@ -1,0 +1,34 @@
+### historical-data.md / timezones.md — simplified recipe
+UTC epoch: shape: (3,)
+Series: 'timestamp' [f64]
+[
+	1.7867e9
+	1.7867e9
+	1.7867e9
+]
+Local time: shape: (3,)
+Series: 'timestamp' [datetime[μs, America/New_York]]
+[
+	2026-08-14 13:30:00 EDT
+	2026-08-14 14:30:00 EDT
+	2026-08-14 15:30:00 EDT
+]
+shape: (10, 2)
+┌────────────────────────────────┬─────────┐
+│ timestamp                      ┆ close   │
+│ ---                            ┆ ---     │
+│ datetime[μs, America/New_York] ┆ f64     │
+╞════════════════════════════════╪═════════╡
+│ 2026-08-14 13:30:00 EDT        ┆ 305.98  │
+│ 2026-08-14 14:30:00 EDT        ┆ 305.94  │
+│ 2026-08-14 15:30:00 EDT        ┆ 305.98  │
+│ …                              ┆ …       │
+│ 2026-08-17 13:30:00 EDT        ┆ 304.7   │
+│ 2026-08-17 14:30:00 EDT        ┆ 306.15  │
+│ 2026-08-17 15:30:00 EDT        ┆ 305.665 │
+└────────────────────────────────┴─────────┘
+
+### data-validation.md — simplified recipe
+is_valid: True | bars_checked: 365
+errors: 0 | warnings: 80
+model_dump keys: ['is_valid', 'violations', 'bars_checked', 'checks_run']

@@ -39,6 +39,30 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+**Output:**
+
+```text
+SET:AOT 2025 (THB)
+  Airport: 62432730000.0
+  Ground Aviation Services: 3545640000.0
+  Hotel: 671470000.0
+  Security: 22990000.0
+```
+
+The same figures as the TradingView UI renders them:
+
+| Segment | 2025 |
+|---|---|
+| Airport | 62.43B |
+| Ground Aviation Services | 3.55B |
+| Hotel | 671.47M |
+| Security | 22.99M |
+
+Sanity: Σ(2025 by-business) = 66.67B ≈ total revenue 66.68B → segment values are
+**raw reporting-currency units (THB), full precision**; only the table above abbreviates K/M/B.
+
+*Example output — reported figures change with each filing.*
+
 Segment labels are issuer-specific and localized (set `language=` on the client). Values are raw currency units.
 
 ## Financial Statements
@@ -55,6 +79,22 @@ async with FundamentalsClient() as fx:
         print("Total revenue:", revenue.values)
 ```
 
+**Output:**
+
+```text
+Currency: USD Columns: ['2025', '2024', '2023', '2022', '2021']
+Total revenue: [416161000000.0, 391035000000.0, 383285000000.0, 394328000000.0, 365817000000.0]
+```
+
+| Row | 2025 | 2024 | 2023 | 2022 | 2021 |
+|---|---|---|---|---|---|
+| Total revenue | 416.16B (+6.43%) | 391.04B (+2.02%) | 383.29B (−2.80%) | 394.33B (+7.79%) | 365.82B |
+
+# periods are newest-first; `values` is index-aligned to `statement.periods`
+# `income.report_template` is `'industrial'` for AAPL; the first six line labels are
+#   Total revenue, Cost of goods sold, Gross profit, Operating expenses (excl. COGS),
+#   Operating income, Non-operating income (total)
+
 Rows are ordered as the TradingView UI shows them. A line the issuer's template omits (for example, cost of goods for a bank) is simply absent — use `statement.line(field_id)` and check for `None`. Values align to `statement.periods` by index.
 
 `get_balance_sheet()`, `get_cash_flow()`, and `get_statistics()` follow the same shape.
@@ -69,6 +109,19 @@ async with FundamentalsClient() as fx:
     print(snapshot.dividends.yield_recent)
     print(snapshot.earnings.periods[0].eps_surprise_pct)
 ```
+
+**Output:**
+
+```text
+USD
+[RevenueSegment(label='United States', value=151790000000.0), RevenueSegment(label='Europe', value=111032000000.0), RevenueSegment(label='Greater China', value=64377000000.0), RevenueSegment(label='Rest of Asia Pacific', value=33696000000.0), RevenueSegment(label='Japan', value=28703000000.0), RevenueSegment(label='Americas', value=26563000000.0)]
+0.353021933121956
+1.0590062675549348
+```
+
+# `yield_recent` and `eps_surprise_pct` are percentages, not fractions
+# `snapshot.raw` is populated but has `repr=False`, so `print(snapshot)` omits it while
+#   `snapshot.model_dump()` includes it
 
 `get_financials()` fetches income, balance, cash flow, statistics, segments, dividends, and earnings in one WebSocket round-trip.
 
@@ -87,6 +140,28 @@ df = result.data  # tidy/long: symbol, dataset, row, label, period, period_end, 
 # or write a file directly
 await exporter.export_fundamentals_data(snapshot, ExportFormat.CSV, "aot_financials.csv")
 ```
+
+**Output:**
+
+```text
+shape: (1689, 8)
+┌─────────┬─────────┬───────────────┬───────────────┬────────┬─────────────────────────┬───────────┬──────────┐
+│ symbol  ┆ dataset ┆ row           ┆ label         ┆ period ┆ period_end              ┆ value     ┆ currency │
+│ ---     ┆ ---     ┆ ---           ┆ ---           ┆ ---    ┆ ---                     ┆ ---       ┆ ---      │
+│ str     ┆ str     ┆ str           ┆ str           ┆ str    ┆ str                     ┆ f64       ┆ str      │
+╞═════════╪═════════╪═══════════════╪═══════════════╪════════╪═════════════════════════╪═══════════╪══════════╡
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2025   ┆ 2025-09-30T00:00:00+00… ┆ 6.6679e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2024   ┆ 2024-09-30T00:00:00+00… ┆ 6.7121e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2023   ┆ 2023-09-30T00:00:00+00… ┆ 4.8141e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2022   ┆ 2022-09-30T00:00:00+00… ┆ 1.6560e10 ┆ THB      │
+│ SET:AOT ┆ income  ┆ total_revenue ┆ Total revenue ┆ 2021   ┆ 2021-09-30T00:00:00+00… ┆ 7.0856e9  ┆ THB      │
+└─────────┴─────────┴───────────────┴───────────────┴────────┴─────────────────────────┴───────────┴──────────┘
+```
+
+# 1689 rows total, showing 5 — one row per (line, period)
+# `period_end` is a String, `value` is a nullable Float64
+# `dataset` takes exactly these values, in this order:
+#   income, balance, cash_flow, statistics, segment_business, segment_region, dividend, earnings
 
 ## Authenticated Sessions
 

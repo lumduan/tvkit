@@ -71,11 +71,41 @@ async def export_to_polars() -> None:
 asyncio.run(export_to_polars())
 ```
 
-When `add_analysis=True`, the following columns are appended automatically:
+**Output:**
 
-- `sma_20`, `sma_50` — Simple Moving Averages
-- `vwap` — Volume-Weighted Average Price
-- `rsi` — Relative Strength Index (14-period)
+```text
+shape: (5, 6)
+┌───────────────────────────┬────────┬─────────────┬─────────┬────────┬────────────┐
+│ timestamp                 ┆ close  ┆ volume      ┆ sma_5   ┆ sma_10 ┆ vwap       │
+│ ---                       ┆ ---    ┆ ---         ┆ ---     ┆ ---    ┆ ---        │
+│ str                       ┆ f64    ┆ f64         ┆ f64     ┆ f64    ┆ f64        │
+╞═══════════════════════════╪════════╪═════════════╪═════════╪════════╪════════════╡
+│ 2026-04-09T13:30:00+00:00 ┆ 260.49 ┆ 2.8121574e7 ┆ null    ┆ null   ┆ 259.226667 │
+│ 2026-04-10T13:30:00+00:00 ┆ 260.48 ┆ 3.1291473e7 ┆ null    ┆ null   ┆ 259.931206 │
+│ 2026-04-13T13:30:00+00:00 ┆ 259.2  ┆ 3.6234698e7 ┆ null    ┆ null   ┆ 259.457206 │
+│ 2026-04-14T13:30:00+00:00 ┆ 258.83 ┆ 4.837071e7  ┆ null    ┆ null   ┆ 259.410004 │
+│ 2026-04-15T13:30:00+00:00 ┆ 266.43 ┆ 4.991351e7  ┆ 261.086 ┆ null   ┆ 260.48841  │
+└───────────────────────────┴────────┴─────────────┴─────────┴────────┴────────────┘
+
+Columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'return_pct', 'typical_price',
+'true_range', 'vwap_numerator', 'sma_5', 'sma_10', 'vol_ma_5', 'cum_vwap_num', 'cum_volume',
+'vwap', 'momentum_3']
+```
+
+# 90 rows total, showing 5 · showing 6 of 17 columns
+# `timestamp` is a `String` — `to_polars()` uses timestamp_format="iso"
+
+*Example output — live market values will differ.*
+
+When `add_analysis=True`, these 11 columns are appended automatically:
+
+- `return_pct` — percent change from the previous close
+- `typical_price` — `(high + low + close) / 3`
+- `true_range` — high−low based true range
+- `vwap_numerator`, `cum_vwap_num`, `cum_volume`, `vwap` — Volume-Weighted Average Price and its running parts
+- `sma_5`, `sma_10` — Simple Moving Averages
+- `vol_ma_5` — 5-period volume moving average
+- `momentum_3` — close minus close 3 bars ago
 
 ---
 
@@ -103,7 +133,45 @@ async def export_to_json() -> None:
 asyncio.run(export_to_json())
 ```
 
-With `include_metadata=True`, the JSON file includes a `metadata` section containing symbol, interval, bar count, and export timestamp.
+**Output:**
+
+```text
+Saved to: export/btc_daily.json
+```
+
+The file itself (253 lines for 30 bars):
+
+```json
+{
+  "data": [
+    {
+      "close": 65255.51,
+      "high": 65799.0,
+      "low": 63100.0,
+      "open": 64722.55,
+      "timestamp": "2026-07-20T00:00:00+00:00",
+      "volume": 21323.48702
+    },
+    ...
+  ],
+  "metadata": {
+    "export_timestamp": "2026-08-18 13:02:07.177502",
+    "file_path": "export/btc_daily.json",
+    "format": "json",
+    "interval": null,
+    "record_count": 30,
+    "source": "ohlcv",
+    "symbol": "unknown"
+  }
+}
+```
+
+# keys are alphabetical, not declaration order — the writer uses `sort_keys=True`
+
+With `include_metadata=True`, the JSON file includes a `metadata` section containing symbol,
+interval, bar count, and export timestamp. `symbol` is `"unknown"` and `interval` is `null` when
+exporting a plain `list[OHLCVBar]` — neither is carried on the bar objects. Pass `interval=` to
+`to_json()` to populate it.
 
 ---
 
@@ -131,6 +199,15 @@ async def export_to_csv() -> None:
 asyncio.run(export_to_csv())
 ```
 
+**Output:**
+
+```text
+Saved to: export/aapl_daily.csv
+```
+
+`include_metadata=True` also writes a sidecar `export/aapl_daily.metadata.txt`. The CSV header is
+`timestamp,open,high,low,close,volume`.
+
 ---
 
 ## Scanner Results Export
@@ -150,7 +227,7 @@ async def export_scanner_results() -> None:
         sort_order="desc",
         range_end=50,
     )
-    response = await service.scan_market(Market.US, request)
+    response = await service.scan_market(Market.AMERICA, request)
 
     exporter = DataExporter()
     df = await exporter.to_polars(response.data)
@@ -161,6 +238,16 @@ async def export_scanner_results() -> None:
 
 asyncio.run(export_scanner_results())
 ```
+
+**Output:**
+
+```text
+Exported 50 stocks with 102 columns
+```
+
+# 101 requested columns + an `export_timestamp` String column the exporter always appends
+# first: name, close, pricescale, minmov, fractional, minmove2, currency, change
+# last:  open, change_abs, export_timestamp
 
 ---
 
@@ -181,10 +268,12 @@ async def custom_analysis() -> None:
     exporter = DataExporter()
     df = await exporter.to_polars(bars, add_analysis=True)
 
-    # Add Bollinger Bands and momentum
+    # Add Bollinger Bands and momentum.
+    # add_analysis gives sma_5 and sma_10 — compute the 20-period mean inline.
+    sma_20 = pl.col("close").rolling_mean(20)
     df = df.with_columns([
-        (pl.col("sma_20") + 2 * pl.col("close").rolling_std(20)).alias("bb_upper"),
-        (pl.col("sma_20") - 2 * pl.col("close").rolling_std(20)).alias("bb_lower"),
+        (sma_20 + 2 * pl.col("close").rolling_std(20)).alias("bb_upper"),
+        (sma_20 - 2 * pl.col("close").rolling_std(20)).alias("bb_lower"),
         (pl.col("volume") / pl.col("volume").rolling_mean(10)).alias("volume_ratio"),
         (pl.col("close") - pl.col("close").shift(5)).alias("momentum_5d"),
     ])
@@ -194,6 +283,14 @@ async def custom_analysis() -> None:
 
 asyncio.run(custom_analysis())
 ```
+
+**Output:**
+
+```text
+Saved 200 rows with 21 columns
+```
+
+# 17 from add_analysis + bb_upper, bb_lower, volume_ratio, momentum_5d
 
 ---
 
@@ -223,6 +320,16 @@ async def export_all_formats(symbol: str) -> None:
 
 asyncio.run(export_all_formats("NASDAQ:AAPL"))
 ```
+
+**Output:**
+
+```text
+DataFrame: (90, 17)
+JSON:      export/NASDAQ_AAPL.json
+CSV:       export/NASDAQ_AAPL.csv
+```
+
+# `to_json` / `to_csv` return a `Path`; `./export/` must already exist
 
 ---
 

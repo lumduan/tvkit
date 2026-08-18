@@ -55,6 +55,38 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+**Output:**
+
+```text
+NASDAQ:AAPL: 252 bars, last close 305.59
+NASDAQ:MSFT: 252 bars, last close 480.35
+NASDAQ:NVDA: 252 bars, last close 225.01
+Done: 3/3 in 1.5s
+```
+
+The `BatchDownloadSummary` itself:
+
+| field | value |
+|---|---|
+| `total_count` | `3` |
+| `success_count` | `3` |
+| `failure_count` | `0` |
+| `elapsed_seconds` | `1.5192913541104645` |
+| `interval` | `'1D'` |
+| `failed_symbols` | `[]` |
+| `successful_symbols` | `['NASDAQ:AAPL', 'NASDAQ:MSFT', 'NASDAQ:NVDA']` |
+
+and one `SymbolResult` (its `bars` list elided):
+
+```text
+{'symbol': 'NASDAQ:AAPL', 'success': True, 'error': None, 'attempts': 1,
+ 'elapsed_seconds': 1.5192913541104645}
+```
+
+# `failed_symbols` and `successful_symbols` are computed fields — they appear in model_dump()
+
+*Example output — live market values will differ.*
+
 ---
 
 ## Date-range mode
@@ -100,6 +132,16 @@ request = BatchDownloadRequest(
 summary = await batch_download(request)
 ```
 
+**Output:**
+
+```text
+[1/3] NASDAQ:MSFT — OK
+[2/3] NASDAQ:NVDA — OK
+[3/3] NASDAQ:AAPL — OK
+```
+
+Note the order: callbacks fire in **completion** order, not the order symbols were listed.
+
 **Callback contract:**
 - Called once per symbol, after its terminal result (success or final-attempt failure).
 - `completed` is 1-based; `total` is the deduplicated symbol count.
@@ -131,6 +173,25 @@ print(f"Success: {summary.success_count}/{summary.total_count}")
 print(f"Failed symbols: {summary.failed_symbols}")
 ```
 
+**Output** — with `NASDAQ:INVALID_FAKE_XYZ` added to the list:
+
+```text
+Success: 2/3
+Failed symbols: ['NASDAQ:INVALID_FAKE_XYZ']
+```
+
+The failed `SymbolResult` carries an `ErrorInfo`:
+
+| field | value |
+|---|---|
+| `success` | `False` |
+| `attempts` | `1` |
+| `bars` | `[]` |
+| `error.exception_type` | `'ValueError'` |
+| `error.message` | `'TradingView series error: Invalid interval or bars count. …'` |
+
+# `ValueError` is non-retryable, so only one attempt is made even with max_attempts=2
+
 ### Strict mode — raise on any failure
 
 Set `strict=True` to raise `BatchDownloadError` if any symbol fails:
@@ -154,6 +215,15 @@ except BatchDownloadError as exc:
             process(result)
 ```
 
+**Output:**
+
+```text
+Batch failed: ['NASDAQ:INVALID_FAKE_XYZ']
+```
+
+`str(exc)` is `1 of 2 symbols failed`, and `exc.summary.success_count` is `1` — the successful
+symbol's bars are still on `exc.summary`.
+
 ### Deferred error check — `raise_if_failed()`
 
 Inspect the summary first, then raise if needed:
@@ -168,6 +238,12 @@ for result in summary.results:
 
 # Now assert no failures (raises if any symbol failed)
 summary.raise_if_failed()
+```
+
+**Output** — nothing is printed when every symbol succeeded. With one failure out of three:
+
+```text
+BatchDownloadError: 1 of 3 symbols failed
 ```
 
 ---
@@ -189,6 +265,11 @@ request = BatchDownloadRequest(
 )
 summary = await batch_download(request)
 ```
+
+<!-- TODO: output unverified -->
+
+> Not captured: requires a valid `TVKIT_AUTH_TOKEN`. The token is held as a `SecretStr`, so
+> `request.model_dump()` renders it as `SecretStr('**********')`.
 
 Or use browser cookie extraction:
 
@@ -269,6 +350,15 @@ assert summary.total_count == 3
 assert len(summary.results) == 3
 ```
 
+**Output:**
+
+Both assertions hold — nothing is printed. The deduplicated symbols, in input order:
+
+```text
+total_count=3  len(results)=3
+symbols: ['NASDAQ:AAPL', 'NASDAQ:MSFT', 'NYSE:JPM']
+```
+
 ---
 
 ## Exporting results
@@ -297,6 +387,15 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+**Output:**
+
+```text
+Exported NASDAQ:AAPL → export/NASDAQ_AAPL.csv
+Exported NASDAQ:MSFT → export/NASDAQ_MSFT.csv
+```
+
+# `export/` must already exist — `to_csv` does not create it
 
 ---
 

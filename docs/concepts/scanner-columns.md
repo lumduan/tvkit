@@ -63,10 +63,26 @@ request = create_comprehensive_request(
     range_end=20,
 )
 
-response = await service.scan_market(Market.US, request)
+response = await service.scan_market(Market.AMERICA, request)
 ```
 
-See the [Scanner guide](../guides/scanner.md) for full request construction and filtering examples.
+**Output:**
+
+`create_comprehensive_request()` asks for 101 columns; `response.data` holds 20 `StockData` rows
+out of `total_count=4943`:
+
+| name | close | market_cap_basic | sector |
+|---|---|---|---|
+| NVDA | 225.01 | 5,445,242,088,564 | Electronic Technology |
+| AAPL | 305.59 | 4,459,835,263,931 | Electronic Technology |
+| GOOG | 341.45 | 4,191,656,347,478 | Technology Services |
+
+# 20 rows total, showing 3 · showing 4 of the 20 declared StockData fields
+# columns beyond the 20 declared fields land in `extra` (StockData sets extra="allow")
+
+*Example output — live market values will differ.*
+
+See the [Scanner guide](../guides/scanner.md) for full request construction.
 
 ## Inspecting Available Columns
 
@@ -76,5 +92,5 @@ For the complete list of available scanner fields including exact column names, 
 
 ## See Also
 
-- [Scanner guide](../guides/scanner.md) — building requests, applying filters, regional scanning
+- [Scanner guide](../guides/scanner.md) — building requests, sorting, pagination, regional scanning
 - [Scanner API reference](../reference/scanner/scanner.md) — full column list and field names

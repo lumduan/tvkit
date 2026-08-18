@@ -20,6 +20,10 @@ The scanner is useful for:
 - Ranking stocks within a market or region
 - Building watchlists or investment universes for systematic strategies
 
+tvkit does not send filter criteria to TradingView — a request selects columns, a sort order and a
+row range. Narrow the result set with `sort_by` / `range_end`, then filter the returned
+`list[StockData]` in Python.
+
 ---
 
 ## Data Flow
@@ -59,7 +63,7 @@ async def scan_us_market() -> None:
         range_end=10,
     )
 
-    response = await service.scan_market(Market.US, request)
+    response = await service.scan_market(Market.AMERICA, request)
 
     for stock in response.data:
         print(f"{stock.name:12s}  price={stock.close}  market_cap={stock.market_cap_basic:,.0f}")
@@ -67,39 +71,21 @@ async def scan_us_market() -> None:
 asyncio.run(scan_us_market())
 ```
 
-Example output:
+**Output:**
 
-```text
-AAPL          price=192.31  market_cap=3,004,000,000,000
-MSFT          price=411.82  market_cap=3,062,000,000,000
-NVDA          price=875.28  market_cap=2,160,000,000,000
-```
+| name | close | market_cap_basic |
+|---|---|---|
+| NVDA | 225.01 | 5,445,242,088,564 |
+| AAPL | 305.59 | 4,459,835,263,931 |
+| GOOG | 341.45 | 4,191,656,347,478 |
+| MSFT | 480.35 | 3,566,860,693,823 |
+| AMZN | 261.31 | 2,818,571,764,248 |
 
-`Market.US` covers both NASDAQ and NYSE. `range_end=10` returns the top 10 results.
+# 10 rows total, showing 5 — `total_count` reports 4943 matching symbols
 
----
+*Example output — live market values will differ.*
 
-## Filter Syntax
-
-Apply criteria to narrow results. Filter field names must match TradingView column identifiers exactly — see [Scanner Column Sets](../concepts/scanner-columns.md) for available fields.
-
-```python
-from tvkit.api.scanner import create_comprehensive_request
-from tvkit.api.scanner.models.scanner import ScannerFilter
-
-request = create_comprehensive_request(
-    sort_by="market_cap_basic",
-    sort_order="desc",
-    range_end=50,
-    filters=[
-        ScannerFilter(left="market_cap_basic", operation="greater", right=1_000_000_000),
-        ScannerFilter(left="price_earnings_ttm", operation="in_range", right=[5, 25]),
-        ScannerFilter(left="sector", operation="equal", right="Technology"),
-    ],
-)
-```
-
-Common filter operations: `"equal"`, `"greater"`, `"less"`, `"in_range"`, `"not_equal"`.
+`Market.AMERICA` covers both NASDAQ and NYSE. `range_end=10` returns the top 10 results.
 
 ---
 
@@ -120,11 +106,11 @@ Increment `range_start` by `range_end` to page through results:
 
 ```python
 from tvkit.api.scanner import ScannerService, Market
-from tvkit.api.scanner.models.scanner import ScannerStock
+from tvkit.api.scanner.models.scanner import StockData
 
-async def paginate_scan(market: Market, page_size: int = 25) -> list[ScannerStock]:
+async def paginate_scan(market: Market, page_size: int = 25) -> list[StockData]:
     service = ScannerService()
-    all_stocks: list[ScannerStock] = []
+    all_stocks: list[StockData] = []
     offset = 0
 
     while True:
@@ -173,47 +159,20 @@ async def scan_asia_pacific() -> None:
 asyncio.run(scan_asia_pacific())
 ```
 
-Available regions: `NORTH_AMERICA`, `EUROPE`, `ASIA_PACIFIC`, `MIDDLE_EAST_AFRICA`, `LATIN_AMERICA`.
+**Output:**
 
----
+| market | leader | market_cap_basic |
+|---|---|---|
+| australia | BHP | 311,700,320,153 |
+| bangladesh | GP | 337,980,106,342 |
+| china | 688825 | 3,690,487,319,188 |
+| hongkong | 700 | 3,968,954,687,500 |
+| indonesia | BBCA | 782,796,547,656,250 |
 
-## SP500-Style Screening Example
+# 17 markets in ASIA_PACIFIC, showing 5
+# caps are in each market's own reporting currency — IDR and KRW are not comparable to USD
 
-Screen for large-cap US technology stocks with strong fundamentals:
-
-```python
-import asyncio
-from tvkit.api.scanner import ScannerService, Market
-from tvkit.api.scanner import create_comprehensive_request
-from tvkit.api.scanner.models.scanner import ScannerFilter
-
-async def screen_us_tech() -> None:
-    service = ScannerService()
-
-    request = create_comprehensive_request(
-        sort_by="market_cap_basic",
-        sort_order="desc",
-        range_end=20,
-        filters=[
-            ScannerFilter(left="market_cap_basic", operation="greater", right=10_000_000_000),
-            ScannerFilter(left="sector", operation="equal", right="Technology"),
-            ScannerFilter(left="return_on_equity", operation="greater", right=0.15),
-            ScannerFilter(left="gross_profit_margin_ttm", operation="greater", right=0.40),
-        ],
-    )
-
-    response = await service.scan_market(Market.US, request)
-
-    print(f"Found {len(response.data)} qualifying stocks\n")
-    for stock in response.data:
-        print(
-            f"{stock.name:10s}  P/E={stock.price_earnings_ttm or 'N/A':>6}  "
-            f"ROE={stock.return_on_equity or 'N/A':>6.1%}  "
-            f"Cap=${stock.market_cap_basic / 1e9:.1f}B"
-        )
-
-asyncio.run(screen_us_tech())
-```
+Available regions: `GLOBAL`, `NORTH_AMERICA`, `EUROPE`, `MIDDLE_EAST_AFRICA`, `MEXICO_SOUTH_AMERICA`, `ASIA_PACIFIC`.
 
 ---
 
@@ -233,7 +192,7 @@ The `Market` enum includes 69 exchanges across five global regions. Examples:
 
 | Region | Market Enum | Exchange(s) |
 |--------|------------|-------------|
-| North America | `Market.US` | NASDAQ, NYSE |
+| North America | `Market.AMERICA` | NASDAQ, NYSE |
 | North America | `Market.CANADA` | TSX, TSXV |
 | Europe | `Market.GERMANY` | XETRA |
 | Europe | `Market.UK` | LSE |
@@ -251,5 +210,5 @@ See [Markets reference](../reference/scanner/markets.md) for the full list of 69
 
 - [Scanner Column Sets](../concepts/scanner-columns.md) — choosing the right column set
 - [Exporting Data guide](exporting.md) — saving scanner results to CSV, JSON, or Polars
-- [Scanner API reference](../reference/scanner/scanner.md) — full filter and request specification
+- [Scanner API reference](../reference/scanner/scanner.md) — full request specification
 - [Markets reference](../reference/scanner/markets.md) — complete market list

@@ -257,6 +257,22 @@ print(info.name)       # "Thailand"
 print(info.exchanges)  # ["SET"]
 ```
 
+**Output:**
+
+```text
+Thailand
+['SET']
+```
+
+`MarketInfo` is a `NamedTuple`, so `repr(info)` is
+`MarketInfo(name='Thailand', exchanges=['SET'], description='Thai stock market')`.
+
+| field | value |
+|---|---|
+| `name` | `'Thailand'` |
+| `exchanges` | `['SET']` |
+| `description` | `'Thai stock market'` |
+
 ---
 
 ### `get_markets_by_region()`
@@ -293,6 +309,20 @@ async def scan_all_europe() -> None:
             print(f"{market.value}: {len(result.data)} stocks")
 ```
 
+**Output:**
+
+```text
+austria: 50 stocks
+belgium: 50 stocks
+switzerland: 50 stocks
+cyprus: 32 stocks
+czech: 25 stocks
+...
+```
+
+# 30 markets in EUROPE, showing 5
+# smaller exchanges return fewer than the requested range_end=50
+
 ---
 
 ### `get_all_markets()`
@@ -314,6 +344,12 @@ from tvkit.api.scanner.markets import get_all_markets
 
 markets = get_all_markets()
 print(len(markets))  # 69
+```
+
+**Output:**
+
+```text
+69
 ```
 
 ---
@@ -347,6 +383,16 @@ is_valid_market("THAILAND")  # False  — values are lowercase
 is_valid_market("nasdaq")    # False  — exchanges are not market identifiers
 is_valid_market("apac")      # False  — region names are not market identifiers
 ```
+
+**Output:**
+
+| Argument | Return |
+|---|---|
+| `"america"` | `True` |
+| `"thailand"` | `True` |
+| `"THAILAND"` | `False` |
+| `"nasdaq"` | `False` |
+
 
 > **Note:** `Market` values are all lowercase. `"THAILAND"` and `"Thailand"` are not valid; only `"thailand"` is.
 

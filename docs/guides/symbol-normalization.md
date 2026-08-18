@@ -112,6 +112,18 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+**Output:**
+
+All three calls resolve to `NASDAQ:AAPL` and return identical data:
+
+```text
+len: 100 / 100 / 100
+identical last close: 305.59 / 305.59 / 305.59
+all equal: True
+```
+
+*Example output — live market values will differ.*
+
 The internal call ordering inside each `OHLCV` method is:
 
 ```python
@@ -210,6 +222,17 @@ for sym in invalid_cases:
     except SymbolNormalizationError as exc:
         logger.error("Invalid symbol %r: %s", exc.original, exc.reason)
 ```
+
+**Output:**
+
+```text
+ERROR    Invalid symbol 'AAPL': no exchange prefix
+ERROR    Invalid symbol '': symbol must not be empty
+ERROR    Invalid symbol 'INVALID SYMBOL': symbol must not contain internal whitespace
+ERROR    Invalid symbol 'A:B:C': symbol contains multiple ':' separators
+```
+
+# all four raised before any network call
 
 `SymbolNormalizationError` is always raised before any network call. Errors from
 `validate_symbols` (symbol not found in TradingView) remain `ValueError` and are a separate

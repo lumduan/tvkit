@@ -1,0 +1,34 @@
+### Basic Scan (scanner.md:48) — Market.AMERICA, range_end=10
+NVDA          price=225.01  market_cap=5,445,242,088,564
+AAPL          price=305.59  market_cap=4,459,835,263,931
+GOOG          price=341.45  market_cap=4,191,656,347,478
+MSFT          price=480.35  market_cap=3,566,860,693,823
+AMZN          price=261.31  market_cap=2,818,571,764,248
+SPCX          price=146.23  market_cap=1,984,497,461,372
+AVGO          price=392.43  market_cap=1,867,017,103,664
+META          price=568.97  market_cap=1,449,454,505,050
+TSLA          price=339.3  market_cap=1,340,081,460,183
+MU            price=1011.75  market_cap=1,142,663,403,355
+
+### Regional Scanning (scanner.md:152) — MarketRegion.ASIA_PACIFIC
+(get_markets_by_region returned 17 markets)
+australia        leader=BHP  cap=311,700,320,153
+bangladesh       leader=GP  cap=337,980,106,342
+china            leader=688825  cap=3,690,487,319,188
+hongkong         leader=700  cap=3,968,954,687,500
+indonesia        leader=BBCA  cap=782,796,547,656,250
+india            leader=RELIANCE  cap=17,700,561,093,750
+japan            leader=8306  cap=41,216,852,000,000
+korea            leader=005930  cap=1,733,879,418,676,758
+srilanka         leader=DIAL.N0000  cap=433,335,762,622
+malaysia         leader=MAYBANK  cap=128,213,236,255
+newzealand       leader=FPH  cap=25,089,576,137
+philippines      leader=ICT  cap=1,982,896,427,490
+pakistan         leader=OGDC  cap=1,369,759,823,111
+singapore        leader=D05  cap=214,631,141,331
+thailand         leader=DELTA  cap=3,367,930,429,688
+taiwan           leader=2330  cap=62,108,024,091,797
+vietnam          leader=VIC  cap=1,514,001,059,765,625
+
+### MarketRegion members (for the prose list at scanner.md:176)
+['GLOBAL', 'NORTH_AMERICA', 'EUROPE', 'MIDDLE_EAST_AFRICA', 'MEXICO_SOUTH_AMERICA', 'ASIA_PACIFIC']

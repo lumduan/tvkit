@@ -1,0 +1,30 @@
+### 1. Fetch Historical OHLCV Bars — bars_count=5
+1786455000.0  close=304.91
+1786541400.0  close=302.25
+1786627800.0  close=305.26
+1786714200.0  close=305.93
+1786973400.0  close=305.59
+
+### 2. Stream Real-time Bars — BINANCE:BTCUSDT interval=1, break at 3
+BTC close=64,153.07
+BTC close=64,147.20
+BTC close=64,145.64
+
+### 3. Scan a Market — Market.AMERICA, top 5 by market_cap_basic
+(rows=5 total_count=4943)
+NVDA  $225.01  cap=5,445,242,088,564
+AAPL  $305.59  cap=4,459,835,263,931
+GOOG  $341.45  cap=4,191,656,347,478
+MSFT  $480.35  cap=3,566,860,693,823
+AMZN  $261.31  cap=2,818,571,764,248
+
+### 4. Export to CSV — bars_count=30 -> ./aapl_30d.csv
+Saved: aapl_30d.csv
+-- files written --
+aapl_30d.csv  (1994 bytes)
+aapl_30d.metadata.txt  (372 bytes)
+-- head of aapl_30d.csv --
+timestamp,open,high,low,close,volume
+2026-07-07T13:30:00+00:00,315.29,315.48,310.15,310.66,42490002.0
+2026-07-08T13:30:00+00:00,311.91,314.82,307.05,313.39,41323480.0
+2026-07-09T13:30:00+00:00,310.51,316.53,308.16,316.22,48124490.0

@@ -82,6 +82,12 @@ import tvkit
 print(tvkit.__version__)
 ```
 
+**Output:**
+
+```text
+0.12.0
+```
+
 ### Terminal
 
 ```bash

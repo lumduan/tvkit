@@ -55,6 +55,7 @@
 - [ ] Docstrings updated for new or changed public functions
 - [ ] `docs/` updated (if behaviour or APIs changed)
 - [ ] `examples/` verified or updated (if applicable)
+- [ ] New code examples include an Output block
 
 ---
 

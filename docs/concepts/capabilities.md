@@ -126,6 +126,12 @@ async with OHLCV(browser="chrome") as client:
     )
 ```
 
+<!-- TODO: output unverified -->
+
+> Not captured: needs a logged-in Chrome/Firefox profile. The returned count is bounded by the
+> probe-confirmed `max_bars`, not by `bars_count`. Measured anonymously for comparison, the same
+> call at `interval="1"` returns 6240 bars.
+
 **When to use it:**
 
 - You need the highest possible accuracy for `max_bars` before fetching
@@ -175,6 +181,26 @@ async with OHLCV(browser="chrome") as client:
         print(f"Max bars: {account.max_bars} (source: {account.max_bars_source})")
         print(f"Probe status: {account.probe_status}")
 ```
+
+**Output** — a `pro_premium` account, read immediately after `__aenter__`:
+
+```text
+TradingView plan: 'pro_premium'
+Tier: premium
+Max bars: 20000 (source: estimate)
+Probe status: pending
+```
+
+| field | type | value |
+|---|---|---|
+| `plan` | `str` | `'pro_premium'` |
+| `tier` | `str` | `'premium'` |
+| `max_bars` | `int` | `20000` |
+| `max_bars_source` | `Literal['estimate', 'probe']` | `'estimate'` |
+| `probe_status` | `Literal['pending', 'success', 'throttled', 'failed']` | `'pending'` |
+
+# derived from tvkit/auth/models.py and PLAN_TO_BARS / PLAN_TO_TIER, not a live capture
+# in anonymous or direct-token mode `client.account` is None
 
 `client.account` returns `None` for:
 

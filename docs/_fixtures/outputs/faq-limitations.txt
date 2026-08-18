@@ -1,0 +1,16 @@
+Unknown exchange 'BINANCE' — falling back to UTC. Add this exchange to tvkit/time/exchange.py or register it via register_exchange().
+### limitations.md:13 — MAX_BARS_REQUEST
+5000
+
+### faq.md:173 — exchange_timezone
+exchange_timezone('BINANCE') -> 'UTC'
+exchange_timezone('NASDAQ') -> 'America/New_York'
+exchange_timezone('SET') -> 'Asia/Bangkok'
+
+### faq.md:47 — single fetch, 100 bars
+len(bars)=100 type=OHLCVBar last_close=305.59
+
+### faq.md:127 — asyncio.gather over two symbols
+len(results)=2
+  100 bars, last close 305.59
+  100 bars, last close 480.35

@@ -15,6 +15,15 @@ from tvkit.api.chart.utils import MAX_BARS_REQUEST
 print(MAX_BARS_REQUEST)  # inspect the current limit
 ```
 
+**Output:**
+
+```text
+5000
+```
+
+`MAX_BARS_REQUEST` is a module-level `int` constant, not an account-derived value — it does not
+change when you authenticate. The per-account limit is `client.account.max_bars`.
+
 ---
 
 ## TradingView Historical Depth Limitation — The `max_bars` Window

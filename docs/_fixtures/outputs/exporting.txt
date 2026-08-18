@@ -1,0 +1,62 @@
+### Polars DataFrame Export (exporting.md:56) — bars_count=90, add_analysis=True
+shape: (5, 6)
+┌───────────────────────────┬────────┬─────────────┬─────────┬────────┬────────────┐
+│ timestamp                 ┆ close  ┆ volume      ┆ sma_5   ┆ sma_10 ┆ vwap       │
+│ ---                       ┆ ---    ┆ ---         ┆ ---     ┆ ---    ┆ ---        │
+│ str                       ┆ f64    ┆ f64         ┆ f64     ┆ f64    ┆ f64        │
+╞═══════════════════════════╪════════╪═════════════╪═════════╪════════╪════════════╡
+│ 2026-04-09T13:30:00+00:00 ┆ 260.49 ┆ 2.8121574e7 ┆ null    ┆ null   ┆ 259.226667 │
+│ 2026-04-10T13:30:00+00:00 ┆ 260.48 ┆ 3.1291473e7 ┆ null    ┆ null   ┆ 259.931206 │
+│ 2026-04-13T13:30:00+00:00 ┆ 259.2  ┆ 3.6234698e7 ┆ null    ┆ null   ┆ 259.457206 │
+│ 2026-04-14T13:30:00+00:00 ┆ 258.83 ┆ 4.837071e7  ┆ null    ┆ null   ┆ 259.410004 │
+│ 2026-04-15T13:30:00+00:00 ┆ 266.43 ┆ 4.991351e7  ┆ 261.086 ┆ null   ┆ 260.48841  │
+└───────────────────────────┴────────┴─────────────┴─────────┴────────┴────────────┘
+
+Columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'return_pct', 'typical_price', 'true_range', 'vwap_numerator', 'sma_5', 'sma_10', 'vol_ma_5', 'cum_vwap_num', 'cum_volume', 'vwap', 'momentum_3']
+
+### JSON Export (exporting.md:86) — BTCUSDT 30 bars
+Saved to: export/btc_daily.json
+-- first 14 lines of btc_daily.json --
+{
+  "data": [
+    {
+      "close": 65255.51,
+      "high": 65799.0,
+      "low": 63100.0,
+      "open": 64722.55,
+      "timestamp": "2026-07-20T00:00:00+00:00",
+      "volume": 21323.48702
+    },
+    {
+      "close": 66556.16,
+      "high": 66956.15,
+      "low": 65148.75,
+-- total 253 lines; tail --
+    }
+  ],
+  "metadata": {
+    "export_timestamp": "2026-08-18 13:02:07.177502",
+    "file_path": "export/btc_daily.json",
+    "format": "json",
+    "interval": null,
+    "record_count": 30,
+    "source": "ohlcv",
+    "symbol": "unknown"
+  }
+}
+
+### CSV Export (exporting.md:114) — AAPL 90 bars
+Saved to: export/aapl_daily.csv
+
+### Scanner Results Export (exporting.md:140) — Market.AMERICA range_end=50
+Exported 50 stocks with 102 columns
+first 8 columns: ['name', 'close', 'pricescale', 'minmov', 'fractional', 'minmove2', 'currency', 'change']
+last 3 columns: ['open', 'change_abs', 'export_timestamp']
+
+### Custom Analysis (exporting.md:171) — 200 bars, rolling_mean(20) instead of sma_20
+Saved 200 rows with 21 columns
+
+### Multi-format Export (exporting.md:204)
+DataFrame: (90, 17)
+JSON:      export/NASDAQ_AAPL.json
+CSV:       export/NASDAQ_AAPL.csv

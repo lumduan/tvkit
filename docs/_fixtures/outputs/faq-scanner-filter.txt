@@ -1,0 +1,3 @@
+6 of 20 rows matched
+matched: ['NVDA', 'AAPL', 'AVGO', 'MU', 'AMD', 'INTC']
+sectors present: ['Communications', 'Consumer Durables', 'Electronic Technology', 'Energy Minerals', 'Finance', 'Health Technology', 'Retail Trade', 'Technology Services']

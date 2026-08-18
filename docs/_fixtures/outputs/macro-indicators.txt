@@ -1,0 +1,29 @@
+### Fetching Historical Data (macro-indicators.md:47)
+NDFI: 100 bars  latest=58.820000
+PCC:  100 bars  latest=0.9133
+  2026-08-11  NDFI=52.940000
+  2026-08-12  NDFI=56.860000
+  2026-08-13  NDFI=62.740000
+  2026-08-14  NDFI=64.700000
+  2026-08-17  NDFI=58.820000
+
+### Liquidity Regime Detection (macro-indicators.md:95) — 252 bars
+NDFI = 58.820000  (88.5th percentile)
+Regime: DEFENSIVE — strong demand for income assets
+(len(bars)=252)
+
+### Sentiment Analysis (macro-indicators.md:135) — USI:PCC 252 bars
+PCC = 0.9133  (76.6th percentile)
+Sentiment: NEUTRAL
+(len(bars)=252)
+
+### Combined Regime Score (macro-indicators.md:169)
+NDFI percentile: 88.5
+PCC percentile:  76.6
+Risk score:      82.5  →  Risk-OFF: consider reducing equity exposure
+
+### Real-time Monitoring (macro-indicators.md:205) — stream INDEX:NDFI 1D
+NDFI daily close update: 60.190000
+NDFI daily close update: 56.310000
+NDFI daily close update: 51.960000
+NDFI daily close update: 52.940000

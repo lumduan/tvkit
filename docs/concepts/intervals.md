@@ -86,6 +86,14 @@ validate_interval("1D")   # passes silently
 validate_interval("1h")   # raises ValueError: invalid interval
 ```
 
+**Output:**
+
+```text
+ValueError: Invalid interval format: '1h'. Expected formats: minutes (1, 5, 15), seconds (15S), hours (1H), days (D, 1D), weeks (W, 1W), months (M, 1M)
+```
+
+`validate_interval` returns `None` on success — it raises or it is silent.
+
 An invalid interval is always a local programming error, not a network issue.
 
 ## See Also

@@ -117,6 +117,10 @@ See [`scripts/README.md`](scripts/README.md) for full usage documentation.
 - Update docstrings for any changed public functions
 - If adding a new feature, add or update the relevant file in `docs/`
 - Example scripts belong in `examples/` and must be fully runnable
+- Every runnable code block in `docs/` is followed by an `**Output:**` block showing what it
+  returns. Run the example and paste the real output; never invent field names or values. See
+  [`docs/reference/_style.md`](docs/reference/_style.md) Style Rule 11 for the type-to-rendering
+  table, and save captures under `docs/_fixtures/outputs/`
 
 ## Commit Messages
 
