@@ -49,6 +49,21 @@ async with OHLCV() as client:
     bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "1D", 100)
 ```
 
+**Output:**
+
+Returns 100 `OHLCVBar` records, oldest first:
+
+| timestamp | date | open | high | low | close | volume |
+|---|---|---|---|---|---|---|
+| 1786455000.0 | 2026-08-11 | 307.75 | 309.97 | 302.79 | 304.91 | 37,476,746 |
+| 1786541400.0 | 2026-08-12 | 305.1 | 305.66 | 300.57 | 302.25 | 41,657,768 |
+| 1786973400.0 | 2026-08-17 | 306.21 | 307.66 | 302.939 | 305.59 | 38,169,263 |
+
+# 100 rows total, showing the last 3
+# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+
+*Example output — live market values will differ.*
+
 In other contexts, structure the entire program as an async function and call `asyncio.run()` once at the top level.
 
 ---
@@ -57,7 +72,7 @@ In other contexts, structure the entire program as an async function and call `a
 
 ### What symbol format does tvkit use?
 
-Symbols follow the `EXCHANGE:SYMBOL` format (e.g., `NASDAQ:AAPL`, `BINANCE:BTCUSDT`, `FOREX:EURUSD`). tvkit also accepts dash format (`USI-PCC`) and auto-converts it to the colon format. See [Symbols](concepts/symbols.md).
+Symbols follow the `EXCHANGE:SYMBOL` format (e.g., `NASDAQ:AAPL`, `BINANCE:BTCUSDT`, `FX_IDC:EURUSD`). tvkit also accepts dash format (`USI-PCC`) and auto-converts it to the colon format. See [Symbols](concepts/symbols.md).
 
 ### How many bars can I fetch at once?
 
@@ -132,6 +147,17 @@ async def fetch(symbol: str) -> list[OHLCVBar]:
 results = await asyncio.gather(fetch("NASDAQ:AAPL"), fetch("NASDAQ:MSFT"))
 ```
 
+**Output:**
+
+```text
+len(results)=2
+  100 bars, last close 305.59
+  100 bars, last close 480.35
+```
+
+`results` is a `list[list[OHLCVBar]]` in the order the coroutines were passed, not completion
+order. Each `fetch()` opens its own connection — do not share one `OHLCV` instance across tasks.
+
 ---
 
 ## Timezones
@@ -157,6 +183,17 @@ from tvkit.time import convert_to_exchange_timezone
 df_local = convert_to_exchange_timezone(df, "NASDAQ")  # America/New_York
 ```
 
+**Output:**
+
+The `timestamp` column becomes `Datetime(time_unit='us', time_zone='America/New_York')`, rendering
+as `2026-08-14 13:30:00 EDT`. Column count and order are unchanged, and `df` is not mutated.
+
+`df` must carry a **numeric** epoch column. `DataExporter.to_polars()` defaults to
+`timestamp_format="iso"`, which produces a `String` column and raises
+`InvalidOperationError: arithmetic on string and numeric not allowed`. Build the frame with
+`ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")` — see
+[Timezones](concepts/timezones.md#research-timezone-convention).
+
 See [Concepts: Timezones](concepts/timezones.md).
 
 ### Why is BINANCE timezone UTC?
@@ -178,6 +215,24 @@ exchange_timezone("NASDAQ")   # "America/New_York"
 exchange_timezone("SET")      # "Asia/Bangkok"
 ```
 
+**Output:**
+
+```text
+UTC
+America/New_York
+Asia/Bangkok
+```
+
+`NASDAQ` and `SET` are two of the 106 registered exchanges. `BINANCE` is **not** registered — it
+hits the unknown-exchange fallback, which returns `"UTC"` and logs once:
+
+```text
+Unknown exchange 'BINANCE' — falling back to UTC. Add this exchange to tvkit/time/exchange.py or register it via register_exchange().
+```
+
+The value is right for a 24/7 venue, but if you want it silent, call
+`register_exchange("BINANCE", "UTC")` first.
+
 ### How do I display timestamps in my local timezone?
 
 Use `convert_to_timezone()` for any IANA timezone, or `convert_to_exchange_timezone()` to resolve
@@ -193,6 +248,12 @@ df_local = convert_to_timezone(df, "Asia/Bangkok")
 df_ny = convert_to_exchange_timezone(df, "NASDAQ")     # America/New_York
 df_bkk = convert_to_exchange_timezone(df, "SET")       # Asia/Bangkok
 ```
+
+**Output:**
+
+Each call returns a **new** DataFrame whose `timestamp` column has become
+`Datetime(time_unit='us', time_zone=<tz>)`; every other column is untouched. Both functions need a
+numeric epoch column — see the note above.
 
 Both functions return a new DataFrame; the original is not mutated.
 

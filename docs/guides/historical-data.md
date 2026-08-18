@@ -314,6 +314,10 @@ df_utc = convert_to_exchange_timezone(df, "BINANCE")   # UTC (crypto, 24/7)
 Crypto exchanges like `BINANCE` and `COINBASE` map to `"UTC"`. This is correct — they trade 24/7
 with no market open/close session and no concept of exchange-local time.
 
+They reach `"UTC"` through the unknown-exchange fallback rather than a registry entry, so the first
+call also logs `Unknown exchange 'BINANCE' — falling back to UTC.` Call
+`register_exchange("BINANCE", "UTC")` to silence it.
+
 ### When to Keep UTC
 
 Do **not** convert timestamps for backtesting, ML training, or cross-dataset joins. Converting
