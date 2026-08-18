@@ -90,6 +90,20 @@ async def seed_and_stream(symbol: str, interval: str) -> None:
 asyncio.run(seed_and_stream("BINANCE:BTCUSDT", "1"))
 ```
 
+**Output:**
+
+```text
+Loaded 500 historical bars
+Live bar: 1787033280.0 close=64170.01
+Live bar: 1787033340.0 close=64199.21
+Live bar: 1787033400.0 close=64222.95
+...
+```
+
+The seed completes in one round-trip; the live loop then runs until you break it.
+
+*Example output — live market values will differ.*
+
 ## See Also
 
 - [Historical Data guide](../guides/historical-data.md) — count mode, date-range mode, and `MAX_BARS_REQUEST`

@@ -48,6 +48,17 @@ normalize_symbol("  NASDAQ:AAPL  ")   # whitespace padding
 normalize_symbol("NASDAQ:AAPL")       # already canonical — returned unchanged
 ```
 
+**Output:**
+
+| Input | Return value |
+|---|---|
+| `"nasdaq:aapl"` | `'NASDAQ:AAPL'` |
+| `"NASDAQ-AAPL"` | `'NASDAQ:AAPL'` |
+| `"  NASDAQ:AAPL  "` | `'NASDAQ:AAPL'` |
+| `"NASDAQ:AAPL"` | `'NASDAQ:AAPL'` |
+
+`normalize_symbol` returns a plain `str` and performs no I/O.
+
 Supported input variants:
 
 | Input | Canonical output |
@@ -98,6 +109,15 @@ from tvkit.api.utils import validate_symbols
 canonical = normalize_symbol("nasdaq:aapl")          # → "NASDAQ:AAPL"
 await validate_symbols(canonical)                    # raises ValueError if not found
 ```
+
+**Output:**
+
+```text
+True
+```
+
+`validate_symbols` returns `True` for a symbol TradingView knows, and raises `ValueError`
+otherwise — it never returns `False`.
 
 See [tvkit.api.utils reference](../reference/chart/utils.md) for full parameter documentation.
 

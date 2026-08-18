@@ -24,10 +24,19 @@ async with OHLCV() as client:
 
 for bar in bars:
     print(bar.timestamp)
-# 1704067200.0  ← UTC epoch seconds
-# 1704153600.0
-# 1704240000.0
 ```
+
+**Output:**
+
+```text
+1786627800.0
+1786714200.0
+1786973400.0
+```
+
+Plain UTC epoch seconds, as a `float` — `OHLCVBar.timestamp` is never a `datetime`.
+
+*Example output — live market values will differ.*
 
 tvkit never stores local time internally. There is no implicit timezone, no locale-dependent
 behavior, and no silent conversion.
@@ -72,9 +81,16 @@ from datetime import datetime
 from tvkit.time import to_utc
 
 dt = to_utc(datetime(2024, 6, 1, 9, 30))
-# UserWarning: Naive datetime 2024-06-01 09:30:00 assumed UTC.
-#              Attach tzinfo=timezone.utc to suppress this warning.
 ```
+
+**Output:**
+
+```text
+UserWarning: Naive datetime 2024-06-01 09:30:00 assumed UTC. Attach tzinfo=timezone.utc to suppress this warning.
+```
+
+The call still succeeds, returning `datetime.datetime(2024, 6, 1, 9, 30, tzinfo=datetime.timezone.utc)`.
+
 
 To suppress the warning, always pass timezone-aware datetimes:
 
@@ -146,7 +162,7 @@ timezone — so bar times align with market open/close hours.
 import asyncio
 import polars as pl
 from tvkit.api.chart.ohlcv import OHLCV
-from tvkit.export import DataExporter
+from tvkit.export import DataExporter, ExportConfig, ExportFormat
 from tvkit.time import convert_to_exchange_timezone
 
 async def fetch_and_display() -> None:
@@ -154,18 +170,38 @@ async def fetch_and_display() -> None:
         bars = await client.get_historical_ohlcv("NASDAQ:AAPL", "60", bars_count=10)
 
     exporter = DataExporter()
-    df = await exporter.to_polars(bars)
+    # tvkit.time needs a numeric epoch column; to_polars() defaults to an ISO String column.
+    config = ExportConfig(format=ExportFormat.POLARS, timestamp_format="unix")
+    df = (await exporter.export_ohlcv_data(bars, ExportFormat.POLARS, config=config)).data
 
     # Convert UTC epoch → America/New_York for display
     df_local = convert_to_exchange_timezone(df, "NASDAQ")
     print(df_local.select(["timestamp", "close"]))
-    # timestamp                        close
-    # 2024-01-15 09:30:00 EST           185.94
-    # 2024-01-15 10:30:00 EST           186.12
-    # ...
 
 asyncio.run(fetch_and_display())
 ```
+
+**Output:**
+
+```text
+shape: (10, 2)
+┌────────────────────────────────┬─────────┐
+│ timestamp                      ┆ close   │
+│ ---                            ┆ ---     │
+│ datetime[μs, America/New_York] ┆ f64     │
+╞════════════════════════════════╪═════════╡
+│ 2026-08-14 13:30:00 EDT        ┆ 305.98  │
+│ 2026-08-14 14:30:00 EDT        ┆ 305.94  │
+│ 2026-08-14 15:30:00 EDT        ┆ 305.98  │
+│ …                              ┆ …       │
+│ 2026-08-17 13:30:00 EDT        ┆ 304.7   │
+│ 2026-08-17 14:30:00 EDT        ┆ 306.15  │
+│ 2026-08-17 15:30:00 EDT        ┆ 305.665 │
+└────────────────────────────────┴─────────┘
+```
+
+# 10 rows total, polars elides the middle with `…`
+# the column dtype becomes Datetime(time_unit='us', time_zone='America/New_York')
 
 The function returns a new DataFrame with the converted `timestamp` column. The original DataFrame
 is unchanged (Polars immutability).
