@@ -14,6 +14,23 @@ async with OHLCV() as client:
         print(f"{bar.timestamp}  close={bar.close}  volume={bar.volume}")
 ```
 
+**Output:**
+
+| timestamp | date | open | high | low | close | volume |
+|---|---|---|---|---|---|---|
+| 1786455000.0 | 2026-08-11 | 307.75 | 309.97 | 302.79 | 304.91 | 37,476,746 |
+| 1786541400.0 | 2026-08-12 | 305.1 | 305.66 | 300.57 | 302.25 | 41,657,768 |
+| 1786627800.0 | 2026-08-13 | 304.21 | 306.0 | 302.05 | 305.26 | 40,349,289 |
+| 1786714200.0 | 2026-08-14 | 306.0 | 307.49 | 304.3 | 305.93 | 28,229,375 |
+| 1786973400.0 | 2026-08-17 | 306.21 | 307.66 | 302.939 | 305.59 | 38,169,263 |
+
+# 5 rows total, showing 5
+# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+
+The `print()` above emits `1786455000.0  close=304.91  volume=37476746.0` for the first bar.
+
+*Example output — live market values will differ.*
+
 ---
 
 ## Recommended Learning Paths
