@@ -234,7 +234,10 @@ class StockData(BaseModel):
     relative_volume_10d_calc: float | None = Field(
         default=None, description="Relative volume compared to 10-day average"
     )
-    market_cap_basic: int | None = Field(default=None, description="Basic market capitalization")
+    # float, not int: TradingView returns fractional market caps (e.g. 5445242088563.96).
+    # A narrower int annotation makes every such row fail validation and be silently
+    # dropped by ScannerResponse.from_api_response.
+    market_cap_basic: float | None = Field(default=None, description="Basic market capitalization")
     fundamental_currency_code: str | None = Field(
         default=None, description="Fundamental currency code"
     )
