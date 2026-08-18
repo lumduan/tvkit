@@ -1,0 +1,122 @@
+WARNING:tvkit.api.chart.ohlcv:No historical bars received for symbol BINANCE:BTCUSDT
+### scanner/markets.md:252 — get_market_info(Market.THAILAND)
+repr: MarketInfo(name='Thailand', exchanges=['SET'], description='Thai stock market')
+name: Thailand
+exchanges: ['SET']
+
+### scanner/markets.md:312 — get_all_markets()
+len: 69
+
+### scanner/markets.md:341 — is_valid_market
+is_valid_market('america') -> True
+is_valid_market('thailand') -> True
+is_valid_market('THAILAND') -> False
+is_valid_market('nasdaq') -> False
+
+### export/exporter.md:435 — get_supported_formats()
+[<ExportFormat.POLARS: 'polars'>, <ExportFormat.JSON: 'json'>, <ExportFormat.CSV: 'csv'>]
+['polars', 'json', 'csv']
+
+### chart/ohlcv.md:259 — count mode, 100 bars
+Received 100 bars. Last close: 305.59
+
+### chart/ohlcv.md:267 — range mode BTCUSDT 60, Q1 2024
+Traceback (most recent call last):
+  File "<stdin>", line 134, in <module>
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "<stdin>", line 39, in main
+  File "/home/batt/apps/tvkit/tvkit/api/chart/ohlcv.py", line 1326, in get_historical_ohlcv
+    return await self._fetch_single_range(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/batt/apps/tvkit/tvkit/api/chart/ohlcv.py", line 840, in _fetch_single_range
+    raise NoHistoricalDataError(f"No historical data received for symbol {canonical}")
+tvkit.api.chart.exceptions.NoHistoricalDataError: No historical data received for symbol BINANCE:BTCUSDT
+WARNING:tvkit.api.chart.ohlcv:No historical bars received for symbol BINANCE:BTCUSDT
+
+### chart/ohlcv.md:267 — range mode BTCUSDT 60, Q1 2024
+RAISED NoHistoricalDataError: No historical data received for symbol BINANCE:BTCUSDT
+
+### same call inside the max_bars window, for comparison
+Jul 2026 (inside the window): 744 1H bars
+
+### chart/ohlcv.md:280 — datetime objects, INDEX:NDFI 2024
+len=252 first=1704205800.0 last=1735655400.0
+
+### chart/ohlcv.md:374 — get_ohlcv 5-minute stream
+1787019300.0: close=64192.84 volume=48.15705
+1787019600.0: close=64195.48 volume=24.05011
+1787019900.0: close=64157.69 volume=37.9654
+
+### chart/ohlcv.md:418 — get_quote_data
+Current price: 305.59
+  type: QuoteSymbolData | session_id: qs_pxtykflttyrh
+
+### chart/ohlcv.md:461 — get_ohlcv_raw
+{'session_id': '0.10015351.0_hkg1-charts-free-3-tvbs-uydrq-3', 'timestamp': 1787034141, 'timestampMs': 1787034141386, 'release': 'release_209-23', 'studies_metadata_hash': '0fd29e4fdd03e654cf64f97efb4cd78bef47feac', 'auth_scheme_vsn': 2, 'protocol': 'json', 'via': '37.61.224.106:443', 'javastudies': ['3.66']}
+
+### (helper) 100 AAPL daily bars for the export examples
+fetched 100
+
+### export/exporter.md:96 — export_ohlcv_data JSON, timestamp_format='unix'
+True
+btc.json
+first 6 lines of btc.json:
+{
+  "data": [
+    {
+      "close": 252.62,
+      "high": 255.0,
+      "low": 251.6,
+
+### export/exporter.md:150 — export_scanner_data CSV (BASIC, 100)
+rows: 100 | success: True | file_path: us_stocks.csv | record_count: 100
+
+### export/exporter.md:254 — to_polars (ohlcv + scanner)
+['timestamp', 'open', 'high', 'low', 'close', 'volume', 'return_pct', 'typical_price', 'true_range', 'vwap_numerator', 'sma_5', 'sma_10', 'vol_ma_5', 'cum_vwap_num', 'cum_volume', 'vwap', 'momentum_3']
+shape: (5, 6)
+┌──────┬────────┬──────────┬───────────┬─────────┬────────────────────────────┐
+│ name ┆ close  ┆ currency ┆ change    ┆ volume  ┆ export_timestamp           │
+│ ---  ┆ ---    ┆ ---      ┆ ---       ┆ ---     ┆ ---                        │
+│ str  ┆ f64    ┆ str      ┆ f64       ┆ i64     ┆ str                        │
+╞══════╪════════╪══════════╪═══════════╪═════════╪════════════════════════════╡
+│ A    ┆ 148.45 ┆ USD      ┆ -0.053861 ┆ 964634  ┆ 2026-08-18T13:22:28.920147 │
+│ AA   ┆ 51.71  ┆ USD      ┆ 3.461385  ┆ 3999530 ┆ 2026-08-18T13:22:28.920240 │
+│ AACB ┆ 10.585 ┆ USD      ┆ -0.047214 ┆ 43941   ┆ 2026-08-18T13:22:28.920259 │
+│ AACI ┆ 10.05  ┆ USD      ┆ 0.5       ┆ 114     ┆ 2026-08-18T13:22:28.920274 │
+│ AACO ┆ 9.97   ┆ USD      ┆ 0.100402  ┆ 4007    ┆ 2026-08-18T13:22:28.920289 │
+└──────┴────────┴──────────┴───────────┴─────────┴────────────────────────────┘
+
+### export/exporter.md:313 + :371 — to_json / to_csv
+aapl.json | type: PosixPath
+aapl.csv
+files: ['aapl.csv', 'aapl.json', 'aapl.metadata.txt', 'btc.json', 'us_stocks.csv', 'us_stocks.metadata.txt']
+
+### fundamentals/client.md:100 — get_segments
+2025 Airport 62432730000.0
+2025 Ground Aviation Services 3545640000.0
+2025 Hotel 671470000.0
+2025 Security 22990000.0
+
+### fundamentals/client.md:188 — get_financials
+USD [416161000000.0, 391035000000.0, 383285000000.0]
+
+### scanner/markets.md:282 — europe markets
+len(europe): 30 | first 6: ['austria', 'belgium', 'switzerland', 'cyprus', 'czech', 'germany']
+
+### chart/ohlcv.md:500 — get_latest_trade_info, real qsd frame
+Update: {'n': 'USI:PCC', 's': 'ok', 'v': {'pro_name': 'USI:PCC', 'minmove2': 0, 'minmov': 1, 'fractional': False, 'rchp': None, 'rtc': None, 'lp': 0.913327, 'ch': 0.093, 'chp': 11.38, 'current_session': 'out_of_session', 'lp_time': 1787019812, 'original_name': 'USI:PCC', 'is_tradable': False, 'update_mode': 'streaming', 'volume': 1e+100, 'pricescale': 1000, 'short_name': 'PCC', 'language': 'en', 'description': 'PUT/CALL RATIO (EQUITIES+INDICIES) - CBOE', 'exchange': 'USI', 'type': 'index'}}
+
+### scanner/markets.md:280 — scan_all_europe (first 5 of 30 markets)
+austria: 50 stocks
+belgium: 50 stocks
+switzerland: 50 stocks
+cyprus: 32 stocks
+czech: 25 stocks

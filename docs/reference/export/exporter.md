@@ -106,8 +106,29 @@ result = await exporter.export_ohlcv_data(
     config=config,
 )
 print(result.success)     # True
-print(result.file_path)   # PosixPath('btc.json')
+print(result.file_path)   # btc.json
 ```
+
+**Output:**
+
+```text
+True
+btc.json
+```
+
+`result.file_path` is a `Path`; `print()` renders it as the plain path, not `PosixPath(...)`.
+With `timestamp_format="unix"` the JSON holds numeric timestamps:
+
+```json
+{
+  "data": [
+    {
+      "close": 252.62,
+      "high": 255.0,
+      "low": 251.6,
+```
+
+# keys are alphabetical — the writer uses `sort_keys=True`
 
 ---
 
@@ -165,6 +186,17 @@ result = await exporter.export_scanner_data(
 )
 ```
 
+**Output:**
+
+| field | value |
+|---|---|
+| `result.success` | `True` |
+| `result.file_path` | `us_stocks.csv` |
+| `result.metadata.record_count` | `100` |
+
+Also writes the sidecar `us_stocks.metadata.txt`. Scanner CSV columns are sorted alphabetically
+and include `export_timestamp`.
+
 ---
 
 ### `export_fundamentals_data()`
@@ -218,6 +250,25 @@ result = await exporter.export_fundamentals_data(snapshot, ExportFormat.POLARS)
 df = result.data
 ```
 
+**Output:**
+
+`df` is a tidy/long frame with exactly these 8 columns, in this order:
+
+| column | dtype |
+|---|---|
+| `symbol` | `String` |
+| `dataset` | `String` |
+| `row` | `String` |
+| `label` | `String` |
+| `period` | `String` |
+| `period_end` | `String` |
+| `value` | `Float64` (nullable) |
+| `currency` | `String` |
+
+# for a full NASDAQ:AAPL snapshot the shape is roughly (1700, 8) — one row per (line, period)
+# `dataset` values: income, balance, cash_flow, statistics, segment_business, segment_region,
+#   dividend, earnings
+
 ---
 
 ### `to_polars()`
@@ -264,6 +315,32 @@ print(df.columns)
 df = await exporter.to_polars(response.data)
 print(df.head())
 ```
+
+**Output:**
+
+```text
+['timestamp', 'open', 'high', 'low', 'close', 'volume', 'return_pct', 'typical_price',
+ 'true_range', 'vwap_numerator', 'sma_5', 'sma_10', 'vol_ma_5', 'cum_vwap_num', 'cum_volume',
+ 'vwap', 'momentum_3']
+
+shape: (5, 6)
+┌──────┬────────┬──────────┬───────────┬─────────┬────────────────────────────┐
+│ name ┆ close  ┆ currency ┆ change    ┆ volume  ┆ export_timestamp           │
+│ ---  ┆ ---    ┆ ---      ┆ ---       ┆ ---     ┆ ---                        │
+│ str  ┆ f64    ┆ str      ┆ f64       ┆ i64     ┆ str                        │
+╞══════╪════════╪══════════╪═══════════╪═════════╪════════════════════════════╡
+│ A    ┆ 148.45 ┆ USD      ┆ -0.053861 ┆ 964634  ┆ 2026-08-18T13:22:28.920147 │
+│ AA   ┆ 51.71  ┆ USD      ┆ 3.461385  ┆ 3999530 ┆ 2026-08-18T13:22:28.920240 │
+│ AACB ┆ 10.585 ┆ USD      ┆ -0.047214 ┆ 43941   ┆ 2026-08-18T13:22:28.920259 │
+│ AACI ┆ 10.05  ┆ USD      ┆ 0.5       ┆ 114     ┆ 2026-08-18T13:22:28.920274 │
+│ AACO ┆ 9.97   ┆ USD      ┆ 0.100402  ┆ 4007    ┆ 2026-08-18T13:22:28.920289 │
+└──────┴────────┴──────────┴───────────┴─────────┴────────────────────────────┘
+```
+
+# the scanner frame reflects ColumnSets.BASIC plus the always-appended `export_timestamp`
+# OHLCV `timestamp` is a `String` here — to_polars() uses timestamp_format="iso"
+
+*Example output — live market values will differ.*
 
 ---
 
@@ -315,13 +392,22 @@ from tvkit.export import DataExporter
 
 exporter = DataExporter()
 path = await exporter.to_json(bars, "aapl.json", indent=2)
-print(path)  # PosixPath('aapl.json')
+print(path)  # aapl.json
 
 # With validation
 path = await exporter.to_json(
     bars, "aapl.json", validate=True, strict=True, interval="1D"
 )
 ```
+
+**Output:**
+
+```text
+aapl.json
+```
+
+Returns a `Path`. With `validate=True`, gap warnings are logged; with `strict=True` an ERROR
+violation raises `DataIntegrityError` and no file is written.
 
 ---
 
@@ -373,13 +459,22 @@ from tvkit.export import DataExporter
 
 exporter = DataExporter()
 path = await exporter.to_csv(bars, "aapl.csv", timestamp_format="iso")
-# Writes: aapl.csv and aapl.csv.metadata.txt
+# Writes: aapl.csv and aapl.metadata.txt
 
 # With validation
 path = await exporter.to_csv(
     bars, "aapl.csv", validate=True, strict=True, interval="1D"
 )
 ```
+
+**Output:**
+
+```text
+aapl.csv
+```
+
+The sidecar is `aapl.metadata.txt` — the suffix is **replaced**, not appended. Header order is
+`timestamp,open,high,low,close,volume`.
 
 ---
 
@@ -416,6 +511,13 @@ exporter.add_formatter(ExportFormat.PARQUET, ParquetFormatter)
 # ExportFormat.PARQUET is now usable
 ```
 
+**Output:** none — `add_formatter` returns `None`. Afterwards
+`get_supported_formats()` includes `ExportFormat.PARQUET`.
+
+<!-- TODO: output unverified -->
+
+> Not captured: `ParquetFormatter` above is a stub (`...`), so the snippet is illustrative.
+
 ---
 
 ### `get_supported_formats()`
@@ -440,6 +542,13 @@ print(exporter.get_supported_formats())
 # Get format values as plain strings
 print([f.value for f in exporter.get_supported_formats()])
 # ['polars', 'json', 'csv']
+```
+
+**Output:**
+
+```text
+[<ExportFormat.POLARS: 'polars'>, <ExportFormat.JSON: 'json'>, <ExportFormat.CSV: 'csv'>]
+['polars', 'json', 'csv']
 ```
 
 ---

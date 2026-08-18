@@ -153,6 +153,12 @@ async with OHLCV(browser="chrome") as client:
     )
 ```
 
+<!-- TODO: output unverified -->
+
+> Not captured: requires a logged-in Chrome/Firefox profile. On a `pro_premium` account this
+> prints `max_bars confirmed: 20000 (source='probe')`. Anonymously the same call raises
+> `BrowserCookieError` before any fetch.
+
 See [Concepts: Account Capabilities — wait_until_ready()](../../concepts/capabilities.md#wait_until_ready) for the full trade-off discussion.
 
 ---
@@ -262,6 +268,12 @@ async with OHLCV() as client:
 print(f"Received {len(bars)} bars. Last close: {bars[-1].close}")
 ```
 
+**Output:**
+
+```text
+Received 100 bars. Last close: 305.59
+```
+
 **Range mode:**
 
 ```python
@@ -274,6 +286,15 @@ async with OHLCV() as client:
     )
 print(f"Q1 2024: {len(bars)} 1H bars")
 ```
+
+**Output** — anonymously, this range is outside the `max_bars` window:
+
+```text
+NoHistoricalDataError: No historical data received for symbol BINANCE:BTCUSDT
+```
+
+A range inside the window returns bars — `start="2026-07-01", end="2026-07-31"` gives
+`744 1H bars`. See [Limitations](../../limitations.md).
 
 **With datetime objects:**
 
@@ -288,6 +309,12 @@ async with OHLCV() as client:
         end=datetime(2024, 12, 31, tzinfo=UTC),
     )
 ```
+
+**Output:**
+
+Returns 252 `OHLCVBar` records — `bars[0].timestamp` is `1704205800.0` and `bars[-1].timestamp`
+is `1735655400.0`. Daily data reaches back years, so this range resolves where the 1H range above
+does not.
 
 **Dividend-adjusted prices (count mode):**
 
@@ -379,6 +406,17 @@ async with OHLCV() as client:
             break
 ```
 
+**Output:**
+
+```text
+1787019300.0: close=64192.84 volume=48.15705
+1787019600.0: close=64195.48 volume=24.05011
+1787019900.0: close=64157.69 volume=37.9654
+...
+```
+
+Yields `OHLCVBar`. The first emissions replay the `bars_count` window, then live bars follow.
+
 ---
 
 ### `get_quote_data()`
@@ -423,6 +461,15 @@ async with OHLCV() as client:
         break
 ```
 
+**Output:**
+
+```text
+Current price: 305.59
+```
+
+Yields `QuoteSymbolData`, not `OHLCVBar`. `current_price` reads `quote_data["v"]["lp"]` and is
+`None` until the first quote frame carries a last price.
+
 ---
 
 ### `get_ohlcv_raw()`
@@ -464,6 +511,18 @@ async with OHLCV() as client:
         print(raw)  # Raw TradingView message dict
         break
 ```
+
+**Output** — the first frame is the connection handshake, not market data:
+
+```text
+{'session_id': '0.10015351.0_hkg1-charts-free-3-tvbs-uydrq-3', 'timestamp': 1787034141,
+ 'timestampMs': 1787034141386, 'release': 'release_209-23',
+ 'studies_metadata_hash': '0fd29e4fdd03e654cf64f97efb4cd78bef47feac', 'auth_scheme_vsn': 2,
+ 'protocol': 'json', 'via': '37.61.224.106:443', 'javastudies': ['3.66']}
+```
+
+Yields plain `dict[str, Any]` — every frame, unfiltered. Check `raw.get("m")` to select
+`"du"` / `"timescale_update"` / `"qsd"` frames.
 
 ---
 
@@ -509,6 +568,21 @@ async with OHLCV() as client:
                 print(f"Update: {symbol_data}")
         break
 ```
+
+**Output:**
+
+```text
+Update: {'n': 'USI:PCC', 's': 'ok', 'v': {'pro_name': 'USI:PCC', 'minmov': 1,
+         'fractional': False, 'lp': 0.913327, 'ch': 0.093, 'chp': 11.38,
+         'current_session': 'out_of_session', 'lp_time': 1787019812,
+         'is_tradable': False, 'update_mode': 'streaming', 'volume': 1e+100,
+         'pricescale': 1000, 'short_name': 'PCC', 'type': 'index', ...}}
+```
+
+# dict keys elided with `...`
+# a rejected symbol arrives as `{'s': 'error', 'errmsg': 'no_such_symbol', 'v': {}}`
+
+*Example output — live market values will differ.*
 
 ---
 
