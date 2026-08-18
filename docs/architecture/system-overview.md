@@ -64,8 +64,8 @@ framing, session handling) but exposes one-shot request/response methods rather 
 - `SegmentedFetchService` — splits large date ranges into segments, fetches sequentially, merges/deduplicates results (v0.5.0+)
 
 **Methods exposed**:
-- `get_historical_ohlcv()` — fetch N bars or a date range; returns `list[OHLCV]`
-- `get_ohlcv()` — stream live bars; returns `AsyncGenerator[OHLCV, None]`
+- `get_historical_ohlcv()` — fetch N bars or a date range; returns `list[OHLCVBar]`
+- `get_ohlcv()` — stream live bars; returns `AsyncGenerator[OHLCVBar, None]`
 - `get_quote_data()` — stream quote updates for a symbol
 - `get_latest_trade_info()` — monitor multiple symbols in one connection
 - `get_ohlcv_raw()` — access raw parsed messages for advanced use
@@ -82,7 +82,7 @@ framing, session handling) but exposes one-shot request/response methods rather 
 
 **Key components**:
 - `markets.py` — `Market` enum (69 markets), `MarketRegion` enum (5 regions), region grouping helpers
-- `models/scanner.py` — `ScannerRequest`, `ScannerFilter`, `ColumnSets`, `ScannerStock`
+- `models/scanner.py` — `ScannerRequest`, `ScannerResponse`, `ColumnSets`, `StockData`
 
 **Methods exposed**:
 - `scan_market(market, request)` — scan a single market; returns `ScannerResponse`
