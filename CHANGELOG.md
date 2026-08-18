@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Scanner: unparseable rows are now reported instead of silently discarded**
+  (`tvkit.api.scanner.models.scanner`)  
+  `ScannerResponse.from_api_response()` skipped rows it could not parse behind a bare
+  `except Exception: continue` with no logging. That made `len(data) < total_count` ambiguous —
+  it could mean either "the requested range was smaller" or "rows were thrown away" — and it hid
+  a real defect in which every US and UK row failed validation, so `scan_market()` returned zero
+  rows while reporting `total_count=4943`. Now each discarded row is logged at `WARNING` with its
+  index, symbol and the underlying error, followed by a one-line summary, and the total is exposed
+  on the new `ScannerResponse.dropped_row_count` field (default `0`), so a pipeline can assert
+  `response.dropped_row_count == 0`. Rows are still skipped rather than raising, so a single bad
+  record cannot discard a whole response.
+- **Scanner: caller errors are no longer swallowed** (`tvkit.api.scanner.models.scanner`)  
+  The same `except` clause is narrowed from `Exception` to `ValueError` (which covers pydantic's
+  `ValidationError`). A malformed *payload* is still skipped, but a bug in the *call* — for example
+  passing `columns=None` — now raises instead of returning an empty response.
+
+  **Migration:** none required. `dropped_row_count` is additive with a default, and the narrowed
+  `except` only surfaces errors that were previously hidden. If you assert on the exact key set of
+  `ScannerResponse.model_dump()`, add `dropped_row_count`.
+
 ## [0.12.0] — 2026-08-17
 
 ### Added

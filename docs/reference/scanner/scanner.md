@@ -367,6 +367,7 @@ from tvkit.api.scanner.models import ScannerResponse
 | `data` | `list[StockData]` | required | List of matched stocks |
 | `total_count` | `int \| None` | `None` | Total number of results available in the market (use for pagination math). Populated from the `totalCount` field in the TradingView response. |
 | `next_page_token` | `str \| None` | `None` | Reserved; mapped from `nextPageToken` in the API response. TradingView does not currently return this field — use `range_start` / `range_end` for pagination instead (see [Pagination](#pagination)). |
+| `dropped_row_count` | `int` | `0` | Rows present in the API payload that could not be parsed and were discarded. Non-zero means data loss — `len(data)` is short by this many rows for a reason unrelated to the requested range. Each drop is logged at `WARNING`. |
 
 ### `StockData`
 
