@@ -163,7 +163,7 @@ async def test_reader_task_cancelled_on_reconnect() -> None:
 @pytest.mark.asyncio
 async def test_ws_reference_reset_on_reconnect() -> None:
     """_reset_connection() sets _ws to None."""
-    from websockets.connection import State as WsState
+    from websockets.protocol import State as WsState
 
     svc = make_service()
     svc._state = ConnectionState.RECONNECTING

@@ -10,8 +10,8 @@ from typing import Any
 
 from websockets import ClientConnection
 from websockets.asyncio.client import connect
-from websockets.connection import State as WebSocketState
 from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.protocol import State as WebSocketState
 
 from tvkit.api.chart.exceptions import AuthError, StreamConnectionError
 from tvkit.api.chart.models.adjustment import Adjustment
