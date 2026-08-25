@@ -245,8 +245,13 @@ class CSVFormatter(BaseFormatter):
 
         # Get CSV options
         delimiter: str = self.config.options.get("delimiter", ",")
-        quoting: Literal[0, 1, 2, 3, 4, 5] = cast(
-            Literal[0, 1, 2, 3, 4, 5],
+        # Literal[0, 1, 2, 3] == csv.QUOTE_MINIMAL / QUOTE_ALL / QUOTE_NONNUMERIC / QUOTE_NONE.
+        # Deliberately NOT 0-5: typeshed defines csv._QuotingType as Literal[0, 1, 2, 3, 4, 5]
+        # only on Python >= 3.12 (QUOTE_STRINGS / QUOTE_NOTNULL), and Literal[0, 1, 2, 3] below.
+        # tvkit declares requires-python = ">=3.11", so 0-3 is the portable set; widening this
+        # back to 0-5 makes `mypy tvkit/` fail on 3.11. Runtime behaviour is unaffected (cast).
+        quoting: Literal[0, 1, 2, 3] = cast(
+            Literal[0, 1, 2, 3],
             self.config.options.get("quoting", csv.QUOTE_MINIMAL),
         )
         line_terminator: str = self.config.options.get("line_terminator", "\n")
