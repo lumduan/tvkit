@@ -318,7 +318,7 @@ time storage and keeps your pipeline timezone-agnostic.
 
 ### I'm getting a `ConnectionClosed` error. What do I do?
 
-The WebSocket connection was dropped by the server. This can happen due to network instability, rate limiting, or the server closing idle connections. Implement retry logic with exponential backoff. See [Real-Time Streaming — Error Handling](guides/realtime-streaming.md#error-handling-and-retry).
+The WebSocket connection was dropped by the server. This can happen due to network instability, rate limiting, or the server closing idle connections. Implement retry logic with exponential backoff. See [Real-Time Streaming — Automatic Reconnection](guides/realtime-streaming.md#automatic-reconnection).
 
 ### tvkit raises `symbol_error`. What does that mean?
 
