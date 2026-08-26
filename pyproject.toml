@@ -1,6 +1,6 @@
 [project]
 name = "tvkit"
-version = "0.14.0"
+version = "0.15.0"
 description = "tvkit is a Python library that fetches real-time stock data from TradingView, including price, market cap, P/E ratio, ROE, and more for stocks from multiple countries. Easily access and analyze financial metrics for global markets."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -94,8 +94,6 @@ select = [
 ignore = [
     "E501",  # line too long — handled by formatter
     "W293",  # whitespace on blank line — handled by ruff format
-    "UP042", # str+Enum -> StrEnum: changes __str__ semantics that
-             # tests/test_adjustment_enum.py asserts. Revisit deliberately.
 ]
 
 [tool.ruff.lint.isort]
