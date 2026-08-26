@@ -18,7 +18,7 @@
 #   - Timezone strings must be valid IANA timezone identifiers.
 #     See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 #   - User overrides take precedence over the built-in registry.
-#   - Requires pyyaml: uv add pyyaml
+#   - pyyaml is installed automatically with tvkit (declared dependency since 0.13.1).
 
 exchanges:
   # Example: add a custom or new exchange

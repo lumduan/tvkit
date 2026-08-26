@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`load_exchange_overrides()` reference docs described an API that does not exist**
+  (`docs/reference/time/index.md`)  
+  Four errors, the third of which caused silent data problems rather than an error:
+  - The signature was given as `load_exchange_overrides(path: str | Path | None = None)`. `path` is
+    required; there is no `None` default.
+  - It claimed that with `path=None` the function reads `TVKIT_EXCHANGE_OVERRIDES` and is otherwise
+    a no-op. The function never reads that variable — it is handled once at module scope when
+    `tvkit.time` is imported, and failures there are logged at `WARNING` and swallowed. Documented
+    correctly now, in its own section.
+  - **The YAML example omitted the required top-level `exchanges:` key.** A file in the documented
+    shape parses fine, loads **zero** overrides, and the affected exchanges silently fall back to
+    UTC — so following the docs produced wrong timezones with no error. (`tvkit_exchange_overrides.example.yaml`
+    in the repository root was always correct; only the reference page was wrong.)
+  - The `Raises` table listed `ZoneInfoNotFoundError`, which `register_exchange()` catches and
+    re-raises as `ValueError`. `ValueError` for a malformed file structure was missing entirely.
+
+  Documentation only — no library behaviour changed. Every claim on the page was re-verified by
+  executing it.
+
 ---
 
 ## [0.13.1] — 2026-08-26

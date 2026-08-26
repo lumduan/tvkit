@@ -191,8 +191,9 @@ def load_exchange_overrides(path: str | Path) -> None:
     """
     Load exchange timezone overrides from a YAML file.
 
-    Requires ``pyyaml`` (``uv add pyyaml``). YAML support is optional — the rest
-    of ``tvkit.time`` works without it.
+    ``pyyaml`` is a declared runtime dependency (since 0.13.1), so this works on a
+    normal install. The import below is kept lazy, and its ``ImportError`` guard
+    kept, only as a safety net for an incomplete environment.
 
     The YAML file must have an ``exchanges`` key mapping exchange codes to IANA
     timezone strings:
