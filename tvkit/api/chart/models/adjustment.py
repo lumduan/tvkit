@@ -1,9 +1,9 @@
 """TradingView price adjustment mode enum for OHLCV data."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Adjustment(str, Enum):
+class Adjustment(StrEnum):
     """TradingView price adjustment mode for OHLCV data.
 
     Controls how historical prices are adjusted for corporate actions.

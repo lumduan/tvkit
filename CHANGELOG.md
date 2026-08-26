@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.15.0] — 2026-08-26
+
+### Changed
+
+- **The five string enums are now `enum.StrEnum`** (`Adjustment`, `Period`, `StatementType`,
+  `ExportFormat`, `NormalizationType`)  
+  They were declared `class X(str, Enum)`, which ruff 0.16's `UP042` flags. The only observable
+  difference is `str()` / f-string / `format()`, which now return the **value** instead of
+  `"ClassName.MEMBER"`:
+
+  ```python
+  f"{Adjustment.SPLITS}"   # before: "Adjustment.SPLITS"    now: "splits"
+  ```
+
+  Everything else is byte-identical, verified rather than assumed: `isinstance(x, str)`,
+  `x == "splits"`, `Adjustment("splits")` coercion, `ValueError` on an unknown value,
+  `json.dumps`, and pydantic's `model_dump()` / `model_dump_json()` / `model_dump(mode="json")`.
+
+  **The TradingView wire format is unchanged.** The protocol payload uses `adjustment.value`
+  explicitly (`connection_service.py:625`), as does every other enum→string conversion in the
+  package. Confirmed live: an explicit `Adjustment.DIVIDENDS` request to `SET:ADVANC` returned
+  dividend-adjusted bars over a real WebSocket.
+
+  Practically this only affects code that interpolated one of these enums into a string and
+  expected the `"ClassName.MEMBER"` form — which was almost certainly a latent bug, since that
+  string means nothing to TradingView or to a file format.
+
+  `UP042` is no longer suppressed in `[tool.ruff.lint] ignore`.
+
+  *Correction to the 0.13.0 notes:* this migration was deferred there on the stated grounds that
+  `tests/test_adjustment_enum.py` asserted the old `__str__` behaviour. Re-reading those tests,
+  it does not — they assert `isinstance`, coercion, equality and `.value`, all of which `StrEnum`
+  preserves. The deferral was more cautious than the evidence warranted.
+
+---
+
+
 ## [0.14.0] — 2026-08-26
 
 ### Removed

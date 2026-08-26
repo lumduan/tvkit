@@ -3,7 +3,7 @@ Pydantic models for the tvkit symbol normalization layer.
 """
 
 import re
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,7 +27,7 @@ _EXCHANGE_RE = re.compile(EXCHANGE_PATTERN)
 _CANONICAL_RE = re.compile(CANONICAL_PATTERN)
 
 
-class NormalizationType(str, Enum):
+class NormalizationType(StrEnum):
     """
     Classification of the primary transformation applied during symbol normalization.
 

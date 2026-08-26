@@ -13,7 +13,7 @@ bank) is simply absent from :attr:`FinancialStatement.lines`.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,7 +37,7 @@ __all__ = [
 ]
 
 
-class Period(str, Enum):
+class Period(StrEnum):
     """Reporting period type. Selects the field-id suffix used on the wire."""
 
     FY = "FY"
@@ -50,7 +50,7 @@ class Period(str, Enum):
     """Trailing twelve months (single period)."""
 
 
-class StatementType(str, Enum):
+class StatementType(StrEnum):
     """A financial statement family available from :class:`FinancialStatement`."""
 
     INCOME = "income"
