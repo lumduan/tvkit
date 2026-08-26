@@ -407,30 +407,48 @@ exchange_timezone("MYEX")  # "Asia/Kolkata"
 ## `load_exchange_overrides()`
 
 ```python
-def load_exchange_overrides(path: str | Path | None = None) -> None: ...
+def load_exchange_overrides(path: str | Path) -> None: ...
 ```
 
-Load exchange → IANA timezone overrides from a YAML file. If `path` is `None`, the function checks the `TVKIT_EXCHANGE_OVERRIDES` environment variable for a file path. If neither is provided, the function is a no-op.
+Load exchange → IANA timezone overrides from a YAML file. `path` is required — the function itself does not read any environment variable (see [Auto-loading at import time](#auto-loading-at-import-time) below).
 
 ### YAML Format
 
+Mappings live under a top-level `exchanges` key:
+
 ```yaml
-MYEX: Asia/Kolkata
-CUSTOM: America/Chicago
+exchanges:
+  MYEX: Asia/Kolkata
+  CUSTOM: America/Chicago
 ```
+
+The `exchanges` key is **required**. A file without it is not an error — it loads zero overrides, and the affected exchanges silently fall back to UTC. See `tvkit_exchange_overrides.example.yaml` in the repository root for a commented template.
+
+Exchange codes are case-insensitive (normalized to uppercase). User overrides take precedence over the built-in registry.
 
 ### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | `str \| Path \| None` | `None` | Path to a YAML file, or `None` to use the `TVKIT_EXCHANGE_OVERRIDES` environment variable |
+| `path` | `str \| Path` | *required* | Path to a YAML override file |
 
 ### Raises
 
 | Exception | When |
 |-----------|------|
-| `FileNotFoundError` | Path is provided but the file does not exist |
-| `ZoneInfoNotFoundError` | A timezone value in the YAML is not a valid IANA string |
+| `FileNotFoundError` | `path` does not exist |
+| `ValueError` | The file's top level is not a mapping, `exchanges` is not a mapping, or a timezone value is not a valid IANA string |
+| `ImportError` | `pyyaml` is unavailable. It is a declared runtime dependency since 0.13.1, so this indicates an incomplete environment |
+
+### Auto-loading at import time
+
+Setting `TVKIT_EXCHANGE_OVERRIDES` to a file path loads that file **once, when `tvkit.time` is first imported**:
+
+```bash
+export TVKIT_EXCHANGE_OVERRIDES=/path/to/overrides.yaml
+```
+
+This is handled at module scope, not by `load_exchange_overrides()`. Failures there are logged at `WARNING` and swallowed, so a missing or malformed file never prevents `tvkit.time` from importing — but it also means the overrides are silently absent. Call `load_exchange_overrides(path)` directly if you need failures to raise.
 
 ---
 
