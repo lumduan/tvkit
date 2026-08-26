@@ -219,7 +219,9 @@ def load_exchange_overrides(path: str | Path) -> None:
         import yaml  # type: ignore[import-untyped]
     except ImportError as exc:
         raise ImportError(
-            "load_exchange_overrides() requires pyyaml. Install it with: uv add pyyaml"
+            "load_exchange_overrides() requires pyyaml, which tvkit declares as a "
+            "runtime dependency — seeing this means the environment is incomplete. "
+            "Reinstall tvkit, or install it directly with: uv add pyyaml"
         ) from exc
 
     file_path = Path(path)

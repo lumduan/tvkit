@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.13.1] — 2026-08-26
+
+### Fixed
+
+- **`pyyaml` was imported but never declared as a dependency** (`pyproject.toml`, `tvkit.time`)  
+  `load_exchange_overrides()` does `import yaml`, but `pyyaml` appeared nowhere in
+  `[project.dependencies]`. It worked in development only by accident — `pre-commit` pulls `pyyaml`
+  in as a transitive **dev** dependency — so on a clean install of the published wheel the function
+  raised `ImportError`, despite being exported from `tvkit.time` and documented as public API with
+  no mention of an optional extra. Reproduced against the published 0.13.0:
+
+  ```
+  >>> from tvkit.time import load_exchange_overrides
+  >>> load_exchange_overrides("overrides.yaml")
+  ImportError: load_exchange_overrides() requires pyyaml...
+  ```
+
+  `pyyaml>=6.0.3` is now a declared runtime dependency. The lazy import and its `ImportError`
+  guard are kept as a safety net for a broken environment, with a message that now says so.
+
+  Note the import-time auto-load path (`TVKIT_EXCHANGE_OVERRIDES`) was **never** affected: it wraps
+  the call in `try/except` and degrades to a `WARNING`, so importing `tvkit.time` never failed.
+  Only direct calls to `load_exchange_overrides()` were broken.
+
+---
+
 ## [0.13.0] — 2026-08-26
 
 ### Added
