@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.13.0] — 2026-08-26
+
 ### Added
 
 - **`DataExporter.to_polars(timestamp_format=...)`** (`tvkit.export`)  
@@ -18,45 +22,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejected by both `validate_ohlcv()` and `convert_to_timezone()`, meaning tvkit's own documented
   fetch → export → validate/convert pipeline did not compose. `"unix"` and `"datetime"` are now
   accepted by both consumers. Ignored for scanner and fundamentals input, whose timestamp-like
-  columns are always ISO strings.
+  columns are always ISO strings. (PR #45)
 - **`ScannerResponse.dropped_row_count`** (`tvkit.api.scanner.models.scanner`)  
   Number of rows present in the API payload that could not be parsed and were discarded. Non-zero
   means data loss unrelated to the requested range, so a pipeline can assert
-  `response.dropped_row_count == 0`.
+  `response.dropped_row_count == 0`. (PR #44)
+
+### Fixed
+
+- **Scanner returned zero rows for US and UK markets** (`tvkit.api.scanner.models.scanner`)  
+  TradingView returns `market_cap_basic` as a fractional float (e.g. `5445242088563.96`), but the
+  field was annotated `int | None`, so every such row failed validation and was then silently
+  discarded. Any scan selecting `market_cap_basic` returned **zero rows while reporting a non-zero
+  `totalCount`**. Measured against the live API with `ColumnSets.DETAILED`, 25 rows requested:
+  `america 0/25`, `uk 0/25`, `thailand 25/25`, `japan 25/25` — TH and JP happened to return
+  integral values, which is why the breakage went unnoticed. Widening the annotation to
+  `float | None` restores parsing (america: 0 → 25). ⚠️ This changes the exported Polars/CSV dtype
+  of `market_cap_basic` from `Int64` to `Float64`. (PR #44)
+- **`mypy` failed on Python 3.11** (`tvkit.export.formatters.csv_formatter`)  
+  `CSVFormatter._write_csv` annotated and cast `quoting` to `Literal[0, 1, 2, 3, 4, 5]`, which is
+  the Python ≥ 3.12 shape of typeshed's `csv._QuotingType`; on 3.11 it is `Literal[0, 1, 2, 3]`
+  (`QUOTE_STRINGS` and `QUOTE_NOTNULL` were added in 3.12). Now uses the portable
+  `Literal[0, 1, 2, 3]`, which stays assignable on 3.12. Runtime behaviour is unchanged — it is a
+  `cast`. Pre-existing; it was invisible because CI never actually ran 3.11 (see below). (PR #47)
 
 ### Changed
 
+- **Minimum dependency versions raised to the versions actually tested** (`pyproject.toml`)  
+  ⚠️ **This is the breaking change in this release.** Several floors were not merely stale but
+  false — `polars>=0.19.0` was declared against 1.x-only expressions, and `websockets>=11.0.0`
+  against the `websockets.asyncio.client` API that did not exist until 12. tvkit could not have
+  worked at those floors:
+
+  | package | was | now |
+  |---|---|---|
+  | `websockets` | `>=11.0.0` | `>=17.0.1` |
+  | `polars` | `>=0.19.0` | `>=1.44.0` |
+  | `pandas` | `>=2.0.0` | `>=3.0.5` |
+  | `pyarrow` | `>=12.0.0` | `>=25.0.1` |
+  | `matplotlib` | `>=3.7.0` | `>=3.11.1` |
+  | `curl-cffi` | `>=0.7.0` | `>=0.16.2` |
+  | `pydantic-settings` | `>=2.0.0` | `>=2.15.0` |
+
+  `pydantic`, `httpx`, `seaborn`, `rich` and `browser-cookie3` were already current and are
+  unchanged. 36 packages were upgraded in total (one commit each), clearing **30 security
+  advisories** — 27 in `pillow`, 2 in `cryptography` (including CVE-2026-69247, a pkcs7
+  Bleichenbacher oracle), and `GHSA-4xgf-cpjx-pc3j` in `pydantic-settings`. (PR #47)
+- **`websockets` 17 support** (`tvkit.api.chart.services.connection_service`)  
+  websockets 17.0 removed the deprecated `websockets.connection` alias; the import moves to
+  `websockets.protocol`. Behaviour-preserving — the two modules exposed the same `State` object —
+  and it clears the last `DeprecationWarning` emitted by the test suite. (PR #47)
 - **Scanner: unparseable rows are now reported instead of silently discarded**
   (`tvkit.api.scanner.models.scanner`)  
   `ScannerResponse.from_api_response()` skipped rows it could not parse behind a bare
   `except Exception: continue` with no logging. That made `len(data) < total_count` ambiguous —
   it could mean either "the requested range was smaller" or "rows were thrown away" — and it hid
-  a real defect in which every US and UK row failed validation, so `scan_market()` returned zero
-  rows while reporting `total_count=4943`. Each discarded row is now logged at `WARNING` with its
+  the `market_cap_basic` defect above. Each discarded row is now logged at `WARNING` with its
   index, symbol and the underlying error, followed by a one-line summary. Rows are still skipped
-  rather than raising, so a single bad record cannot discard a whole response.
+  rather than raising, so a single bad record cannot discard a whole response. (PR #44)
 - **Scanner: caller errors are no longer swallowed** (`tvkit.api.scanner.models.scanner`)  
   The same `except` clause is narrowed from `Exception` to `ValueError` (which covers pydantic's
   `ValidationError`). A malformed *payload* is still skipped, but a bug in the *call* — for example
-  passing `columns=None` — now raises instead of returning an empty response.
+  passing `columns=None` — now raises instead of returning an empty response. (PR #44)
 - **`convert_to_timezone()` accepts an existing `Datetime` column** (`tvkit.time`)  
   A column that is already temporal skips the epoch-decode step and is only re-zoned; a naive
   column is assumed UTC, consistent with `to_utc()`. This makes
   `to_polars(timestamp_format="datetime")` chain directly into a timezone conversion, and makes a
   second call to the same timezone idempotent — it previously corrupted the value or raised,
-  depending on the polars version.
+  depending on the polars version. (PR #45)
 - **Actionable errors for a non-numeric timestamp column** (`tvkit.time`, `tvkit.validation`)  
   `convert_to_timezone()` previously let polars raise `InvalidOperationError: arithmetic on string
   and numeric not allowed`, which named neither the column nor the fix. It now raises `ValueError`
   identifying the column, its dtype, and the `timestamp_format` argument to pass.
   `validate_ohlcv()`'s existing dtype error gains the same hint when the column is a `String`.
+  (PR #45)
+- **CI now actually runs Python 3.11** (`.github/workflows/`)  
+  Both workflows ran `uv python install 3.11` and then `uv sync` with no interpreter flag, so uv
+  honoured the tracked `.python-version` (3.12) and the install step was a no-op — CI had been
+  testing 3.12 while reporting that it targeted 3.11, even though `requires-python` and the
+  classifiers advertise 3.11. Pinned with `UV_PYTHON` at job level. Note that passing
+  `--python 3.11` to `uv sync` does *not* work: the following `uv run` re-reads
+  `.python-version` and rebuilds the environment at 3.12. (PR #47)
+- **`uv.lock` is now tracked** (`.gitignore`, `uv.lock`)  
+  The lockfile was gitignored, so no lockfile was under version control and CI re-resolved from
+  the open-ended floors on every run — builds were never reproducible. `uv sync --extra dev` now
+  installs pinned versions. This affects contributors and CI only; it has no effect on the
+  published wheel or on downstream resolution, which is governed by the floors above. (PR #47)
 
-**Migration:** no source changes required. `timestamp_format` defaults to the previous behaviour,
-and `dropped_row_count` is additive with a default. Two things to know:
+**Migration:**
 
-- If you caught `polars.exceptions.InvalidOperationError` around `convert_to_timezone()`, catch
-  `ValueError` instead.
-- If you assert on the exact key set of `ScannerResponse.model_dump()`, add `dropped_row_count`.
+- **Installation may now require upgrading transitive pins.** If your project pins any of the
+  packages in the table above below tvkit's new floor, resolution will fail until you raise it.
+  The most likely to bite are `pandas` (2.x → 3.x) and `pyarrow` (12 → 25).
+- **If you read `market_cap_basic` from a scanner export, it is now `Float64`, not `Int64`.**
+  Code that assumed an integer dtype — a schema assertion, a downstream cast — needs updating.
+  In exchange, US and UK scans return rows at all.
+- No other source changes are required. `timestamp_format` defaults to the previous behaviour and
+  `dropped_row_count` is additive with a default. Two smaller notes:
+  - If you caught `polars.exceptions.InvalidOperationError` around `convert_to_timezone()`, catch
+    `ValueError` instead.
+  - If you assert on the exact key set of `ScannerResponse.model_dump()`, add `dropped_row_count`.
+
+---
 
 ## [0.12.0] — 2026-08-17
 

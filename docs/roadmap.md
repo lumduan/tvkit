@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.13.0** — Dependency modernization & correctness (36 packages upgraded, clearing 30 security advisories; minimum versions raised to the versions actually tested — **breaking for installs pinned below them**, notably `pandas` 2.x → 3.x and `pyarrow` 12 → 25; `websockets` 17 support; scanner now returns rows for US/UK markets again — `market_cap_basic` was rejecting every fractional value, and its exported dtype changes `Int64` → `Float64`; `to_polars(timestamp_format=...)`; `ScannerResponse.dropped_row_count`; CI now genuinely runs Python 3.11)
 - **v0.12.0** — Financial Statements & Revenue Segments (`tvkit.api.fundamentals`: `FundamentalsClient` with `get_segments()`, `get_income_statement()`, `get_balance_sheet()`, `get_cash_flow()`, `get_statistics()`, `get_dividends()`, `get_earnings()`, `get_financials()`; WebSocket quote protocol reusing the chart transport; per-issuer statement templates; `DataExporter` fundamentals export)
 - **v0.11.0** — Dividend-Adjusted OHLCV (`Adjustment` enum with `SPLITS` / `DIVIDENDS`; `adjustment` keyword parameter on `get_historical_ohlcv()`; `backadjustment: "default"` added to historical OHLCV WebSocket payload — protocol correctness fix)
 - **v0.10.0** — Async Batch Downloader (`tvkit.batch`: `batch_download()`, bounded concurrency via semaphore, per-symbol retry with exponential backoff, `BatchDownloadSummary`, partial failure model, opt-in pre-flight symbol validation)
