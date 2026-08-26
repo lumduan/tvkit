@@ -58,6 +58,12 @@ jobs:
     name: CI
     needs: validate
     runs-on: ubuntu-latest
+    env:
+      # Pin EVERY uv command in this job to the floor interpreter.
+      # `uv python install 3.11` alone is not enough: `uv sync` and `uv run` honour the
+      # tracked .python-version (3.12) and will silently rebuild the venv at 3.12, so
+      # this gate would report success without ever exercising 3.11.
+      UV_PYTHON: "3.11"
 
     steps:
       - uses: actions/checkout@v6
@@ -81,6 +87,9 @@ jobs:
     name: Build
     needs: ci
     runs-on: ubuntu-latest
+    env:
+      # See the note in the `ci` job — build the artifact on the declared floor.
+      UV_PYTHON: "3.11"
 
     steps:
       - uses: actions/checkout@v6
