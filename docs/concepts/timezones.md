@@ -1,6 +1,6 @@
 # Timezone Handling
 
-[Home](../index.md) > [Concepts](../concepts/index.md) > Timezone Handling
+[Home](../index.md) > Concepts > Timezone Handling
 
 tvkit uses a single, consistent rule for all timestamps:
 

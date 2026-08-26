@@ -114,10 +114,16 @@ CODE_FENCE_RE = re.compile(r"^\s*```")
 
 
 def _slugify(text: str) -> str:
-    """Convert a Markdown heading to a GitHub-style anchor slug."""
+    """Convert a Markdown heading to a GitHub-style anchor slug.
+
+    Each whitespace character becomes its own hyphen, matching github-slugger.
+    Collapsing runs with ``\\s+`` is wrong: punctuation is stripped first, so a
+    heading like ``A — B`` leaves two spaces and GitHub renders ``a--b``. The
+    collapsing version reported valid ``--`` links as broken.
+    """
     slug = text.strip().lower()
     slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"\s", "-", slug)
     return slug
 
 
