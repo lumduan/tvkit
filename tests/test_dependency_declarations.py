@@ -158,6 +158,41 @@ def test_guard_detects_an_undeclared_dependency() -> None:
     )
 
 
+def test_declared_runtime_dependencies_are_actually_imported() -> None:
+    """
+    Every declared runtime dependency must be imported somewhere under tvkit/.
+
+    The reverse of the guard above. Until 0.14.0 tvkit declared six packages it never
+    imported — ``pandas``, ``pyarrow``, ``matplotlib``, ``seaborn``, ``curl-cffi`` and
+    ``rich`` — which together pulled 21 extra packages and ~380 MB into every install.
+
+    Optional extras are deliberately excluded: ``[project.optional-dependencies]``
+    exists precisely for packages tvkit does not import, such as the ``pandas`` extra
+    that enables Polars' ``.to_pandas()`` interop.
+    """
+    imported = set(_third_party_imports())
+    provided_by = packages_distributions()
+
+    # invert module -> distributions into distribution -> modules
+    supplies: dict[str, set[str]] = {}
+    for module, distributions in provided_by.items():
+        for distribution in distributions:
+            supplies.setdefault(_normalize(distribution), set()).add(module)
+
+    unused = sorted(
+        distribution
+        for distribution in _declared_runtime_distributions()
+        if not (supplies.get(distribution, set()) & imported)
+    )
+
+    assert not unused, (
+        f"Declared in [project.dependencies] but never imported by tvkit/: {unused}. "
+        "Every runtime dependency is installed for every user, so an unused one is pure "
+        "weight (and extra security surface). Remove it, or move it to "
+        "[project.optional-dependencies] if it enables an opt-in integration."
+    )
+
+
 def test_import_scan_finds_known_dependencies() -> None:
     """
     Anchor the scanner against known imports.

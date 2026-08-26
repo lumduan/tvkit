@@ -301,6 +301,13 @@ Yes. After converting with `convert_to_timezone()` or `convert_to_exchange_timez
 Polars `timestamp` column is a tz-aware `datetime[us, <tz>]`. You can convert to pandas via
 `df.to_pandas()` if your downstream pipeline requires it.
 
+`.to_pandas()` is a Polars method and needs both `pandas` and `pyarrow`, which tvkit does not
+install by default (it never imports either). Install them with the `pandas` extra:
+
+```bash
+pip install "tvkit[pandas]"     # or: uv add "tvkit[pandas]"
+```
+
 The key principle is: keep timestamps as UTC epoch floats in the data layer, and convert to
 `datetime` (Polars or pandas) only at the analysis or export layer. This prevents accidental local
 time storage and keeps your pipeline timezone-agnostic.

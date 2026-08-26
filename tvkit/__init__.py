@@ -16,7 +16,7 @@ Quick Start:
     >>> data = asyncio.run(get_apple_data())
 """
 
-__version__ = "0.13.1"
+__version__ = "0.14.0"
 __author__ = "lumduan"
 __license__ = "MIT"
 

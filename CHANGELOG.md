@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.14.0] — 2026-08-26
+
+### Removed
+
+- **Six runtime dependencies that tvkit never imported** (`pyproject.toml`)  
+  ⚠️ **Breaking for installs that relied on tvkit pulling these in.** `pandas`, `pyarrow`,
+  `matplotlib`, `seaborn`, `curl-cffi` and `rich` were declared as runtime dependencies but have
+  **zero import sites** anywhere in `tvkit/` — verified by AST scan, not by grep. They were
+  installed for every user and imported by none.
+
+  | | before | after |
+  |---|---|---|
+  | packages in a default install | 43 | **22** |
+  | installed size | 622 MB | **243 MB** |
+
+  Twenty-one packages disappear from the dependency tree, including `numpy`, `pillow`,
+  `matplotlib`, `pyarrow` and their transitives. Notably this removes `pillow` — which carried
+  **27 open advisories** at the time of the 0.13.0 audit — from the default install entirely.
+
+  Where each went:
+  - `matplotlib`, `seaborn`, `curl-cffi` — removed outright. No imports, no documentation, no
+    references anywhere in the repository. `curl-cffi` was added alongside the authentication
+    module and never used; `httpx` does that work.
+  - `pandas`, `pyarrow` — moved to a new **`pandas` extra**. tvkit does not import either, but
+    Polars' `.to_pandas()` does, and `docs/faq.md` recommends it. Install with
+    `pip install "tvkit[pandas]"`.
+  - `rich` — moved to the dev dependencies. Only `examples/` and `scripts/` import it, and neither
+    ships in the wheel (`[tool.setuptools.packages.find] include = ["tvkit*"]`). The CLI uses
+    `argparse`.
+
+  **Parquet export is unaffected.** `write_parquet()`/`read_parquet()` are native to Polars and do
+  not need `pyarrow`; verified in an environment with only `polars` installed.
+
+  **Migration:** if your code imports `pandas`, `numpy`, `matplotlib`, `seaborn` or `rich` and was
+  relying on tvkit to install them, declare them yourself — they were never part of tvkit's API.
+  For `.to_pandas()`, install `tvkit[pandas]`.
+
+### Added
+
+- **Regression guard for dependency declarations** (`tests/test_dependency_declarations.py`)  
+  Compares what `tvkit/` actually imports (full AST walk, including lazy imports inside function
+  bodies and `TYPE_CHECKING` blocks) against what `pyproject.toml` declares, in **both**
+  directions — imported-but-undeclared, and declared-but-unimported. The first direction exists
+  because the 0.13.1 `pyyaml` bug passed 1130 tests and shipped to PyPI; the second is what makes
+  the removals above stay removed.
+
 ### Fixed
 
 - **`load_exchange_overrides()` reference docs described an API that does not exist**
