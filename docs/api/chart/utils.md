@@ -467,14 +467,14 @@ def build_range_param(start: datetime | str, end: datetime | str) -> str
 **Parameters**:
 
 - `start` (datetime | str): Start of the range, inclusive. Same accepted types as `to_unix_timestamp()`.
-- `end` (datetime | str): End of the range, inclusive. Same accepted types as `to_unix_timestamp()`.
+- `end` (datetime | str): End of the range, inclusive. Same accepted types as `to_unix_timestamp()`. Used exactly — no date-only expansion (the whole-day expansion is applied by `get_historical_ohlcv()` before it calls this).
 
 **Returns**: `str` — Range string in the format `"r,<from_unix>:<to_unix>"` (e.g., `"r,1704067200:1735603200"`).
 
 **Validation rules**:
 
 - `start > end` → raises `ValueError` (fail-fast before WebSocket connection opens)
-- `start == end` → **valid** — fetches all intraday bars within that calendar day for the specified interval
+- `start == end` → **valid** — produces a single-instant range (both endpoints the same timestamp)
 - Type checking and conversion delegated to `to_unix_timestamp()`
 
 **Raises**:

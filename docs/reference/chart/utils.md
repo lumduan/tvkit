@@ -113,9 +113,9 @@ Used internally by `get_historical_ohlcv()` for client-side range filtering to e
 | Input type | Treated as date-only when |
 |------------|--------------------------|
 | `str` | No space (`" "`) and no `"T"` separator |
-| `datetime` | `hour == 0` and `minute == 0` and `second == 0` and `microsecond == 0` |
+| `datetime` | Never — a `datetime` always carries an explicit time, so an exact midnight stays exact |
 
-**Returns:** `int` — Unix timestamp. For date-only inputs, adds 86,399 seconds (23h 59m 59s) to midnight.
+**Returns:** `int` — Unix timestamp. For date-only *string* inputs, adds 86,399 seconds (23h 59m 59s) to midnight. `datetime` inputs are returned unchanged (identity).
 
 **Raises:** Same as `to_unix_timestamp`.
 

@@ -199,17 +199,17 @@ class TestPreModifyFallback:
         assert all(b.timestamp >= _TS_JAN_2024 for b in result)
 
     @pytest.mark.asyncio
-    async def test_two_events_normal_path_not_affected(self) -> None:
-        """Two series_completed events — normal path: fallback is NOT activated.
+    async def test_two_events_merge_create_and_modify_bars(self) -> None:
+        """Two series_completed events — in-range create_series bars are merged.
 
-        The second series_completed carries the modify_series response with bars.
-        The first-event create_series bars are discarded as usual.
+        The create_series response carries 3 in-range bars and the modify_series
+        response carries 7 disjoint bars. The merged result contains all 10.
         """
         create_series_bars = make_timescale_update(bars_count=3, base_ts=_TS_JAN_2024)
         modify_series_bars = make_timescale_update(bars_count=7, base_ts=_TS_JAN_2024 + 10_000)
         messages: list[dict[str, Any]] = [
             create_series_bars,
-            SERIES_COMPLETED_MSG,  # First: create_series — cleared
+            SERIES_COMPLETED_MSG,  # First: create_series — in-range bars saved
             modify_series_bars,
             SERIES_COMPLETED_MSG,  # Second: modify_series — break
         ]
@@ -220,9 +220,8 @@ class TestPreModifyFallback:
                 SYMBOL, "1", start="2024-01-01", end="2024-12-31"
             )
 
-        # Only the 7 modify_series bars, not the 3 create_series bars
-        assert len(result) == 7
-        assert all(b.timestamp >= _TS_JAN_2024 + 10_000 for b in result)
+        # 3 create_series bars + 7 modify_series bars, merged without duplication.
+        assert len(result) == 10
 
     @pytest.mark.asyncio
     async def test_two_events_second_empty_activates_fallback(self) -> None:
@@ -287,11 +286,10 @@ class TestPreModifyFallback:
         assert "3" in fallback_records[0].message
 
     @pytest.mark.asyncio
-    async def test_fallback_not_triggered_when_modify_series_has_bars(self) -> None:
-        """The fallback bar count is irrelevant when modify_series provides bars.
+    async def test_merge_returns_all_bars_when_modify_series_has_bars(self) -> None:
+        """In-range create_series bars are merged even when modify_series has bars.
 
-        Even if the create_series response had more in-range bars than the
-        modify_series response, the latter always wins (normal path).
+        create_series (10 in-range bars) + modify_series (2 disjoint bars) → 12.
         """
         create_series_bars = make_timescale_update(bars_count=10, base_ts=_TS_JAN_2024)
         modify_series_bars = make_timescale_update(bars_count=2, base_ts=_TS_JAN_2024 + 50_000)
@@ -308,8 +306,7 @@ class TestPreModifyFallback:
                 SYMBOL, "1", start="2024-01-01", end="2024-12-31"
             )
 
-        assert len(result) == 2
-        assert all(b.timestamp >= _TS_JAN_2024 + 50_000 for b in result)
+        assert len(result) == 12
 
     @pytest.mark.asyncio
     async def test_empty_create_series_single_event_raises(self) -> None:
@@ -378,6 +375,63 @@ class TestPreModifyFallback:
             )
 
         assert len(result) == 7
+
+    @pytest.mark.asyncio
+    async def test_straddling_range_merge_19_plus_220(self) -> None:
+        """A range straddling the create_series window returns 19 + 220 = 239 bars.
+
+        Regression for SSE:000001 "1" on 2026-08-07: modify_series returns only the
+        19 pre-boundary bars while create_series holds the 220 recent in-range bars.
+        The merged result must contain all 239 (no truncation).
+        """
+        create_bars = make_timescale_update(bars_count=220, base_ts=_TS_JAN_2024)
+        modify_bars = make_timescale_update(bars_count=19, base_ts=_TS_JAN_2024 + 220 * 60)
+        messages = [create_bars, SERIES_COMPLETED_MSG, modify_bars, SERIES_COMPLETED_MSG]
+        client = _make_range_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **_make_patches()):
+            result = await client.get_historical_ohlcv(
+                SYMBOL, "1", start="2024-01-01", end="2024-12-31"
+            )
+
+        assert len(result) == 239
+        assert len({b.timestamp for b in result}) == 239
+
+    @pytest.mark.asyncio
+    async def test_dedup_last_received_wins(self) -> None:
+        """Dedup is last-received-wins: a later 'du' update overwrites an earlier snapshot.
+
+        The create_series response carries a snapshot of the live bar (volume=1.0);
+        the modify_series phase delivers a 'du' update for the same timestamp
+        (volume=99.0). The merged result must keep the later, more recent bar.
+        """
+        ts = _TS_JAN_2024
+        snapshot = make_timescale_update(bars_count=1, base_ts=ts)
+        du: dict[str, Any] = {
+            "m": "du",
+            "p": [
+                "cs_xxx",
+                {
+                    "sds_1": {
+                        "s": [{"i": 0, "v": [ts, 200.0, 205.0, 195.0, 202.0, 99.0]}],
+                        "ns": {"d": "", "indexes": "nochange"},
+                        "t": "s1",
+                        "lbs": {"bar_close_time": int(ts + 60)},
+                    }
+                },
+            ],
+        }
+        messages = [snapshot, SERIES_COMPLETED_MSG, du, SERIES_COMPLETED_MSG]
+        client = _make_range_client(messages)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **_make_patches()):
+            result = await client.get_historical_ohlcv(
+                SYMBOL, "1", start="2024-01-01", end="2024-12-31"
+            )
+
+        assert len(result) == 1
+        assert result[0].timestamp == ts
+        assert result[0].volume == 99.0  # later 'du' update wins over the snapshot
 
 
 # ===========================================================================
@@ -685,8 +739,8 @@ class TestBackwardCompatibility:
         assert len(result) == 10
 
     @pytest.mark.asyncio
-    async def test_range_mode_two_event_path_unchanged(self) -> None:
-        """get_historical_ohlcv(start=..., end=...) — two-event path returns correct bars."""
+    async def test_range_mode_two_event_path_returns_merged_bars(self) -> None:
+        """get_historical_ohlcv(start=..., end=...) — two-event path merges in-range bars."""
         create_bars = make_timescale_update(bars_count=3, base_ts=_TS_JAN_2024)
         modify_bars = make_timescale_update(bars_count=8, base_ts=_TS_JAN_2024 + 5_000)
         messages = [create_bars, SERIES_COMPLETED_MSG, modify_bars, SERIES_COMPLETED_MSG]
@@ -698,7 +752,7 @@ class TestBackwardCompatibility:
                 SYMBOL, "1", start="2024-01-01", end="2024-12-31"
             )
 
-        assert len(result) == 8
+        assert len(result) == 11
 
     @pytest.mark.asyncio
     async def test_range_mode_no_segment_delay_arg_works(self) -> None:
@@ -714,4 +768,4 @@ class TestBackwardCompatibility:
                 SYMBOL, "1", start="2024-01-01", end="2024-12-31"
             )
 
-        assert len(result) == 4
+        assert len(result) == 6

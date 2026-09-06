@@ -60,6 +60,30 @@ def _normalize_input(dt: datetime | str) -> datetime:
     return _to_utc_datetime(dt)
 
 
+def _normalize_end(end: datetime | str) -> datetime:
+    """Normalize a range ``end`` to a UTC-aware datetime (integer-second precision).
+
+    A date-only string (no ``" "`` and no ``"T"`` separator) means "the whole day"
+    and is expanded to 23:59:59 UTC. This expansion must happen here — while the
+    string still carries the date-only distinction — because ``_normalize_input``
+    rebuilds a datetime from the unix timestamp and would otherwise collapse a
+    date-only end to an exact midnight (dropping intraday bars on the final day).
+
+    A ``datetime`` (or a string with a time component) is normalized exactly as
+    today via :func:`_normalize_input`.
+
+    Args:
+        end: UTC-aware datetime, naive datetime, or ISO 8601 string.
+
+    Returns:
+        UTC-aware ``datetime`` truncated to integer seconds. Date-only strings are
+        expanded to that day's 23:59:59 UTC.
+    """
+    if isinstance(end, str) and " " not in end and "T" not in end:
+        return datetime.fromtimestamp(end_of_day_timestamp(end), tz=UTC)
+    return _normalize_input(end)
+
+
 # Intervals that bypass segmentation. Monthly/weekly intervals never accumulate enough
 # bars to require segmentation, and variable-length durations make segment sizing
 # unreliable. Keep in sync with _UNSUPPORTED_INTERVALS in utils.py.
@@ -627,6 +651,13 @@ class OHLCV:
         validate_interval(interval)
 
         range_param: str = build_range_param(start, end)
+        # Exact inclusive bounds, computed once and reused for the server range
+        # (via build_range_param), the create_series pre-modify filter and the
+        # client-side post-filter. ``start``/``end`` are already normalized by the
+        # caller (date-only ends expanded to 23:59:59 in get_historical_ohlcv), so
+        # to_unix_timestamp() — not end_of_day_timestamp() — is the exact boundary.
+        from_ts: int = to_unix_timestamp(start)
+        to_ts: int = to_unix_timestamp(end)
         await self._prepare_chart_session(
             canonical, interval, MAX_BARS_REQUEST, range_param=range_param, adjustment=adjustment
         )
@@ -715,10 +746,8 @@ class OHLCV:
                         # save as a fallback — for recent queries the create_series
                         # response may already contain the target bars. Only used if
                         # modify_series returns nothing (see post-loop recovery below).
-                        _from_ts: int = to_unix_timestamp(start)
-                        _to_ts: int = end_of_day_timestamp(end)
                         pre_modify_bars_in_range = [
-                            b for b in historical_bars if _from_ts <= b.timestamp <= _to_ts
+                            b for b in historical_bars if from_ts <= b.timestamp <= to_ts
                         ]
                         if pre_modify_bars_in_range:
                             logger.debug(
@@ -793,37 +822,44 @@ class OHLCV:
                 len(historical_bars),
             )
 
-        # Safety net: if modify_series returned no bars but create_series had
-        # in-range bars saved as a fallback, use those instead of raising
-        # NoHistoricalDataError. Triggered by server throttling, continuous futures
-        # data availability limits, or a single-event series_completed variant.
-        if not historical_bars and pre_modify_bars_in_range:
-            logger.info(
-                "modify_series returned no bars — falling back to %d in-range bars "
-                "from create_series response (possible server throttle or "
-                "single-event series_completed).",
-                len(pre_modify_bars_in_range),
-                extra={
-                    "symbol": canonical,
-                    "interval": interval,
-                    "fallback_bar_count": len(pre_modify_bars_in_range),
-                },
-            )
-            historical_bars = pre_modify_bars_in_range
+        # Merge the create_series in-range bars with the modify_series result,
+        # deduplicating by timestamp with last-received-wins semantics.
+        #
+        # The create_series response covers the most recent MAX_BARS_REQUEST bars
+        # (which includes most of a recent range), while modify_series covers the
+        # rest (e.g. bars older than the create_series window). For a range that
+        # straddles the create_series window boundary, modify_series alone returns
+        # only the pre-boundary slice — merging is required to return the complete
+        # range. create_series bars are inserted FIRST so that a later modify_series
+        # bar (or a subsequent "du" update of the live bar) overwrites the older
+        # snapshot for the same timestamp.
+        if pre_modify_bars_in_range:
+            if not historical_bars:
+                logger.info(
+                    "modify_series returned no bars — falling back to %d in-range "
+                    "create_series bars.",
+                    len(pre_modify_bars_in_range),
+                )
+            else:
+                logger.debug(
+                    "Merging %d in-range bars from create_series with %d modify_series bars.",
+                    len(pre_modify_bars_in_range),
+                    len(historical_bars),
+                )
 
-        # Sort bars by timestamp for chronological order.
-        historical_bars.sort(key=lambda bar: bar.timestamp)
+        merged: dict[float, OHLCVBar] = {}
+        for bar in pre_modify_bars_in_range:
+            merged[bar.timestamp] = bar
+        for bar in historical_bars:
+            merged[bar.timestamp] = bar
+        historical_bars = sorted(merged.values(), key=lambda bar: bar.timestamp)
 
         # Client-side range filter: TradingView's modify_series range constraint is
         # applied server-side but does not guarantee strict boundary adherence — bars
         # beyond the requested end date (e.g., the live/current period) may bleed
         # through. This O(n) filter removes any such out-of-range bars.
-        from_ts: int = to_unix_timestamp(start)
-        to_ts_inclusive: int = end_of_day_timestamp(end)
         pre_filter_count: int = len(historical_bars)
-        historical_bars = [
-            bar for bar in historical_bars if from_ts <= bar.timestamp <= to_ts_inclusive
-        ]
+        historical_bars = [bar for bar in historical_bars if from_ts <= bar.timestamp <= to_ts]
         removed: int = pre_filter_count - len(historical_bars)
         if removed > 0:
             logger.debug(
@@ -831,7 +867,7 @@ class OHLCV:
                 "(from_ts=%d, to_ts=%d, remaining=%d)",
                 removed,
                 from_ts,
-                to_ts_inclusive,
+                to_ts,
                 len(historical_bars),
             )
 
@@ -1299,7 +1335,7 @@ class OHLCV:
             # _normalize_input() calls ensure_utc() for datetime objects (warns if
             # naive) then _to_utc_datetime() for string parsing and second truncation.
             start_dt: datetime = _normalize_input(start)
-            end_dt: datetime = _normalize_input(end)
+            end_dt: datetime = _normalize_end(end)
 
             # Validate range: clamp future end, check start <= end.
             start_dt, end_dt = self._validate_range(start_dt, end_dt)

@@ -232,7 +232,7 @@ Fetch all bars within a start/end date range. Both `start` and `end` are keyword
 - `exchange_symbol` (str): Symbol in 'EXCHANGE:SYMBOL' format
 - `interval` (str): Time interval (default: "1")
 - `start` (datetime | str): Start of the range, inclusive. Accepts timezone-aware datetime, naive datetime (treated as UTC), or ISO 8601 string (`"2024-01-01"`, `"2024-01-01T00:00:00Z"`)
-- `end` (datetime | str): End of the range, inclusive. Same accepted types as `start`
+- `end` (datetime | str): End of the range, inclusive. Same accepted types as `start`. A date-only string (no `" "` and no `"T"`) means "the whole day" and is expanded to 23:59:59 UTC; a `datetime` or a string with a time component is used exactly.
 
 **Timezone behaviour**: Naive `datetime` objects are assumed to be UTC. A `logger.debug()` message is emitted — no exception is raised.
 

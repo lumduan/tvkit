@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Range-mode date-only `end` no longer drops the final day's intraday bars.** The
+  "date-only string = whole day" expansion was previously applied inside
+  `build_range_param`/`_fetch_single_range` *after* `get_historical_ohlcv` had already
+  rebuilt `end` as a `datetime`, erasing the date-only distinction. The expansion now
+  happens at the API boundary (`get_historical_ohlcv` and `BatchDownloadRequest`), so
+  `end="2024-12-31"` is expanded to `23:59:59 UTC` before any range math, and the final
+  day's bars survive both the server range and the client post-filter.
+
+- **A range straddling the 5000-bar `create_series` window is no longer truncated.**
+  `_fetch_single_range` previously discarded the in-range `create_series` bars whenever
+  `modify_series` returned a non-empty (but partial) result. It now always merges the
+  two responses, so a range that straddles the window returns the complete set (e.g. the
+  reported `SSE:000001` `"1"` case now returns 19 + 220 = 239 bars).
+
+- **Deduplication is now explicit and last-received-wins.** The merged list previously
+  relied on stable-sort + first-occurrence, so a later `du` update of the live bar lost
+  to the earlier `create_series` snapshot (stale copy survived). A `dict[float, OHLCVBar]`
+  is now filled in arrival order — `create_series` first, then `modify_series`/`du` — so
+  the most recently received bar for a timestamp wins. This also fixes the
+  `set[int]`/`float` mypy mismatch.
+
+### Changed
+
+- **`end_of_day_timestamp(datetime)` is now the identity.** A `datetime` always carries an
+  explicit time, so `datetime(2024, 12, 31, 0, 0)` is an exact midnight boundary — it is
+  no longer expanded to `23:59:59`. Only date-only *strings* mean "the whole day". This
+  fixes the midnight leak (an overnight window ending at exact midnight no longer returns
+  the following day via the `create_series` fallback).
+
+- **`build_range_param` is unchanged and documented as exact.** It keeps
+  `to_unix_timestamp(end)` (no date-only expansion); the whole-day expansion is applied
+  upstream by `get_historical_ohlcv` / `BatchDownloadRequest`. `build_range_param`'s
+  documented outputs are preserved.
+
 ---
 
 ## [0.15.0] — 2026-08-26

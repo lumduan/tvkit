@@ -143,24 +143,28 @@ def end_of_day_timestamp(ts: datetime | str) -> int:
     Args:
         ts: A timezone-aware datetime, a naive datetime (assigned UTC without conversion),
             or an ISO 8601 string. A string is treated as date-only when it contains no
-            space (``" "``) and no ``"T"`` separator. A datetime object is treated as
-            date-only when hour, minute, second, and microsecond are all zero.
+            space (``" "``) and no ``"T"`` separator. A datetime object is always treated
+            as carrying an explicit time — even ``datetime(..., 0, 0, 0)`` means an exact
+            midnight boundary, **not** "the whole day" (only date-only *strings* mean that).
 
     Returns:
-        Unix timestamp as integer seconds. For date-only inputs, 86399 seconds (23h 59m 59s)
-        are added to the midnight base timestamp so the entire calendar day is included.
+        Unix timestamp as integer seconds. For date-only string inputs, 86399 seconds
+        (23h 59m 59s) are added to the midnight base timestamp so the entire calendar
+        day is included. For datetime inputs the exact timestamp is returned unchanged.
 
     Example:
         >>> end_of_day_timestamp("2025-12-31")
         1767225599   # 2025-12-31 23:59:59 UTC
         >>> end_of_day_timestamp("2025-12-31 16:00")
         1767196800   # unchanged — time component present
+        >>> end_of_day_timestamp(datetime(2025, 12, 31, 0, 0, 0, tzinfo=UTC))
+        1767139200   # exact midnight — datetime carries an explicit time
     """
     base: int = to_unix_timestamp(ts)
     if isinstance(ts, str):
         is_date_only: bool = " " not in ts and "T" not in ts
     else:
-        is_date_only = ts.hour == 0 and ts.minute == 0 and ts.second == 0 and ts.microsecond == 0
+        is_date_only = False
     return base + 86399 if is_date_only else base
 
 

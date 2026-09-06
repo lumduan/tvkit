@@ -122,6 +122,26 @@ class TestFetchAllHappyPath:
         assert len(result) == 1
         assert result[0].timestamp == 100.0
 
+    @pytest.mark.asyncio
+    async def test_multi_segment_seam_count_is_exact(self) -> None:
+        """Boundary bars across multiple segment seams are counted exactly once.
+
+        Three segments where each seam bar bleeds into both adjacent segments.
+        The merged result must contain the union of unique timestamps — 4 bars,
+        with each of the two seam timestamps counted once (not lost, not doubled).
+        """
+        service = _service_1bar_per_segment(
+            [make_bar(100.0), make_bar(200.0)],  # segment 1, ends at 200
+            [make_bar(200.0), make_bar(300.0)],  # segment 2, bleeds 200, ends at 300
+            [make_bar(300.0), make_bar(400.0)],  # segment 3, bleeds 300
+        )
+        result = await service.fetch_all(
+            "NASDAQ:AAPL", "1H", start=_T0, end=_T0 + timedelta(hours=2)
+        )
+        timestamps = {b.timestamp for b in result}
+        assert timestamps == {100.0, 200.0, 300.0, 400.0}
+        assert len(result) == 4
+
 
 # ---------------------------------------------------------------------------
 # TestFetchAllEdgeCases

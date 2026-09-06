@@ -6,10 +6,18 @@ import inspect
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field, SecretStr, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from tvkit.api.chart.models.ohlcv import OHLCVBar
-from tvkit.api.chart.utils import validate_interval
+from tvkit.api.chart.utils import end_of_day_timestamp, validate_interval
 
 __all__ = [
     "BatchDownloadRequest",
@@ -282,11 +290,22 @@ class BatchDownloadRequest(BaseModel):
 
     @field_validator("start", "end", mode="before")
     @classmethod
-    def parse_and_normalize_datetime(cls, value: str | datetime | None) -> datetime | None:
-        """Parse ISO 8601 strings and normalize all datetimes to UTC-aware."""
+    def parse_and_normalize_datetime(
+        cls, value: str | datetime | None, info: ValidationInfo
+    ) -> datetime | None:
+        """Parse ISO 8601 strings and normalize all datetimes to UTC-aware.
+
+        A date-only ``end`` string (no ``" "`` and no ``"T"`` separator) means
+        "the whole day" and is expanded to 23:59:59 UTC — matching the
+        ``_normalize_end`` behaviour in ``get_historical_ohlcv``. A date-only
+        ``start`` string stays at midnight (the start of the day).
+        """
         if value is None:
             return None
         if isinstance(value, str):
+            is_date_only = " " not in value and "T" not in value
+            if is_date_only and info.field_name == "end":
+                return datetime.fromtimestamp(end_of_day_timestamp(value), tz=UTC)
             try:
                 value = datetime.fromisoformat(value)
             except ValueError as exc:

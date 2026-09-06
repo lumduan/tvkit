@@ -87,10 +87,17 @@ class TestEndOfDayTimestamp:
         ts: int = to_unix_timestamp("2025-12-31T16:00:00")
         assert end_of_day_timestamp("2025-12-31T16:00:00") == ts
 
-    def test_midnight_datetime_object_treated_as_date_only(self) -> None:
+    def test_midnight_datetime_object_is_exact(self) -> None:
+        """A midnight datetime carries an explicit time, so it is NOT date-only.
+
+        Only date-only *strings* (no ``" "`` / ``"T"``) mean "whole day".  A
+        ``datetime(..., 0, 0, 0)`` is an exact midnight boundary and must not be
+        expanded to end-of-day — otherwise a range ending at midnight would leak
+        the following day's bars into the result.
+        """
         dt: datetime = datetime(2025, 12, 31, 0, 0, 0, tzinfo=UTC)
         base: int = to_unix_timestamp(dt)
-        assert end_of_day_timestamp(dt) == base + 86399
+        assert end_of_day_timestamp(dt) == base
 
     def test_datetime_object_with_time_is_unchanged(self) -> None:
         dt: datetime = datetime(2025, 12, 31, 16, 0, 0, tzinfo=UTC)
@@ -230,3 +237,59 @@ class TestRangePostFilter:
 
         # All 3 bars must be present — no post-filter in count mode
         assert len(bars) == 3
+
+    @pytest.mark.asyncio
+    async def test_date_only_end_expands_range_param_and_keeps_last_day(self) -> None:
+        """A date-only end expands to end-of-day in the server range and post-filter.
+
+        The range_param sent to TradingView must end at 23:59:59 (midnight + 86399)
+        for a date-only end, and an intraday bar on the final day must survive.
+        """
+        messages: list[dict[str, Any]] = [
+            _SERIES_COMPLETED,
+            _make_timescale_update([TS_2025_JAN_01, TS_2025_DEC_31, TS_2025_DEC_31_16H]),
+            _SERIES_COMPLETED,
+        ]
+        client: OHLCV = _make_range_client(messages)
+
+        bars = await client.get_historical_ohlcv(
+            exchange_symbol=SYMBOL,
+            start="2025-01-01",
+            end="2025-12-31",
+        )
+
+        prepare_mock = client._prepare_chart_session
+        assert prepare_mock.call_args is not None
+        range_param: str = prepare_mock.call_args.kwargs["range_param"]
+        to_ts = int(range_param[2:].split(":")[1])
+        assert to_ts == TS_2025_DEC_31 + 86399
+
+        timestamps: list[int] = [bar.timestamp for bar in bars]
+        assert TS_2025_DEC_31 in timestamps
+        assert TS_2025_DEC_31_16H in timestamps
+
+    @pytest.mark.asyncio
+    async def test_exact_midnight_datetime_end_does_not_leak_following_day(self) -> None:
+        """A datetime end at exact midnight does not leak the following day's bars.
+
+        A datetime(..., 0, 0, 0) end is an exact boundary — not "the whole day" — so
+        bars after that midnight must be excluded from both the create_series
+        fallback and the post-filter.
+        """
+        end: datetime = datetime(2025, 12, 31, 0, 0, 0, tzinfo=UTC)
+        messages: list[dict[str, Any]] = [
+            _make_timescale_update([TS_2025_JAN_01, TS_2025_DEC_31, TS_2025_DEC_31_16H]),
+            _SERIES_COMPLETED,  # single event → create_series fallback path
+        ]
+        client: OHLCV = _make_range_client(messages)
+
+        bars = await client.get_historical_ohlcv(
+            exchange_symbol=SYMBOL,
+            start="2025-01-01",
+            end=end,
+        )
+
+        timestamps: list[int] = [bar.timestamp for bar in bars]
+        assert TS_2025_JAN_01 in timestamps
+        assert TS_2025_DEC_31 in timestamps  # exact midnight is inclusive
+        assert TS_2025_DEC_31_16H not in timestamps  # following day must not leak

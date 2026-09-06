@@ -42,9 +42,11 @@ SERIES_ERROR_MSG: dict[str, Any] = {
 _TS_2024_JAN_01: float = 1_704_067_200.0
 
 
-def make_range_timescale_update(bars_count: int) -> dict[str, Any]:
+def make_range_timescale_update(
+    bars_count: int, base_ts: float = _TS_2024_JAN_01
+) -> dict[str, Any]:
     """Build a fake timescale_update with bars stamped inside the 2024 test window."""
-    return make_timescale_update(bars_count=bars_count, base_ts=_TS_2024_JAN_01)
+    return make_timescale_update(bars_count=bars_count, base_ts=base_ts)
 
 
 def make_timescale_update(
@@ -882,7 +884,8 @@ class TestRangeMode:
             SERIES_LOADING_MSG,
             SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=10),
-            make_range_timescale_update(bars_count=5),
+            # Distinct base timestamp so the two batches do not overlap after dedup.
+            make_range_timescale_update(bars_count=5, base_ts=_TS_2024_JAN_01 + 10 * 60),
             SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_client(messages)
@@ -960,7 +963,10 @@ class TestRangeMode:
         messages: list[dict[str, Any]] = [
             SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=MAX_BARS_REQUEST + 1),
-            make_range_timescale_update(bars_count=2),
+            # Distinct base timestamp so the two batches do not overlap after dedup.
+            make_range_timescale_update(
+                bars_count=2, base_ts=_TS_2024_JAN_01 + (MAX_BARS_REQUEST + 1) * 60
+            ),
             SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
         client: OHLCV = _make_client(messages)
