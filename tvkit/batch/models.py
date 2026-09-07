@@ -224,7 +224,9 @@ class BatchDownloadRequest(BaseModel):
     end: datetime | None = Field(
         default=None,
         description=(
-            "Range end. Accepts ISO 8601 string or datetime — normalized to UTC. "
+            "Range end (inclusive). Accepts ISO 8601 string or datetime — normalized to UTC. "
+            "A date-only string ('2024-12-31') covers the whole calendar day and is expanded "
+            "to 23:59:59 UTC; a string with a time component or a datetime is used exactly. "
             "Defaults to current UTC time if start is set but end is omitted."
         ),
     )
@@ -296,18 +298,21 @@ class BatchDownloadRequest(BaseModel):
         """Parse ISO 8601 strings and normalize all datetimes to UTC-aware.
 
         A date-only ``end`` string (no ``" "`` and no ``"T"`` separator) means
-        "the whole day" and is expanded to 23:59:59 UTC — matching the
-        ``_normalize_end`` behaviour in ``get_historical_ohlcv``. A date-only
-        ``start`` string stays at midnight (the start of the day).
+        "the whole day" and is expanded to 23:59:59 UTC — the same rule
+        ``OHLCV.get_historical_ohlcv()`` applies, so a batch request and a direct
+        call return the same bars. ``end_of_day_timestamp()`` is the single
+        definition of that rule (it is the identity for strings with a time
+        component). A date-only ``start`` string stays at midnight (the start of
+        the day); ``datetime`` values are used exactly.
         """
         if value is None:
             return None
         if isinstance(value, str):
-            is_date_only = " " not in value and "T" not in value
-            if is_date_only and info.field_name == "end":
-                return datetime.fromtimestamp(end_of_day_timestamp(value), tz=UTC)
             try:
-                value = datetime.fromisoformat(value)
+                if info.field_name == "end":
+                    value = datetime.fromtimestamp(end_of_day_timestamp(value), tz=UTC)
+                else:
+                    value = datetime.fromisoformat(value)
             except ValueError as exc:
                 raise ValueError(
                     f"Invalid datetime string: {value!r}. "

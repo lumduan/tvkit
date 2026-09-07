@@ -99,6 +99,15 @@ class TestEndOfDayTimestamp:
         base: int = to_unix_timestamp(dt)
         assert end_of_day_timestamp(dt) == base
 
+    def test_midnight_naive_datetime_object_is_exact(self) -> None:
+        """A naive midnight datetime is assigned UTC and stays exact — no +86399."""
+        dt: datetime = datetime(2025, 12, 31, 0, 0, 0)
+        assert end_of_day_timestamp(dt) == to_unix_timestamp(dt)
+
+    def test_iso_string_at_midnight_with_T_is_exact(self) -> None:
+        """A string carrying an explicit midnight time is not date-only."""
+        assert end_of_day_timestamp("2025-12-31T00:00:00Z") == to_unix_timestamp("2025-12-31")
+
     def test_datetime_object_with_time_is_unchanged(self) -> None:
         dt: datetime = datetime(2025, 12, 31, 16, 0, 0, tzinfo=UTC)
         base: int = to_unix_timestamp(dt)

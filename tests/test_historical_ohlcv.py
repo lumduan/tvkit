@@ -884,7 +884,9 @@ class TestRangeMode:
             SERIES_LOADING_MSG,
             SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=10),
-            # Distinct base timestamp so the two batches do not overlap after dedup.
+            # Distinct base timestamp so the two batches do not overlap: since v0.16.0
+            # a fetch keeps one bar per timestamp (last received wins), and the
+            # original fixture stamped both batches from the same base by accident.
             make_range_timescale_update(bars_count=5, base_ts=_TS_2024_JAN_01 + 10 * 60),
             SERIES_COMPLETED_MSG,  # Second: modify_series response — break
         ]
@@ -963,7 +965,9 @@ class TestRangeMode:
         messages: list[dict[str, Any]] = [
             SERIES_COMPLETED_MSG,  # First: create_series response — bars discarded
             make_range_timescale_update(bars_count=MAX_BARS_REQUEST + 1),
-            # Distinct base timestamp so the two batches do not overlap after dedup.
+            # Distinct base timestamp so the two batches do not overlap: since v0.16.0
+            # a fetch keeps one bar per timestamp (last received wins), and the
+            # original fixture stamped both batches from the same base by accident.
             make_range_timescale_update(
                 bars_count=2, base_ts=_TS_2024_JAN_01 + (MAX_BARS_REQUEST + 1) * 60
             ),
