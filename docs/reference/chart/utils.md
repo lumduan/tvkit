@@ -350,12 +350,15 @@ def segment_time_range(
 
 **Boundary algebra:**
 
-- `segment_delta = (max_bars - 1) * interval_seconds` — the span of one full segment
-- Each segment covers `[cursor, min(cursor + segment_delta, end)]`
-- The cursor for the next segment advances by `interval_seconds` past the previous segment's end, ensuring no gaps and no overlaps
+- `segment_duration = max_bars * interval_seconds` — the span of one full segment, in seconds
+- Each segment covers `[cursor, min(cursor + segment_duration - 1s, end)]`, both ends inclusive
+- The next segment starts one second after the previous one ends (`segment[n].end + 1s == segment[n+1].start`), so every instant of `[start, end]` belongs to exactly one segment — no gaps, no overlaps, whatever the phase of the bar timestamps
+- A full segment holds at most `max_bars` bars of any regular `interval_seconds` grid
 - The last segment is always clamped to `end`
 
-**Returns:** `list[TimeSegment]` — At least one segment. Segments are non-overlapping and collectively cover the full `[start, end]` range.
+Earlier versions left one full interval between consecutive segments; a bar stamped off the interval grid on a seam day (for example a daily bar stamped at its 14:30 UTC session open when the seams fell on midnight) was requested by no segment.
+
+**Returns:** `list[TimeSegment]` — At least one segment. Segments are contiguous, non-overlapping and collectively cover the full `[start, end]` range.
 
 **Raises:**
 

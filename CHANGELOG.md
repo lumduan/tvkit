@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Segmented fetches no longer lose bars stamped off the interval grid on a segment
+  boundary day.** A range large enough to be split into segments (more bars than the
+  account limit, e.g. more than 5000 daily bars) used to leave one full interval between
+  consecutive segments, so a bar that fell strictly inside that gap was requested by no
+  segment — a daily bar stamped at its 14:30 UTC session open when the seams fell on
+  midnight simply disappeared from the result. Segments are now contiguous at one-second
+  resolution: every instant of the requested range belongs to exactly one segment, and
+  each segment still holds at most `max_bars` bars.
+
+### Changed
+
+- **`segment_time_range()` boundaries.** `segment[n].end` is now one second before
+  `segment[n+1].start` instead of one interval before, so a full segment spans
+  `max_bars × interval_seconds` seconds. The segment count and every segment's `start`
+  are unchanged; only the `end` of each non-final segment moves later. Callers that
+  consumed the returned `TimeSegment`s directly should expect the new `end` values.
+
 ---
 
 ## [0.16.0] — 2026-09-07

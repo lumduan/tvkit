@@ -426,16 +426,14 @@ class TestSegmentSeams:
         assert _range_param_bounds(client)[1] == end_of_day_timestamp("2024-01-25")
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known limitation, unchanged by v0.16.0: segment_time_range() leaves a "
-            "one-interval hole between seg.end and next.start, so a bar stamped off the "
-            "interval grid on a seam day (e.g. a session-open daily bar at 14:30 UTC) is "
-            "requested by no segment. Follow-up: contiguous segment windows."
-        ),
-    )
     async def test_off_grid_daily_stamps_survive_midnight_seams(self) -> None:
+        """Daily bars stamped at their 14:30 UTC session open cross midnight seams intact.
+
+        Regression: segment_time_range() used to leave one full interval between
+        consecutive segments, so with midnight seams the bars of 01-10 and 01-20
+        (stamped 14:30, strictly inside the hole) were requested by no segment and
+        vanished. Segments are now contiguous at one-second resolution.
+        """
         t0 = datetime(2024, 1, 1, 14, 30, tzinfo=UTC)  # session-open stamps
         grid = [int((t0 + timedelta(days=d)).timestamp()) for d in range(25)]
         client = self._client_with_max_bars(10)
@@ -446,4 +444,24 @@ class TestSegmentSeams:
                 SYMBOL, "1D", start="2024-01-01", end="2024-01-25"
             )
 
+        assert client._prepare_chart_session.await_count == 3  # type: ignore[attr-defined]
+        assert [b.timestamp for b in bars] == grid
+
+    @pytest.mark.asyncio
+    async def test_off_grid_hourly_stamps_survive_seams(self) -> None:
+        """Hourly bars stamped at HH:15 (off the segment grid) are each requested exactly once."""
+        t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+        grid = [int((t0 + timedelta(hours=h)).timestamp()) for h in range(12)]
+        client = self._client_with_max_bars(4)
+        self._install_server(client, grid, recent_window=6, resend_recent=False)
+
+        with patch.multiple("tvkit.api.chart.ohlcv", **_make_patches()):
+            bars = await client.get_historical_ohlcv(
+                SYMBOL,
+                "1H",
+                start=datetime(2024, 1, 1, tzinfo=UTC),
+                end=datetime(2024, 1, 1, 11, 59, 59, tzinfo=UTC),
+            )
+
+        assert client._prepare_chart_session.await_count == 3  # type: ignore[attr-defined]
         assert [b.timestamp for b in bars] == grid
