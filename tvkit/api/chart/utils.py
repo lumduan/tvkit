@@ -135,32 +135,38 @@ def to_unix_timestamp(ts: datetime | str) -> int:
 def end_of_day_timestamp(ts: datetime | str) -> int:
     """
     Return the unix timestamp for the end-of-day (23:59:59 UTC) when ts is a date-only
-    value, or the exact unix timestamp when ts already includes a time component.
+    string, or the exact unix timestamp for every other input.
 
-    This is used for client-side range filtering to ensure that intraday bars on the
-    last requested day are not incorrectly excluded by a midnight boundary.
+    This is the single definition of "a date-only string means the whole calendar day".
+    ``OHLCV.get_historical_ohlcv()`` and ``BatchDownloadRequest`` apply it to ``end`` at
+    the API boundary, while the input is still a string; everything downstream (the
+    server range, segmentation, the client-side filter) works with exact timestamps.
 
     Args:
         ts: A timezone-aware datetime, a naive datetime (assigned UTC without conversion),
             or an ISO 8601 string. A string is treated as date-only when it contains no
-            space (``" "``) and no ``"T"`` separator. A datetime object is treated as
-            date-only when hour, minute, second, and microsecond are all zero.
+            space (``" "``) and no ``"T"`` separator. A datetime object is always treated
+            as carrying an explicit time — even ``datetime(..., 0, 0, 0)`` means an exact
+            midnight boundary, **not** "the whole day" (only date-only *strings* mean that).
 
     Returns:
-        Unix timestamp as integer seconds. For date-only inputs, 86399 seconds (23h 59m 59s)
-        are added to the midnight base timestamp so the entire calendar day is included.
+        Unix timestamp as integer seconds. For date-only string inputs, 86399 seconds
+        (23h 59m 59s) are added to the midnight base timestamp so the entire calendar
+        day is included. For datetime inputs the exact timestamp is returned unchanged.
 
     Example:
         >>> end_of_day_timestamp("2025-12-31")
         1767225599   # 2025-12-31 23:59:59 UTC
         >>> end_of_day_timestamp("2025-12-31 16:00")
         1767196800   # unchanged — time component present
+        >>> end_of_day_timestamp(datetime(2025, 12, 31, 0, 0, 0, tzinfo=UTC))
+        1767139200   # exact midnight — datetime carries an explicit time
     """
     base: int = to_unix_timestamp(ts)
     if isinstance(ts, str):
         is_date_only: bool = " " not in ts and "T" not in ts
     else:
-        is_date_only = ts.hour == 0 and ts.minute == 0 and ts.second == 0 and ts.microsecond == 0
+        is_date_only = False
     return base + 86399 if is_date_only else base
 
 
@@ -184,12 +190,20 @@ def build_range_param(start: datetime | str, end: datetime | str) -> str:
     Raises:
         TypeError: If start or end is not a datetime or str.
         ValueError: If start or end is not a valid ISO 8601 string, or if start > end.
-            start == end is valid — allows fetching a single day's intraday bars.
+            start == end is valid.
+
+    Note:
+        No date-only expansion happens here — both bounds are converted exactly, so
+        ``build_range_param("2024-06-15", "2024-06-15")`` describes a single instant.
+        ``OHLCV.get_historical_ohlcv()`` expands a date-only ``end`` to 23:59:59 (see
+        :func:`end_of_day_timestamp`) *before* calling this function, which is what makes
+        a same-day request cover the whole trading day and keeps the server-side range
+        and the client-side filter in agreement.
 
     Example:
         >>> build_range_param("2024-01-01", "2024-12-31")
         'r,1704067200:1735603200'
-        >>> build_range_param("2024-06-15", "2024-06-15")  # single day — valid
+        >>> build_range_param("2024-06-15", "2024-06-15")  # single instant — valid
         'r,1718409600:1718409600'
     """
     from_ts: int = to_unix_timestamp(start)

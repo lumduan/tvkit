@@ -131,10 +131,28 @@ class TestBuildRangeParam:
         assert int(to_ts) == 1735603200
 
     def test_same_day_is_valid(self) -> None:
-        """start == end is valid (single-day intraday fetch)."""
+        """start == end is valid (a single instant at this layer)."""
         result: str = build_range_param("2024-06-15", "2024-06-15")
         parts: list[str] = result[2:].split(":")
         assert parts[0] == parts[1]
+
+    def test_date_only_end_is_not_expanded_here(self) -> None:
+        """A date-only end is midnight here; get_historical_ohlcv() expands it upstream.
+
+        The whole-day expansion is resolved once, at the API boundary, so this public
+        helper stays exact and its documented outputs are stable.
+        """
+        assert build_range_param("2024-06-15", "2024-06-15") == "r,1718409600:1718409600"
+        assert build_range_param("2024-01-01", "2024-12-31") == "r,1704067200:1735603200"
+
+    def test_start_with_time_after_date_only_end_raises(self) -> None:
+        """At this layer a date-only end is midnight, so a later start on that date is invalid.
+
+        get_historical_ohlcv(start="2024-01-01T12:00", end="2024-01-01") IS valid — it
+        expands the end to 23:59:59 before calling build_range_param().
+        """
+        with pytest.raises(ValueError, match="must not be after"):
+            build_range_param("2024-01-01T12:00", "2024-01-01")
 
     def test_start_after_end_raises_value_error(self) -> None:
         """start > end raises ValueError before any WebSocket call."""

@@ -60,6 +60,37 @@ def _normalize_input(dt: datetime | str) -> datetime:
     return _to_utc_datetime(dt)
 
 
+def _normalize_end(end: datetime | str) -> datetime:
+    """Normalize a range ``end`` to a UTC-aware datetime (integer-second precision).
+
+    This is the single place where the *intent* of ``end`` is resolved, while the
+    original type is still available:
+
+    - a date-only ``str`` (``"2024-12-31"`` — no ``" "`` and no ``"T"``) means the whole
+      calendar day and becomes 23:59:59 UTC of that day;
+    - a ``str`` with a time component means exactly that instant;
+    - a ``datetime`` — including an exact midnight such as
+      ``datetime(2024, 12, 31, tzinfo=UTC)`` — means exactly that instant.
+
+    The expansion must happen here because :func:`_normalize_input` rebuilds a datetime
+    from the unix timestamp and would otherwise collapse a date-only end to an exact
+    midnight (dropping the final day's bars). Everything downstream — range validation,
+    segmentation, ``build_range_param`` and the client-side post-filter — receives an
+    exact bound and never expands again. :func:`end_of_day_timestamp` is the single
+    definition of the date-only rule; it is the identity for strings with a time
+    component, so every string goes through it.
+
+    Args:
+        end: UTC-aware datetime, naive datetime, or ISO 8601 string.
+
+    Returns:
+        UTC-aware ``datetime`` truncated to integer seconds.
+    """
+    if isinstance(end, str):
+        return datetime.fromtimestamp(end_of_day_timestamp(end), tz=UTC)
+    return _normalize_input(end)
+
+
 # Intervals that bypass segmentation. Monthly/weekly intervals never accumulate enough
 # bars to require segmentation, and variable-length durations make segment sizing
 # unreliable. Keep in sync with _UNSUPPORTED_INTERVALS in utils.py.
@@ -599,10 +630,13 @@ class OHLCV:
         must use ``get_historical_ohlcv()`` instead. Calling this directly from
         ``SegmentedFetchService`` is intentional and avoids infinite recursion.
 
-        Both ``start`` and ``end`` must be UTC-aware ``datetime`` objects. Normalization
-        from strings or naive datetimes is the caller's responsibility
-        (``get_historical_ohlcv()`` via ``_to_utc_datetime()``; ``SegmentedFetchService``
-        enforces the same contract). This enforces a clear layer boundary.
+        Both ``start`` and ``end`` must be UTC-aware ``datetime`` objects carrying the
+        exact bounds. Normalization from strings or naive datetimes — including the
+        expansion of a date-only ``end`` string to 23:59:59 — is the caller's
+        responsibility (``get_historical_ohlcv()`` via ``_normalize_input()`` /
+        ``_normalize_end()``; ``SegmentedFetchService`` passes ``TimeSegment`` bounds).
+        No date-only expansion happens here: the server range, the create_series
+        pre-filter and the post-filter all use the same two exact timestamps.
 
         Args:
             exchange_symbol: TradingView symbol in EXCHANGE:SYMBOL format.
@@ -613,7 +647,9 @@ class OHLCV:
                              Defaults to ``Adjustment.SPLITS``.
 
         Returns:
-            List of OHLCVBar objects, sorted ascending by timestamp.
+            List of OHLCVBar objects, sorted ascending by timestamp, at most one bar per
+            timestamp (when a timestamp was received more than once, the last received
+            copy is kept).
 
         Raises:
             NoHistoricalDataError: If no bars are received from TradingView for the
@@ -627,6 +663,13 @@ class OHLCV:
         validate_interval(interval)
 
         range_param: str = build_range_param(start, end)
+        # Exact inclusive bounds, computed once and reused for the server range
+        # (via build_range_param), the create_series pre-modify filter and the
+        # client-side post-filter. ``start``/``end`` are already normalized by the
+        # caller (date-only ends expanded to 23:59:59 in get_historical_ohlcv), so
+        # to_unix_timestamp() — not end_of_day_timestamp() — is the exact boundary.
+        from_ts: int = to_unix_timestamp(start)
+        to_ts: int = to_unix_timestamp(end)
         await self._prepare_chart_session(
             canonical, interval, MAX_BARS_REQUEST, range_param=range_param, adjustment=adjustment
         )
@@ -644,13 +687,13 @@ class OHLCV:
         # We discard everything accumulated before the first series_completed and
         # only break on the second one, which carries the historical range bars.
         series_completed_count: int = 0
-        # Safety net: bars from the create_series response that fall within the
-        # requested range, saved before the first-event clear. For recent queries
-        # (e.g. sessions within the last ~83 hours at 1-minute interval),
-        # create_series already delivers the target bars. If modify_series returns
-        # nothing (throttled server, continuous futures edge case, or single-event
-        # protocol variant), these are used as a fallback instead of raising
-        # NoHistoricalDataError immediately.
+        # Bars from the create_series response that fall within the requested range,
+        # saved before the first-event clear. create_series always delivers the most
+        # recent MAX_BARS_REQUEST bars regardless of the range, and TradingView's
+        # modify_series response omits bars that create_series already delivered — so
+        # for a range that overlaps the create_series window these are the ONLY copy of
+        # that slice. They are merged with the modify_series result after the loop
+        # (last received wins, see below).
         pre_modify_bars_in_range: list[OHLCVBar] = []
 
         async for data in self.connection_service.get_data_stream():
@@ -711,18 +754,15 @@ class OHLCV:
                     series_completed_count += 1
                     if series_completed_count == 1:
                         # First completion is the create_series response (most-recent
-                        # bars). Before clearing, filter to the requested range and
-                        # save as a fallback — for recent queries the create_series
-                        # response may already contain the target bars. Only used if
-                        # modify_series returns nothing (see post-loop recovery below).
-                        _from_ts: int = to_unix_timestamp(start)
-                        _to_ts: int = end_of_day_timestamp(end)
+                        # bars). Before clearing, keep the bars inside the requested
+                        # range: TradingView will not re-send them in the modify_series
+                        # response, so they are merged with it after the loop.
                         pre_modify_bars_in_range = [
-                            b for b in historical_bars if _from_ts <= b.timestamp <= _to_ts
+                            b for b in historical_bars if from_ts <= b.timestamp <= to_ts
                         ]
                         if pre_modify_bars_in_range:
                             logger.debug(
-                                "First series_completed — saved %d in-range bars as fallback "
+                                "First series_completed — saved %d in-range bars for the merge "
                                 "(discarding %d out-of-range bars, waiting for modify_series).",
                                 len(pre_modify_bars_in_range),
                                 len(historical_bars) - len(pre_modify_bars_in_range),
@@ -793,37 +833,51 @@ class OHLCV:
                 len(historical_bars),
             )
 
-        # Safety net: if modify_series returned no bars but create_series had
-        # in-range bars saved as a fallback, use those instead of raising
-        # NoHistoricalDataError. Triggered by server throttling, continuous futures
-        # data availability limits, or a single-event series_completed variant.
-        if not historical_bars and pre_modify_bars_in_range:
-            logger.info(
-                "modify_series returned no bars — falling back to %d in-range bars "
-                "from create_series response (possible server throttle or "
-                "single-event series_completed).",
-                len(pre_modify_bars_in_range),
-                extra={
-                    "symbol": canonical,
-                    "interval": interval,
-                    "fallback_bar_count": len(pre_modify_bars_in_range),
-                },
-            )
-            historical_bars = pre_modify_bars_in_range
+        # ── Merge + deduplicate: LAST RECEIVED WINS ──────────────────────────────
+        # create_series delivers the most recent MAX_BARS_REQUEST bars regardless of
+        # the range; modify_series then delivers only what create_series did not (for a
+        # range wholly inside the create_series window it delivers nothing at all). A
+        # range that straddles the window boundary therefore needs both halves.
+        #
+        # Explicit rule: when two bars share a timestamp, the one that arrived later in
+        # the stream replaces the earlier one. Arrival order is the create_series
+        # response, then the modify_series response, then any `du` updates — a later
+        # message is always the fresher snapshot of the same bar. The rule is
+        # implemented by inserting in that order into a dict keyed by timestamp;
+        # neither dict ordering nor sort stability is relied on — the result is sorted
+        # afterwards. (Across segments SegmentedFetchService applies its own rule,
+        # earlier segment wins, because segment ranges are disjoint.)
+        if pre_modify_bars_in_range:
+            if not historical_bars:
+                logger.info(
+                    "modify_series returned no bars — falling back to %d in-range bars "
+                    "from create_series response (range inside the create_series window, "
+                    "server throttle, or single-event series_completed).",
+                    len(pre_modify_bars_in_range),
+                    extra={
+                        "symbol": canonical,
+                        "interval": interval,
+                        "fallback_bar_count": len(pre_modify_bars_in_range),
+                    },
+                )
+            else:
+                logger.debug(
+                    "Merging %d in-range bars from create_series with %d modify_series bars.",
+                    len(pre_modify_bars_in_range),
+                    len(historical_bars),
+                )
 
-        # Sort bars by timestamp for chronological order.
-        historical_bars.sort(key=lambda bar: bar.timestamp)
+        merged: dict[float, OHLCVBar] = {}
+        for bar in (*pre_modify_bars_in_range, *historical_bars):
+            merged[bar.timestamp] = bar  # later arrival overwrites the earlier copy
+        historical_bars = sorted(merged.values(), key=lambda bar: bar.timestamp)
 
         # Client-side range filter: TradingView's modify_series range constraint is
         # applied server-side but does not guarantee strict boundary adherence — bars
         # beyond the requested end date (e.g., the live/current period) may bleed
         # through. This O(n) filter removes any such out-of-range bars.
-        from_ts: int = to_unix_timestamp(start)
-        to_ts_inclusive: int = end_of_day_timestamp(end)
         pre_filter_count: int = len(historical_bars)
-        historical_bars = [
-            bar for bar in historical_bars if from_ts <= bar.timestamp <= to_ts_inclusive
-        ]
+        historical_bars = [bar for bar in historical_bars if from_ts <= bar.timestamp <= to_ts]
         removed: int = pre_filter_count - len(historical_bars)
         if removed > 0:
             logger.debug(
@@ -831,7 +885,7 @@ class OHLCV:
                 "(from_ts=%d, to_ts=%d, remaining=%d)",
                 removed,
                 from_ts,
-                to_ts_inclusive,
+                to_ts,
                 len(historical_bars),
             )
 
@@ -1240,8 +1294,12 @@ class OHLCV:
                 naive datetime (assigned UTC), or ISO 8601 string. Keyword-only.
                 Must be provided together with end.
             end: End of the date range (inclusive). Same accepted types as start.
-                Keyword-only. Must be provided together with start. Future end dates
-                are automatically clamped to the current UTC time.
+                Keyword-only. Must be provided together with start. A date-only string
+                (``"2024-12-31"``) means the whole calendar day and is expanded to
+                23:59:59 UTC; a string with a time component or a ``datetime`` — including
+                an exact midnight such as ``datetime(2024, 12, 31, tzinfo=UTC)`` — is an
+                exact bound. Future end dates are automatically clamped to the current
+                UTC time.
             adjustment: Price adjustment mode. Keyword-only. Defaults to
                 ``Adjustment.SPLITS`` — fully backwards-compatible; all existing calls
                 that omit this parameter produce the same data as before v0.11.0.
@@ -1263,8 +1321,10 @@ class OHLCV:
         Raises:
             ValueError: If neither bars_count nor start/end is provided; if both are
                 provided; if only one of start/end is provided; if bars_count <= 0;
-                if start > end; if the symbol/interval is invalid; or if ``adjustment``
-                is an unrecognised string value.
+                if start > end after a date-only ``end`` has been expanded
+                (``start="2024-06-15T12:00"`` with ``end="2024-06-15"`` is valid and
+                covers 12:00–23:59:59); if the symbol/interval is invalid; or if
+                ``adjustment`` is an unrecognised string value.
             RangeTooLargeError: If the date range requires more than MAX_SEGMENTS (2000)
                 fetch operations. Narrow the range or use a wider interval.
             RuntimeError: If no bars are received from TradingView (count mode).
@@ -1298,8 +1358,11 @@ class OHLCV:
             # Normalize to UTC-aware datetimes (truncated to integer seconds).
             # _normalize_input() calls ensure_utc() for datetime objects (warns if
             # naive) then _to_utc_datetime() for string parsing and second truncation.
+            # _normalize_end() additionally expands a date-only end string to 23:59:59
+            # — the single point where that intent is resolved; everything below
+            # works with exact bounds.
             start_dt: datetime = _normalize_input(start)
-            end_dt: datetime = _normalize_input(end)
+            end_dt: datetime = _normalize_end(end)
 
             # Validate range: clamp future end, check start <= end.
             start_dt, end_dt = self._validate_range(start_dt, end_dt)

@@ -115,8 +115,8 @@ Returns a list of historical OHLCV data for a specified symbol. Supports two mut
 - `exchange_symbol` (str): The symbol in the format 'EXCHANGE:SYMBOL' (e.g., 'BINANCE:BTCUSDT')
 - `interval` (str, optional): The interval for the chart (default is `"1"` for 1 minute)
 - `bars_count` (int | None): Number of bars to fetch (count mode). Mutually exclusive with `start`/`end`.
-- `start` (datetime | str | None): Range start, inclusive. ISO 8601 strings accepted (e.g., `"2024-01-01"`). Keyword-only.
-- `end` (datetime | str | None): Range end, inclusive. Same types as `start`. Keyword-only.
+- `start` (datetime | str | None): Range start, inclusive. ISO 8601 strings accepted (e.g., `"2024-01-01"` means 00:00:00 UTC). Keyword-only.
+- `end` (datetime | str | None): Range end, inclusive. Same types as `start`. A date-only string (`"2024-12-31"`) covers the whole calendar day (23:59:59 UTC); a string with a time component or a `datetime` — including an exact midnight — is an exact bound. Keyword-only.
 
 #### Returns
 - `list[OHLCVBar]`: A list of OHLCVBar objects containing historical OHLCV data

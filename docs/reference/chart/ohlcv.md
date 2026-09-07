@@ -188,7 +188,7 @@ async def get_historical_ohlcv(
 | `interval` | `str` | `"1"` | TradingView interval string. See [Intervals](../../concepts/intervals.md) for valid values. |
 | `bars_count` | `int \| None` | `None` | Count mode: number of most-recent bars to fetch. Mutually exclusive with `start`/`end`. Must be a positive integer. No implicit default — must be provided explicitly in count mode. |
 | `start` | `datetime \| str \| None` | `None` | Range mode: start of date window (inclusive). Keyword-only. Accepts timezone-aware datetime, naive datetime (assigned UTC), or ISO 8601 string. Must be used together with `end`. |
-| `end` | `datetime \| str \| None` | `None` | Range mode: end of date window (inclusive). Keyword-only. Same accepted types as `start`. Must be used together with `start`. |
+| `end` | `datetime \| str \| None` | `None` | Range mode: end of date window (inclusive). Keyword-only. Same accepted types as `start`. Must be used together with `start`. A date-only string (`"2024-12-31"`) covers the whole calendar day (expanded to 23:59:59 UTC); a string with a time component or a `datetime` — including an exact midnight — is an exact bound. |
 | `adjustment` | `Adjustment` | `Adjustment.SPLITS` | Price adjustment mode. Keyword-only. `Adjustment.SPLITS` (default) — split-adjusted only, identical to pre-v0.11.0 behaviour. `Adjustment.DIVIDENDS` — dividend-adjusted (total-return) prices; all prior bars are backward-adjusted for cash dividends. A raw string `"splits"` or `"dividends"` is accepted and coerced automatically. An unknown string raises `ValueError` before any network I/O. |
 
 #### Mode Selection
@@ -306,7 +306,8 @@ async with OHLCV() as client:
         "INDEX:NDFI",
         "1D",
         start=datetime(2024, 1, 1, tzinfo=UTC),
-        end=datetime(2024, 12, 31, tzinfo=UTC),
+        # a datetime is an exact bound — 23:59:59 covers the whole of Dec 31
+        end=datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC),
     )
 ```
 

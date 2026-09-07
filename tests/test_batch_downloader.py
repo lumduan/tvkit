@@ -474,6 +474,67 @@ def test_invalid_iso_datetime_raises() -> None:
         )
 
 
+def test_invalid_date_only_end_raises_friendly_error() -> None:
+    """An unparseable end string that looks date-only still gets the friendly message.
+
+    "not-a-date" has no " " and no "T", so it takes the whole-day expansion path;
+    the ValueError from parsing must be wrapped like every other bad string.
+    """
+    with pytest.raises(ValidationError, match="Invalid datetime string"):
+        BatchDownloadRequest(
+            symbols=["NASDAQ:AAPL"],
+            interval="1D",
+            start="2024-01-01",
+            end="not-a-date",
+        )
+
+
+def test_date_only_end_string_expands_to_end_of_day() -> None:
+    """end="YYYY-MM-DD" covers the whole day — the same rule as get_historical_ohlcv()."""
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        start="2024-01-01",
+        end="2024-12-31",
+    )
+    assert request.start == datetime(2024, 1, 1, tzinfo=UTC)  # date-only start is midnight
+    assert request.end == datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC)
+
+
+def test_end_string_with_time_is_exact() -> None:
+    """A string with a time component is used exactly."""
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        start="2024-01-01",
+        end="2024-12-31T10:00:00Z",
+    )
+    assert request.end == datetime(2024, 12, 31, 10, 0, tzinfo=UTC)
+
+
+def test_datetime_end_at_midnight_is_exact() -> None:
+    """A midnight datetime is an exact instant, not the whole day."""
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1D",
+        start="2024-01-01",
+        end=datetime(2024, 12, 31, tzinfo=UTC),
+    )
+    assert request.end == datetime(2024, 12, 31, tzinfo=UTC)
+
+
+def test_same_day_date_only_range_is_valid() -> None:
+    """start == end as date-only strings is a whole-day range (v0.15.0 raised end <= start)."""
+    request = BatchDownloadRequest(
+        symbols=["NASDAQ:AAPL"],
+        interval="1",
+        start="2024-06-15",
+        end="2024-06-15",
+    )
+    assert request.start == datetime(2024, 6, 15, tzinfo=UTC)
+    assert request.end == datetime(2024, 6, 15, 23, 59, 59, tzinfo=UTC)
+
+
 # ---------------------------------------------------------------------------
 # Phase 2: auth_token SecretStr non-disclosure
 # ---------------------------------------------------------------------------

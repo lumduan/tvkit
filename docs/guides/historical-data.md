@@ -82,7 +82,7 @@ Fetched 124 bars from 2024-01-01 to 2024-06-30
 
 124 rather than ~181 calendar days: weekends and US market holidays contain no bars.
 
-`start` and `end` accept ISO 8601 date strings (`"YYYY-MM-DD"`) or Unix timestamps (integers). Times default to midnight UTC.
+`start` and `end` accept ISO 8601 strings or `datetime` objects. A date-only `start` (`"YYYY-MM-DD"`) means 00:00:00 UTC; a date-only `end` means the whole of that day (23:59:59 UTC). A `datetime` or a string with a time component is an exact bound — `end=datetime(2024, 6, 30, tzinfo=UTC)` stops at midnight, not at the end of June 30.
 
 When both `bars_count` and `start`/`end` are provided, date range takes priority.
 

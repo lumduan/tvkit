@@ -6,10 +6,18 @@ import inspect
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field, SecretStr, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from tvkit.api.chart.models.ohlcv import OHLCVBar
-from tvkit.api.chart.utils import validate_interval
+from tvkit.api.chart.utils import end_of_day_timestamp, validate_interval
 
 __all__ = [
     "BatchDownloadRequest",
@@ -216,7 +224,9 @@ class BatchDownloadRequest(BaseModel):
     end: datetime | None = Field(
         default=None,
         description=(
-            "Range end. Accepts ISO 8601 string or datetime — normalized to UTC. "
+            "Range end (inclusive). Accepts ISO 8601 string or datetime — normalized to UTC. "
+            "A date-only string ('2024-12-31') covers the whole calendar day and is expanded "
+            "to 23:59:59 UTC; a string with a time component or a datetime is used exactly. "
             "Defaults to current UTC time if start is set but end is omitted."
         ),
     )
@@ -282,13 +292,27 @@ class BatchDownloadRequest(BaseModel):
 
     @field_validator("start", "end", mode="before")
     @classmethod
-    def parse_and_normalize_datetime(cls, value: str | datetime | None) -> datetime | None:
-        """Parse ISO 8601 strings and normalize all datetimes to UTC-aware."""
+    def parse_and_normalize_datetime(
+        cls, value: str | datetime | None, info: ValidationInfo
+    ) -> datetime | None:
+        """Parse ISO 8601 strings and normalize all datetimes to UTC-aware.
+
+        A date-only ``end`` string (no ``" "`` and no ``"T"`` separator) means
+        "the whole day" and is expanded to 23:59:59 UTC — the same rule
+        ``OHLCV.get_historical_ohlcv()`` applies, so a batch request and a direct
+        call return the same bars. ``end_of_day_timestamp()`` is the single
+        definition of that rule (it is the identity for strings with a time
+        component). A date-only ``start`` string stays at midnight (the start of
+        the day); ``datetime`` values are used exactly.
+        """
         if value is None:
             return None
         if isinstance(value, str):
             try:
-                value = datetime.fromisoformat(value)
+                if info.field_name == "end":
+                    value = datetime.fromtimestamp(end_of_day_timestamp(value), tz=UTC)
+                else:
+                    value = datetime.fromisoformat(value)
             except ValueError as exc:
                 raise ValueError(
                     f"Invalid datetime string: {value!r}. "

@@ -9,6 +9,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.0] — 2026-09-07
+
+Range-mode fixes reported and first patched by @YuYuKunKun in #55.
+
+### Fixed
+
+- **A range ending at an exact midnight `datetime` no longer leaks the following day.**
+  A window such as `start=datetime(2026, 8, 6, 8, tzinfo=UTC)`,
+  `end=datetime(2026, 8, 7, 0, 0, tzinfo=UTC)` used to return the whole of Aug 7 whenever
+  that day sat inside TradingView's most-recent-5000-bar window: the midnight was silently
+  widened to 23:59:59 before the client-side filter ran. A `datetime` now means exactly
+  that instant.
+
+- **A date-only `end` no longer drops the final day's bars.** `end="2024-12-31"` (and
+  `BatchDownloadRequest(end="2024-12-31")`) now covers the whole of Dec 31: the range sent
+  to TradingView ends at 23:59:59 UTC instead of 00:00:00, so the last day's bars are
+  requested at all, and the client-side filter uses the same bound. Previously the server
+  range stopped at midnight and only the filter was widened, which is why a single day
+  requested as `start="2026-08-07", end="2026-08-07"` came back truncated or empty. It
+  now returns that day's full session, and `end="<today>"` is clamped to now instead of
+  stopping at 00:00.
+
+- **A range overlapping TradingView's most-recent-5000-bar window is no longer truncated.**
+  TradingView does not re-send bars it already delivered in the initial response, so for
+  such a range the follow-up response carried only the older slice and the recent slice
+  was discarded (`SSE:000001`, `"1"`, 2026-08-07: 19 bars instead of 239). Both responses
+  are now merged.
+
+- **No duplicate timestamps within one fetch.** A `du` update of the live bar arriving
+  after its snapshot used to produce two bars with the same timestamp. A fetch now keeps
+  one bar per timestamp — always the last one received.
+
+### Changed
+
+- **`end_of_day_timestamp()` treats every `datetime` as an exact instant.** Previously a
+  `datetime` whose time was 00:00:00 was silently expanded to 23:59:59; only date-only
+  *strings* (no `" "`, no `"T"`) are expanded now. The expansion is applied once, at the
+  API boundary (`get_historical_ohlcv()` and `BatchDownloadRequest`), and everything
+  downstream — `build_range_param()`, segmentation, the client-side filter — works with
+  exact bounds. `build_range_param()` itself is unchanged, and so are its documented outputs.
+
+  **Migration:** if you passed a midnight `datetime` as `end` to mean "the whole of that
+  day", pass the date string instead (`end="2024-12-31"`) or
+  `datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC)`. A midnight `datetime` now ends the
+  range at 00:00:00 of that day — for daily bars, `end=datetime(2024, 12, 31, tzinfo=UTC)`
+  stops at the Dec 30 bar.
+
+- **Bars from the initial response are always merged on the normal two-event path.** This
+  supersedes the 0.11.1 note that "the normal two-event path is unchanged — the fallback
+  only activates when modify_series returns no bars". Those bars are the only copy of the
+  slice TradingView does not re-send, so discarding them was the truncation bug above.
+  Ranges that overlap the recent window return more bars than before — the complete set.
+
+- **Same-day ranges are accepted where they used to raise.** Because a date-only `end`
+  covers the whole day, `start="2024-06-15T12:00", end="2024-06-15"` is valid
+  (12:00–23:59:59) and `BatchDownloadRequest(start="2024-06-15", end="2024-06-15")` no
+  longer fails its `end > start` check. `build_range_param("…T12:00", "2024-06-15")` still
+  raises, because it never expands.
+
+---
+
 ## [0.15.0] — 2026-08-26
 
 ### Changed
