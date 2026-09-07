@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.17.0] — 2026-09-07
 
+Upgrading from 0.15.0 or earlier also crosses 0.16.0, released the same day, whose
+`end`-handling change is described in its own section below.
+
 ### Fixed
 
 - **Segmented fetches no longer lose bars stamped off the interval grid on a segment
@@ -34,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.0] — 2026-09-07
 
-Range-mode fixes reported and first patched by @YuYuKunKun in #55.
+Range-mode fixes reported and fixed by @YuYuKunKun in #55.
 
 ### Fixed
 
@@ -1111,3 +1114,35 @@ This universal indicator access enables professional research applications criti
 - **Cryptocurrencies**: Binance, Coinbase, and major crypto exchanges
 - **Forex**: Major currency pairs and cross rates
 - **Commodities**: Gold, oil, and other tradeable assets
+
+---
+
+<!-- Tagging began at v0.11.1, so 0.11.0 and earlier have no tag to compare against and
+     point at their PyPI release page instead. Those are not broken compare links. -->
+
+[Unreleased]: https://github.com/lumduan/tvkit/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/lumduan/tvkit/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/lumduan/tvkit/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/lumduan/tvkit/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/lumduan/tvkit/compare/v0.13.1...v0.14.0
+[0.13.1]: https://github.com/lumduan/tvkit/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/lumduan/tvkit/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/lumduan/tvkit/compare/v0.11.2...v0.12.0
+[0.11.2]: https://github.com/lumduan/tvkit/compare/v0.11.1...v0.11.2
+[0.11.1]: https://github.com/lumduan/tvkit/releases/tag/v0.11.1
+[0.11.0]: https://pypi.org/project/tvkit/0.11.0/
+[0.10.0]: https://pypi.org/project/tvkit/0.10.0/
+[0.9.0]: https://pypi.org/project/tvkit/0.9.0/
+[0.8.0]: https://pypi.org/project/tvkit/0.8.0/
+[0.7.0]: https://pypi.org/project/tvkit/0.7.0/
+[0.6.0]: https://pypi.org/project/tvkit/0.6.0/
+[0.5.0]: https://pypi.org/project/tvkit/0.5.0/
+[0.4.0]: https://pypi.org/project/tvkit/0.4.0/
+[0.3.0]: https://pypi.org/project/tvkit/0.3.0/
+[0.2.1]: https://pypi.org/project/tvkit/0.2.1/
+[0.2.0]: https://pypi.org/project/tvkit/0.2.0/
+[0.1.4]: https://pypi.org/project/tvkit/0.1.4/
+[0.1.3]: https://pypi.org/project/tvkit/0.1.3/
+[0.1.2]: https://pypi.org/project/tvkit/0.1.2/
+[0.1.1]: https://pypi.org/project/tvkit/0.1.1/
+[0.1.0]: https://pypi.org/project/tvkit/0.1.0/
