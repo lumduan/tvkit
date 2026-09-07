@@ -94,7 +94,7 @@ Invalid parameters raise `pydantic.ValidationError` at construction time.
 | `interval` | `str` | `"1D"` | Timeframe interval. Valid values: `"1"`, `"5"`, `"15"`, `"30"`, `"60"`, `"1H"`, `"4H"`, `"1D"`, `"1W"`, `"1M"` |
 | `bars_count` | `int \| None` | `None` | Number of most-recent bars per symbol. Mutually exclusive with `start`. Must be `> 0`. |
 | `start` | `datetime \| None` | `None` | Range start. Accepts ISO 8601 string or `datetime`; normalized to UTC. Mutually exclusive with `bars_count`. `end` without `start` is invalid. |
-| `end` | `datetime \| None` | `None` | Range end. Normalized to UTC. Requires `start` — `end` without `start` raises `ValidationError`. Defaults to current UTC time when `start` is set but `end` is omitted. Must be strictly after `start`. |
+| `end` | `datetime \| None` | `None` | Range end (inclusive). Normalized to UTC. A date-only string (`"2024-12-31"`) covers the whole calendar day (expanded to 23:59:59 UTC); a string with a time component or a `datetime` is used exactly. Requires `start` — `end` without `start` raises `ValidationError`. Defaults to current UTC time when `start` is set but `end` is omitted. Must be strictly after `start`. |
 | `concurrency` | `int` | `5` | Maximum in-flight WebSocket connections at any moment. Must be `≥ 1`. |
 | `max_attempts` | `int` | `3` | Per-symbol retry limit including the initial attempt. Must be `≥ 1`. |
 | `base_backoff` | `float` | `1.0` | Initial backoff in seconds. Doubles each attempt up to `max_backoff`. Must be `> 0`. |
@@ -125,6 +125,7 @@ Invalid values raise `pydantic.ValidationError` at construction:
 `start` and `end` accept ISO 8601 strings or `datetime` objects. All are normalized to UTC-aware datetimes at construction time:
 
 - ISO 8601 strings are parsed via `datetime.fromisoformat()`.
+- A date-only `end` string is expanded to 23:59:59 UTC — the same rule `get_historical_ohlcv()` applies — so `start="2024-06-15", end="2024-06-15"` is a valid whole-day range. A date-only `start` stays at 00:00:00.
 - **Naive `datetime` objects are assumed to be UTC** and converted to UTC-aware datetimes.
 - Timezone-aware `datetime` objects are converted to UTC.
 

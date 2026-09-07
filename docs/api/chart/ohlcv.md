@@ -236,7 +236,7 @@ Fetch all bars within a start/end date range. Both `start` and `end` are keyword
 
 **Timezone behaviour**: Naive `datetime` objects are assumed to be UTC. A `logger.debug()` message is emitted — no exception is raised.
 
-**Inclusive semantics**: Both endpoints are included in the results. `start == end` is valid and fetches all bars within that calendar day for the specified interval — for example, `"5"` (5-minute) returns approximately 78 bars for a US market session; `"1"` (1-minute) returns approximately 390 bars.
+**Inclusive semantics**: Both endpoints are included in the results. `start == end` as date-only strings is valid and fetches all bars within that calendar day for the specified interval — for example, `"5"` (5-minute) returns approximately 78 bars for a US market session; `"1"` (1-minute) returns approximately 390 bars. A `datetime` `end` — including an exact midnight such as `datetime(2024, 12, 31, tzinfo=timezone.utc)` — is an exact bound, so to cover the whole final day pass the date string or `datetime(2024, 12, 31, 23, 59, 59, tzinfo=timezone.utc)`.
 
 **Timeout**: 180 seconds. The longer timeout allows TradingView to stream multiple `timescale_update` batches when the range spans large periods. Count mode uses 30 seconds.
 
@@ -281,13 +281,14 @@ async with OHLCV() as client:
         end="2024-01-31T23:59:59Z",
     )
 
-# datetime objects (timezone-aware)
+# datetime objects (timezone-aware) — a datetime is an exact bound, so use 23:59:59
+# to include the whole of Dec 31 (a midnight datetime would stop at Dec 30's bar)
 async with OHLCV() as client:
     bars = await client.get_historical_ohlcv(
         "NASDAQ:AAPL",
         interval="1D",
         start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        end=datetime(2024, 12, 31, tzinfo=timezone.utc),
+        end=datetime(2024, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
     )
 
 # Export to CSV via DataExporter

@@ -492,7 +492,8 @@ from tvkit.api.chart.utils import build_range_param
 build_range_param("2024-01-01", "2024-12-31")
 # → "r,1704067200:1735603200"
 
-# Single-day (start == end is valid)
+# Single instant (start == end is valid; get_historical_ohlcv() expands a
+# date-only end to 23:59:59 upstream, so a same-day *request* covers the whole day)
 build_range_param("2024-06-15", "2024-06-15")
 # → "r,1718409600:1718409600"
 
@@ -522,7 +523,7 @@ build_range_param("2024-12-31", "2024-01-01")
 
 `to_unix_timestamp(ts: datetime | str) -> int` — Converts datetime or ISO 8601 string to UTC Unix timestamp (integer seconds); naive datetimes treated as UTC (debug log emitted); raises `ValueError` for invalid strings, `TypeError` for wrong input type.
 
-`build_range_param(start: datetime | str, end: datetime | str) -> str` — Builds TradingView range parameter string `"r,<from>:<to>"`; `start > end` raises `ValueError`; `start == end` is valid (single-day intraday fetch); used internally by `get_historical_ohlcv()` in range mode.
+`build_range_param(start: datetime | str, end: datetime | str) -> str` — Builds TradingView range parameter string `"r,<from>:<to>"` from exact bounds (no date-only expansion); `start > end` raises `ValueError`; `start == end` is valid (a single instant); used internally by `get_historical_ohlcv()` in range mode, which expands a date-only `end` to 23:59:59 before calling it.
 
 ### Constants
 
