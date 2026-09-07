@@ -121,8 +121,8 @@ class TestSegmentTimeRange:
             segment_time_range(start, end, interval_seconds=1, max_bars=5000)
 
     def test_exactly_max_segments_does_not_raise(self) -> None:
-        # Each segment covers exactly one bar (max_bars=1, segment_delta=0 → start==end).
-        # Cursor advances by interval=60s each iteration.
+        # Each segment covers exactly one interval (max_bars=1 → [cursor, cursor + 59s]).
+        # The next segment starts one second later, i.e. interval=60s after the cursor.
         # To get exactly MAX_SEGMENTS segments: end = T0 + (MAX_SEGMENTS - 1) * 60s
         interval = 60
         max_bars = 1
@@ -135,8 +135,8 @@ class TestSegmentTimeRange:
 
     def test_exact_max_bars_single_segment(self) -> None:
         # Range spanning exactly max_bars bars → one segment, end clamped correctly.
-        # With max_bars=5000, interval=60: segment_delta = (5000*60 - 60) = 299,940s
-        # A range of 299,940s fits in one segment.
+        # With max_bars=5000, interval=60 a full segment spans 5000*60 - 1 = 299,999s;
+        # the 5000 grid bars sit at T0 + k*60 for k < 5000, so a 299,940s range fits.
         interval = 60
         max_bars = 5000
         end = T0 + timedelta(seconds=(max_bars - 1) * interval)
@@ -155,11 +155,19 @@ class TestSegmentTimeRange:
 
 
 class TestSegmentBoundaryAlgebra:
-    """Verify the mathematical invariants of segment boundaries."""
+    """Verify the mathematical invariants of segment boundaries.
+
+    Segments are contiguous at one-second resolution: a full segment covers
+    ``max_bars * interval`` consecutive seconds, both ends inclusive, and the next
+    one starts one second later. Earlier versions left a one-interval hole between
+    ``segment[n].end`` and ``segment[n+1].start`` that swallowed bars stamped off
+    the interval grid on a seam day.
+    """
 
     # Use a small max_bars to produce multiple segments over short ranges.
     INTERVAL = 60  # 1 minute
-    MAX_BARS = 3  # 3 bars per segment → segment_duration = 180s, segment_delta = 120s
+    MAX_BARS = 3  # 3 bars per segment → segment_duration = 180s, span = 179s
+    ONE_SECOND = timedelta(seconds=1)
 
     def _segs(self, days: float) -> list[TimeSegment]:
         return segment_time_range(
@@ -176,10 +184,9 @@ class TestSegmentBoundaryAlgebra:
 
     def test_no_gap_between_segments(self) -> None:
         segs = self._segs(1)
-        interval_delta = timedelta(seconds=self.INTERVAL)
         for i in range(len(segs) - 1):
             gap = segs[i + 1].start - segs[i].end
-            assert gap == interval_delta
+            assert gap == self.ONE_SECOND  # was one full interval before the fix
 
     def test_all_segments_cover_full_range(self) -> None:
         end = dt(days=1)
@@ -187,11 +194,75 @@ class TestSegmentBoundaryAlgebra:
         assert segs[0].start == T0
         assert segs[-1].end == end
 
-    def test_cursor_advances_by_interval(self) -> None:
+    def test_segments_are_contiguous_at_one_second(self) -> None:
         segs = self._segs(1)
-        interval_delta = timedelta(seconds=self.INTERVAL)
         for i in range(len(segs) - 1):
-            assert segs[i + 1].start == segs[i].end + interval_delta
+            assert segs[i + 1].start == segs[i].end + self.ONE_SECOND
+
+    def test_every_second_belongs_to_exactly_one_segment(self) -> None:
+        """Walk every whole second of a one-day range: no hole, no double assignment."""
+        end = dt(days=1)
+        segs = self._segs(1)
+        total_seconds = int((end - T0).total_seconds())
+        seg_index = 0
+        for offset in range(total_seconds + 1):
+            instant = T0 + timedelta(seconds=offset)
+            while segs[seg_index].end < instant:
+                seg_index += 1
+            assert segs[seg_index].start <= instant <= segs[seg_index].end
+            if seg_index:
+                assert instant > segs[seg_index - 1].end  # not also in the previous one
+
+    @pytest.mark.parametrize("phase_seconds", [0, 7, 30, 59])
+    def test_off_grid_bars_are_requested_by_exactly_one_segment(self, phase_seconds: int) -> None:
+        """Bars stamped off the interval grid (the seam-hole regression) land in one segment."""
+        end = dt(days=1)
+        segs = self._segs(1)
+        stamps = [
+            T0 + timedelta(seconds=phase_seconds + k * self.INTERVAL)
+            for k in range((24 * 3600) // self.INTERVAL)
+        ]
+        for stamp in stamps:
+            if stamp > end:
+                break
+            owners = [s for s in segs if s.start <= stamp <= s.end]
+            assert len(owners) == 1, f"{stamp.isoformat()} is in {len(owners)} segments"
+
+    @pytest.mark.parametrize("phase_seconds", [0, 7, 30, 59])
+    def test_at_most_max_bars_grid_bars_per_segment(self, phase_seconds: int) -> None:
+        """A full segment never holds more than max_bars bars, whatever the grid phase."""
+        segs = self._segs(1)
+        stamps = [
+            T0 + timedelta(seconds=phase_seconds + k * self.INTERVAL)
+            for k in range((24 * 3600) // self.INTERVAL)
+        ]
+        for seg in segs:
+            inside = sum(1 for stamp in stamps if seg.start <= stamp <= seg.end)
+            assert inside <= self.MAX_BARS
+
+    @pytest.mark.parametrize(
+        "total_seconds",
+        [0, 1, 179, 180, 181, 359, 360, 86400],  # around multiples of the 180s segment
+    )
+    def test_segment_count_is_exact(self, total_seconds: int) -> None:
+        """Contiguous windows of D seconds over total+1 seconds → total // D + 1 segments."""
+        duration = self.MAX_BARS * self.INTERVAL
+        end = T0 + timedelta(seconds=total_seconds)
+        segs = segment_time_range(T0, end, interval_seconds=self.INTERVAL, max_bars=self.MAX_BARS)
+        assert len(segs) == total_seconds // duration + 1
+        assert segs[0].start == T0
+        assert segs[-1].end == end
+
+    def test_docstring_example_segment_count(self) -> None:
+        """The documented example (Q1 2023, 1-minute bars, 5000 per segment) yields 26 segments."""
+        segs = segment_time_range(
+            datetime(2023, 1, 1, tzinfo=UTC),
+            datetime(2023, 3, 31, tzinfo=UTC),
+            interval_seconds=60,
+            max_bars=5000,
+        )
+        assert len(segs) == 26
+        assert segs[1].start == segs[0].end + self.ONE_SECOND
 
     def test_single_bar_range(self) -> None:
         # Range of exactly one interval → one segment covering one bar (start != end).
@@ -202,20 +273,22 @@ class TestSegmentBoundaryAlgebra:
         assert segs[0].end == end
 
     def test_exact_multiple_of_segment_duration(self) -> None:
-        # segment_duration = 3 * 60 = 180s; segment_delta = 120s
+        # segment_duration = 3 * 60 = 180s; a full segment spans 179s
         # Range: T0 → T0 + (2 * 180 - 60) = T0 + 300s
-        # Segment 1: [T0, T0+120s], cursor → T0+180s
-        # Segment 2: [T0+180s, T0+300s], cursor → T0+360s > end → stop
+        # Segment 1: [T0, T0+179s], cursor → T0+180s
+        # Segment 2: [T0+180s, T0+300s] (clamped), cursor → T0+301s > end → stop
         segment_duration = self.MAX_BARS * self.INTERVAL  # 180s
         end = T0 + timedelta(seconds=2 * segment_duration - self.INTERVAL)
         segs = segment_time_range(T0, end, interval_seconds=self.INTERVAL, max_bars=self.MAX_BARS)
         assert len(segs) == 2
+        assert segs[0].end == T0 + timedelta(seconds=segment_duration - 1)
         assert segs[-1].end == end
 
     def test_segment_size_correctness(self) -> None:
-        # All non-last segments must have duration == segment_duration - interval_seconds.
+        # All non-last segments span segment_duration seconds, both ends inclusive:
+        # end - start == segment_duration - 1s.
         segs = self._segs(1)
-        expected_duration = timedelta(seconds=self.MAX_BARS * self.INTERVAL - self.INTERVAL)
+        expected_duration = timedelta(seconds=self.MAX_BARS * self.INTERVAL - 1)
         for seg in segs[:-1]:
             assert seg.end - seg.start == expected_duration
 

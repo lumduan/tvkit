@@ -1,7 +1,6 @@
 """Utility functions for chart API operations."""
 
 import logging
-import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -418,17 +417,22 @@ def segment_time_range(
     max_bars: int = MAX_BARS_REQUEST,
 ) -> list[TimeSegment]:
     """
-    Split a UTC date range into non-overlapping segments sized for a single fetch.
+    Split a UTC date range into contiguous, non-overlapping segments sized for a single fetch.
 
-    Each segment spans at most (max_bars × interval_seconds) seconds, which
-    corresponds to at most max_bars TradingView bars. Consecutive segments are
-    separated by exactly one interval:
+    Each segment spans exactly max_bars × interval_seconds seconds (the last one is
+    clamped to ``end``), so it holds at most max_bars bars of a regular
+    interval_seconds grid whatever the grid's phase. Consecutive segments are
+    contiguous at one-second resolution — TradingView timestamps are whole seconds —
+    so every instant of [start, end] belongs to exactly one segment:
 
-        segment[n].end + timedelta(seconds=interval_seconds) == segment[n+1].start
+        segment[n].end + timedelta(seconds=1) == segment[n+1].start
 
-    This boundary formula ensures that the same timestamp never appears in two
-    segments — deduplication in SegmentedFetchService is a safety net, not the
-    primary correctness mechanism.
+    The same timestamp therefore never appears in two segments, and no timestamp
+    falls between two segments — deduplication in SegmentedFetchService is a safety
+    net for server-side boundary bleed, not the primary correctness mechanism.
+    (Earlier versions separated segments by one full interval; a bar stamped off
+    the interval grid on a seam day — e.g. a daily bar stamped at its 14:30 UTC
+    session open when the seams fell on midnight — was requested by no segment.)
 
     Args:
         start:            Inclusive start of the full range (UTC-aware datetime).
@@ -479,10 +483,11 @@ def segment_time_range(
     segment_duration_secs: int = interval_seconds * max_bars
     total_secs: float = (end - start).total_seconds()
 
-    # Pre-loop estimate guard (fast path — avoids allocating the list).
-    # math.ceil can underestimate by 1 in rare boundary cases, which is why
-    # the in-loop post-append guard below is the authoritative safety net.
-    estimated_segments: int = math.ceil(total_secs / segment_duration_secs) if total_secs > 0 else 1
+    # Pre-loop guard (fast path — avoids allocating the list). For whole-second
+    # bounds this count is exact: contiguous windows of segment_duration_secs
+    # seconds over an inclusive range of total_secs + 1 seconds. The in-loop
+    # post-append guard below remains the authoritative safety net.
+    estimated_segments: int = int(total_secs) // segment_duration_secs + 1
     if estimated_segments > MAX_SEGMENTS:
         raise RangeTooLargeError(
             f"Requested range requires approximately {estimated_segments} segments, "
@@ -492,18 +497,22 @@ def segment_time_range(
 
     segments: list[TimeSegment] = []
     cursor: datetime = start
-    interval_delta: timedelta = timedelta(seconds=interval_seconds)
-    segment_delta: timedelta = timedelta(seconds=segment_duration_secs - interval_seconds)
+    one_second: timedelta = timedelta(seconds=1)
+    # A full segment covers segment_duration_secs consecutive seconds, both ends
+    # inclusive: [cursor, cursor + segment_duration_secs - 1].
+    segment_span: timedelta = timedelta(seconds=segment_duration_secs - 1)
 
     while cursor <= end:
-        seg_end: datetime = min(cursor + segment_delta, end)
+        seg_end: datetime = min(cursor + segment_span, end)
         segments.append(TimeSegment(start=cursor, end=seg_end))
-        # Authoritative in-loop guard: catches cases where ceil underestimates.
+        # Authoritative in-loop guard: catches cases where the estimate underestimates.
         if len(segments) > MAX_SEGMENTS:
             raise RangeTooLargeError(
                 f"Segment count exceeded MAX_SEGMENTS={MAX_SEGMENTS} during iteration. "
                 "Narrow the date range or use a wider interval."
             )
-        cursor = seg_end + interval_delta
+        # Contiguous: the next segment starts one second after this one ends, so no
+        # instant of [start, end] is left unassigned and none is assigned twice.
+        cursor = seg_end + one_second
 
     return segments
