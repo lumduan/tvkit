@@ -157,7 +157,8 @@ A single WebSocket frame may contain multiple concatenated TradingView messages 
 | `timescale_update` | Real-time bar update (live streaming) |
 | `series_loading` | Server has started loading bars |
 | `series_completed` | All requested bars delivered — `OHLCV` breaks the loop here |
-| `symbol_error` | Symbol could not be resolved — `OHLCV` raises an exception |
+| `symbol_error` | Symbol could not be resolved — `OHLCV` raises `SeriesError` (`EntitlementError` for `permission denied`) |
+| `series_error` | Series cannot be served (e.g. `unsupported resolution`, `seconds_not_entitled`) — `OHLCV` raises `SeriesError` / `EntitlementError` |
 | `qsd` | Quote state data — present when quote subscriptions are active |
 
 **Termination**: the `OHLCV` client breaks out of the `get_data_stream()` loop when it receives `series_completed`. The generator itself runs indefinitely until the caller stops iterating or the connection closes.

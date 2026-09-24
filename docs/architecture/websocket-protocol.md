@@ -275,13 +275,36 @@ If the client does not respond, the server drops the connection. tvkit's `Connec
 
 ## Error Responses
 
-If a symbol cannot be resolved:
+TradingView refuses a chart-series request with a `symbol_error` frame (the symbol could not be
+resolved), a `series_error` frame (the series cannot be served), or both. As received from an
+anonymous session on 2026-09-24 (full captures in `docs/_fixtures/outputs/websocket-protocol.txt`):
 
 ```json
-{"m": "symbol_error", "p": ["cs_<session>", "sds_sym_1", "Unknown symbol"]}
+{"m": "symbol_error", "p": ["cs_<session>", "sds_sym_1", "permission denied", "group", "economics_paid"]}
+{"m": "series_error", "p": ["cs_<session>", "sds_1", "s1", "resolve error", "<server-id>"]}
 ```
 
-tvkit's `ConnectionService` checks for this message and raises an exception before the data request is sent.
+- `symbol_error`: `p = [chart_session, "sds_sym_1", reason, *details]`
+- `series_error`: `p = [chart_session, "sds_1", "s1", reason, server_id]` — the last field is a
+  server id or `"undefined"`
+
+A symbol that cannot be resolved gets both frames in the same batch: `symbol_error` with the real
+reason first, then `series_error` with `resolve error`.
+
+| Request (anonymous) | Frame | `reason` | tvkit raises |
+|---|---|---|---|
+| `ECONOMICS:USM2`, `FRED:M2SL` | `symbol_error` | `permission denied` (+ `group`, `economics_paid`) | `EntitlementError` |
+| `NASDAQ:INVALID_FAKE_XYZ` | `symbol_error` | `invalid symbol` | `SeriesError` |
+| `NASDAQ:AAPL`, interval `"1S"` | `series_error` | `seconds_not_entitled` | `EntitlementError` |
+| `INDEX:NDFI`, interval `"5"` | `series_error` | `unsupported resolution: INDEX:NDFI, 5` | `SeriesError` |
+| `NASDAQ:AAPL`, interval `"2D"` | `series_error` | `custom_resolution` | `SeriesError` |
+
+These frames arrive in the data stream, after the request is sent. The `OHLCV` message loops raise
+on the first one, close the connection and report TradingView's reason verbatim — see
+[`SeriesError` and `EntitlementError`](../reference/chart/ohlcv.md#serieserror-and-entitlementerror).
+
+A `study_error` (`"check study unexpected error"`, for the volume study tvkit attaches) arrives even
+on successful fetches. It is not a refusal and is ignored.
 
 ## See Also
 

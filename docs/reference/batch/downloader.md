@@ -243,7 +243,7 @@ Structured error record for a failed symbol fetch.
 | Field | Type | Description |
 |-------|------|-------------|
 | `message` | `str` | Human-readable error message |
-| `exception_type` | `str` | Exception class name (e.g. `"StreamConnectionError"`, `"SymbolValidationError"`) |
+| `exception_type` | `str` | Exception class name (e.g. `"StreamConnectionError"`, `"SymbolValidationError"`, `"EntitlementError"`) |
 | `attempt` | `int` | Attempt number when the error occurred. `0` = pre-flight rejection; `1+` = fetch attempt number. |
 
 ### `attempt` values
@@ -314,6 +314,7 @@ These exceptions stop retry immediately — the symbol is recorded as failed wit
 | Exception | Rationale |
 |-----------|-----------|
 | `ValueError` | Bad input — programmer error; retrying cannot succeed |
+| `SeriesError` / `EntitlementError` | TradingView refused the symbol or interval (e.g. `invalid symbol`, `permission denied`) — permanent. Both subclass `ValueError`. |
 | `NoHistoricalDataError` | TradingView confirms no data exists for this symbol/range — permanent |
 
 Any other unexpected exception is caught by a final broad handler, converted to a failed `SymbolResult`, and logged at `ERROR` with `exc_info=True`. This prevents one symbol's failure from cancelling sibling tasks in `asyncio.gather()`.

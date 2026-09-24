@@ -128,14 +128,20 @@ tvkit currently supports equities, crypto, forex, and indices. Futures contracts
 Not every symbol visible on TradingView is accessible via the API:
 
 - Some exchanges restrict data access to paid tiers
+- Some symbol groups are refused to sessions that are not entitled to them — tvkit raises
+  `EntitlementError`. Anonymous sessions get this for `ECONOMICS:` and `FRED:` symbols
+  (`permission denied`, group `economics_paid`), observed since 2026-09-22
+  ([#59](https://github.com/lumduan/tvkit/issues/59)). Retrying does not help.
 - Certain OTC or pink-sheet instruments may be unavailable
 - Delisted symbols typically return no data without an explicit error
 
 If a symbol returns no bars, verify it exists and is accessible in TradingView's web interface using your account tier.
 
-## Macro Indicators — Daily Only
+## Macro Indicators — Interval Support
 
-`INDEX:NDFI`, `USI:PCC`, and similar macro indicators are published on a daily basis. Requesting intraday intervals for these symbols typically returns no data rather than an error.
+`INDEX:NDFI` refuses intraday intervals: TradingView answers `unsupported resolution` and tvkit
+raises `SeriesError` (verified 2026-09-24 for `"5"` and `"60"`). `USI:PCC` does serve intraday bars
+— `"1"` and `"60"` returned one-minute and hourly bars on the same day.
 
 ## No Order Placement
 
