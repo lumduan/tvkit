@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.18.0] — 2026-09-24
+
 Refused-request reporting, reported by @xgboosted in #59.
 
 ### Fixed
@@ -1165,7 +1169,8 @@ This universal indicator access enables professional research applications criti
 <!-- Tagging began at v0.11.1, so 0.11.0 and earlier have no tag to compare against and
      point at their PyPI release page instead. Those are not broken compare links. -->
 
-[Unreleased]: https://github.com/lumduan/tvkit/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/lumduan/tvkit/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/lumduan/tvkit/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/lumduan/tvkit/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/lumduan/tvkit/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/lumduan/tvkit/compare/v0.14.0...v0.15.0

@@ -710,6 +710,9 @@ Reasons TradingView returned to an anonymous session on 2026-09-24:
 See the [FAQ](../../faq.md#tvkit-raises-serieserror-or-entitlementerror-what-does-that-mean) for a
 runnable example.
 
+**Added in v0.18.0.** Earlier versions raised a plain `ValueError` reading "Invalid interval or bars
+count" for every refusal.
+
 ---
 
 ## Symbol Format
