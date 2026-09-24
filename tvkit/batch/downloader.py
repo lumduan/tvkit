@@ -35,7 +35,9 @@ SYMBOL_VALIDATION_ERROR_TYPE: str = "SymbolValidationError"
 # Intentionally excluded:
 #   RuntimeError:                     Too broad; non-transient OHLCV logic failures would
 #                                     be silently retried and downgraded to failures
-#   ValueError:                       Programmer error / bad input — retrying cannot fix it
+#   ValueError:                       Bad input, or a TradingView refusal (SeriesError and
+#                                     EntitlementError subclass ValueError) — retrying
+#                                     cannot fix it
 #   NoHistoricalDataError(RuntimeError): TradingView confirms data absence — permanent
 _RETRYABLE: tuple[type[BaseException], ...] = (
     StreamConnectionError,
@@ -175,7 +177,8 @@ async def _fetch_one(
             )
 
         except (ValueError, NoHistoricalDataError) as exc:
-            # Non-retryable: bad input or confirmed data absence.
+            # Non-retryable: bad input, a TradingView refusal (SeriesError is a
+            # ValueError subclass), or confirmed data absence.
             # Catch before _RETRYABLE because NoHistoricalDataError is a RuntimeError subclass
             # and could be matched by broad RuntimeError catches if present.
             last_error = ErrorInfo(

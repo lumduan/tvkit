@@ -5,9 +5,11 @@ from datetime import datetime
 __all__ = [
     "AuthError",
     "ChartError",
+    "EntitlementError",
     "NoHistoricalDataError",
     "RangeTooLargeError",
     "SegmentedFetchError",
+    "SeriesError",
     "StreamConnectionError",
 ]
 
@@ -89,6 +91,83 @@ class RangeTooLargeError(ValueError):
     """
 
 
+class SeriesError(ValueError):
+    """
+    Raised when TradingView refuses a chart-series request.
+
+    TradingView answers a series it will not serve with a ``symbol_error`` frame (the
+    symbol could not be resolved, e.g. ``"invalid symbol"``) or a ``series_error`` frame
+    (e.g. ``"unsupported resolution: INDEX:NDFI, 5"``). The message and ``reason`` carry
+    TradingView's own reason verbatim, and the connection is closed before this exception
+    propagates. Refusals because the session is not entitled to the data raise the
+    ``EntitlementError`` subclass.
+
+    Inherits from ``ValueError`` for backward compatibility: earlier tvkit versions raised a
+    plain ``ValueError`` for these refusals, so existing ``except ValueError`` handlers keep
+    working and ``tvkit.batch`` keeps treating them as non-retryable. It is deliberately not
+    a ``ChartError``: that base covers connection and authentication failures, and handlers
+    written to retry those must not start catching refusals that used to escape them.
+
+    Attributes:
+        symbol:       Canonical symbol of the refused request (``EXCHANGE:SYMBOL``).
+        interval:     Interval of the refused request (e.g. ``"1D"``).
+        message_type: TradingView frame type, ``"symbol_error"`` or ``"series_error"``.
+        reason:       TradingView's reason string, verbatim (e.g. ``"invalid symbol"``).
+        details:      Payload fields that follow the reason, verbatim
+                      (e.g. ``("group", "economics_paid")``).
+
+    Example:
+        >>> try:
+        ...     bars = await client.get_historical_ohlcv("INDEX:NDFI", "5", bars_count=100)
+        ... except SeriesError as exc:
+        ...     print(exc.reason)  # unsupported resolution: INDEX:NDFI, 5
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        symbol: str = "",
+        interval: str = "",
+        message_type: str = "",
+        reason: str = "",
+        details: tuple[str, ...] = (),
+    ) -> None:
+        # The keyword arguments have defaults so the exception pickles:
+        # BaseException.__reduce__ re-creates it from the message alone, then
+        # restores these attributes from __dict__.
+        super().__init__(message)
+        self.symbol: str = symbol
+        self.interval: str = interval
+        self.message_type: str = message_type
+        self.reason: str = reason
+        self.details: tuple[str, ...] = details
+
+
+class EntitlementError(SeriesError):
+    """
+    Raised when TradingView refuses a request because the session is not entitled to it.
+
+    Covers the ``symbol_error`` reason ``"permission denied"`` and ``series_error`` reasons
+    ending in ``"_not_entitled"``. Verified against TradingView on 2026-09-24 with an
+    anonymous session: ``ECONOMICS:`` and ``FRED:`` symbols are refused with
+    ``permission denied`` (``details == ("group", "economics_paid")``), and second-based
+    intervals such as ``"1S"`` with ``seconds_not_entitled``.
+
+    The refusal is permanent for this session: retrying the same request will not succeed.
+    Deliberately not a subclass of the built-in ``PermissionError``: that is an ``OSError``,
+    which retry policies commonly treat as a transient I/O failure.
+
+    Example:
+        >>> try:
+        ...     bars = await client.get_historical_ohlcv(
+        ...         "ECONOMICS:USM2", "1D", bars_count=100
+        ...     )
+        ... except EntitlementError as exc:
+        ...     print(exc.reason, exc.details)  # permission denied ('group', 'economics_paid')
+    """
+
+
 class StreamConnectionError(ChartError):
     """
     Raised when WebSocket reconnection fails after exhausting all attempts.
@@ -131,8 +210,10 @@ class SegmentedFetchError(Exception):
     Raised when a segment fetch fails during a segmented historical OHLCV fetch.
 
     ``SegmentedFetchService`` wraps any exception from ``_fetch_single_range()``
-    (other than ``NoHistoricalDataError``) in this typed exception so that callers
-    receive full context about which segment failed and why.
+    (other than ``NoHistoricalDataError`` and ``SeriesError``) in this typed exception so
+    that callers receive full context about which segment failed and why. A
+    ``SeriesError`` propagates unwrapped: TradingView refused the symbol or interval
+    itself, not one segment.
 
     Attributes:
         segment_index:  1-based index of the failed segment.

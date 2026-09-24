@@ -5,7 +5,14 @@ This module provides comprehensive functionality for streaming real-time market 
 from TradingView, including OHLCV data, trade information, and technical indicators.
 """
 
-from .exceptions import AuthError, ChartError, RangeTooLargeError, StreamConnectionError
+from .exceptions import (
+    AuthError,
+    ChartError,
+    EntitlementError,
+    RangeTooLargeError,
+    SeriesError,
+    StreamConnectionError,
+)
 from .models import (
     Adjustment,
     ExportConfig,
@@ -29,7 +36,9 @@ __all__ = [
     # Exceptions
     "AuthError",
     "ChartError",
+    "EntitlementError",
     "RangeTooLargeError",
+    "SeriesError",
     "StreamConnectionError",
     # Data models
     "OHLCVData",

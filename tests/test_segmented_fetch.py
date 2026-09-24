@@ -22,7 +22,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from tvkit.api.chart.exceptions import NoHistoricalDataError, SegmentedFetchError
+from tvkit.api.chart.exceptions import (
+    EntitlementError,
+    NoHistoricalDataError,
+    SegmentedFetchError,
+)
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.api.chart.services.segmented_fetch_service import SegmentedFetchService
@@ -303,6 +307,24 @@ class TestFetchAllFailure:
         with pytest.raises(SegmentedFetchError) as exc_info:
             await service.fetch_all("NASDAQ:AAPL", "1H", start=_T0, end=_T0 + timedelta(hours=1))
         assert isinstance(exc_info.value.cause, ValueError)
+
+    @pytest.mark.asyncio
+    async def test_series_error_propagates_unwrapped(self) -> None:
+        """A TradingView refusal is raised as-is, not wrapped in SegmentedFetchError.
+
+        TradingView refused the symbol or interval, not one segment: every segment would
+        get the same answer, and ``except EntitlementError`` around get_historical_ohlcv()
+        must work whether or not the range was segmented.
+        """
+        refusal = EntitlementError("permission denied", reason="permission denied")
+        mock_client = AsyncMock(spec=OHLCV)
+        mock_client._fetch_single_range = AsyncMock(side_effect=[refusal, [], []])
+        # One bar per segment: a two-day 1D range plans three segments.
+        service = SegmentedFetchService(client=mock_client, max_bars_per_segment=1)
+        with pytest.raises(EntitlementError) as exc_info:
+            await service.fetch_all("ECONOMICS:USM2", "1D", start=_T0, end=_T0 + timedelta(days=2))
+        assert exc_info.value is refusal
+        assert mock_client._fetch_single_range.await_count == 1
 
 
 # ---------------------------------------------------------------------------

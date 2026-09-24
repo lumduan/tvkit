@@ -38,7 +38,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
-from tvkit.api.chart.exceptions import NoHistoricalDataError, StreamConnectionError
+from tvkit.api.chart.exceptions import (
+    EntitlementError,
+    NoHistoricalDataError,
+    StreamConnectionError,
+)
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.batch import BatchDownloadRequest, batch_download
 from tvkit.batch.exceptions import BatchDownloadError
@@ -309,6 +313,36 @@ async def test_non_retryable_no_historical_data() -> None:
     assert result.attempts == 1
     assert result.error is not None
     assert "NoHistoricalDataError" in result.error.exception_type
+
+
+@pytest.mark.asyncio
+async def test_non_retryable_entitlement_error() -> None:
+    """A TradingView entitlement refusal is permanent: one attempt, not max_attempts (#59)."""
+    refusal = EntitlementError(
+        "TradingView could not resolve symbol 'ECONOMICS:USM2': permission denied "
+        "(group economics_paid)",
+        symbol="ECONOMICS:USM2",
+        reason="permission denied",
+    )
+    with patch(
+        "tvkit.batch.downloader.OHLCV",
+        return_value=_make_failing_client(refusal),
+    ):
+        summary = await batch_download(
+            BatchDownloadRequest(
+                symbols=["ECONOMICS:USM2"],
+                interval="1D",
+                bars_count=1,
+                max_attempts=3,
+            )
+        )
+
+    result = summary.results[0]
+    assert result.success is False
+    assert result.attempts == 1
+    assert result.error is not None
+    assert result.error.exception_type == "EntitlementError"
+    assert "permission denied" in result.error.message
 
 
 # ---------------------------------------------------------------------------

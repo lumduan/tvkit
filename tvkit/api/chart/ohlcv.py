@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from tvkit.api.chart.exceptions import NoHistoricalDataError
+from tvkit.api.chart.exceptions import EntitlementError, NoHistoricalDataError, SeriesError
 from tvkit.api.chart.models.adjustment import Adjustment
 from tvkit.api.chart.models.ohlcv import (
     OHLCVBar,
@@ -147,6 +147,86 @@ class _StreamingSession:
 # Range mode uses a longer timeout — multi-year intraday streams can be slow.
 _HISTORICAL_TIMEOUT_SECONDS: int = 30
 _HISTORICAL_RANGE_TIMEOUT_SECONDS: int = 180
+
+# TradingView frames that refuse the chart-series request. Payload layouts, verified
+# live on 2026-09-24 (docs/architecture/websocket-protocol.md#error-responses):
+#   symbol_error: [chart_session, "sds_sym_1", reason, *details]
+#                 e.g. [..., "permission denied", "group", "economics_paid"]
+#   series_error: [chart_session, "sds_1", "s1", reason, server_id]
+#                 e.g. [..., "unsupported resolution: INDEX:NDFI, 5", "<server>"]
+# A symbol that cannot be resolved gets a symbol_error first, then a series_error
+# "resolve error" in the same batch.
+_SERIES_REFUSAL_TYPES: frozenset[str] = frozenset({"symbol_error", "series_error"})
+_REFUSAL_REASON_INDEX: dict[str, int] = {"symbol_error": 2, "series_error": 3}
+
+
+def _is_entitlement_reason(reason: str) -> bool:
+    """Return True if a TradingView refusal reason says the session is not entitled.
+
+    Matches ``"permission denied"`` (``symbol_error``) and reasons ending in
+    ``"_not_entitled"`` such as ``"seconds_not_entitled"`` (``series_error``).
+    """
+    normalized: str = reason.strip().casefold().replace("_", " ")
+    return normalized == "permission denied" or normalized.endswith("not entitled")
+
+
+def _series_refusal(frame: dict[str, Any], *, symbol: str, interval: str) -> SeriesError:
+    """Build the exception for a ``symbol_error`` or ``series_error`` frame.
+
+    TradingView's reason is reported verbatim. A hint is appended only for reasons whose
+    meaning was verified against TradingView; an unknown reason is shown as-is rather than
+    guessed at.
+
+    Never raises, whatever the payload looks like: an exception here would be skipped by
+    the message loop's outer guard, leaving the fetch waiting on a stream TradingView has
+    stopped feeding.
+
+    Args:
+        frame:    The parsed refusal frame (``{"m": ..., "p": [...]}``).
+        symbol:   Canonical symbol of the refused request.
+        interval: Interval of the refused request.
+
+    Returns:
+        ``EntitlementError`` when the reason says the session is not entitled, otherwise
+        ``SeriesError``.
+    """
+    message_type: str = str(frame.get("m"))
+    params: object = frame.get("p")
+    fields: list[str] = [str(item) for item in params] if isinstance(params, list) else []
+    index: int = _REFUSAL_REASON_INDEX.get(message_type, _REFUSAL_REASON_INDEX["series_error"])
+    reason: str = (fields[index].strip() if len(fields) > index else "") or "no reason given"
+    details: tuple[str, ...] = tuple(fields[index + 1 :])
+
+    text: str
+    if message_type == "symbol_error":
+        text = f"TradingView could not resolve symbol {symbol!r}: {reason}"
+        if details:
+            text += f" ({' '.join(details)})"
+    else:
+        # The trailing field of a series_error is a server id (or "undefined"): kept in
+        # ``details`` for debugging, never rendered in the message.
+        text = f"TradingView series error for {symbol!r} (interval {interval!r}): {reason}"
+        if reason == "resolve error":
+            text += " (the symbol could not be resolved)"
+        elif reason.startswith("unsupported resolution"):
+            text += " (the interval is not supported for this symbol)"
+        elif reason == "custom_resolution":
+            text += " (TradingView refused this custom interval)"
+
+    error_type: type[SeriesError] = SeriesError
+    if _is_entitlement_reason(reason):
+        error_type = EntitlementError
+        text += (
+            ". The session is not entitled to this data; retrying the same request will not help."
+        )
+    return error_type(
+        text,
+        symbol=symbol,
+        interval=interval,
+        message_type=message_type,
+        reason=reason,
+        details=details,
+    )
 
 
 class OHLCV:
@@ -534,6 +614,33 @@ class OHLCV:
             adjustment=adjustment,
         )
 
+    async def _abort_series_refusal(
+        self, frame: dict[str, Any], *, symbol: str, interval: str
+    ) -> SeriesError:
+        """Handle a TradingView refusal frame and return the exception to raise.
+
+        Shared by every message loop: builds the typed error from the ``symbol_error`` /
+        ``series_error`` frame, logs it once and closes the connection. Closing is
+        best-effort: if it fails, the refusal is still what the caller gets.
+
+        Args:
+            frame:    The refusal frame.
+            symbol:   Canonical symbol of the refused request.
+            interval: Interval of the refused request.
+
+        Returns:
+            The ``SeriesError`` (``EntitlementError`` for an entitlement refusal) for the
+            caller to raise.
+        """
+        error: SeriesError = _series_refusal(frame, symbol=symbol, interval=interval)
+        logger.error("%s (frame: %s)", error, frame)
+        if self.connection_service is not None:
+            try:
+                await self.connection_service.close()
+            except Exception:
+                logger.debug("Closing the connection after a refusal failed.", exc_info=True)
+        return error
+
     def _validate_range(self, start: datetime, end: datetime) -> tuple[datetime, datetime]:
         """
         Validate a date range and clamp future end dates.
@@ -656,6 +763,9 @@ class OHLCV:
                 requested range. Expected for segments covering weekends, holidays,
                 or illiquid periods — ``SegmentedFetchService`` catches this and treats
                 it as an empty result, not a failure.
+            SeriesError: If TradingView refuses the request (``symbol_error`` /
+                ``series_error``); ``EntitlementError`` when the session is not entitled
+                to the symbol or interval.
             ValueError: If the symbol or interval is invalid.
         """
         canonical: str = normalize_symbol(exchange_symbol)
@@ -790,29 +900,19 @@ class OHLCV:
                     logger.info("Study completed — terminating historical fetch")
                     break
 
-                elif message_type == "series_error":
-                    logger.error(
-                        "Series error received from TradingView during historical data fetch"
-                    )
-                    logger.error(f"Error details: {data}")
-                    logger.error(
-                        "Please check the interval - this timeframe may not be supported for the symbol"
-                    )
-                    logger.error("Also verify that bars_count is within valid range")
-                    if self.connection_service:
-                        await self.connection_service.close()
-                    raise ValueError(
-                        "TradingView series error: Invalid interval or bars count. "
-                        "Please check that the timeframe is supported for this symbol "
-                        "and that bars_count is within valid range."
+                elif message_type in _SERIES_REFUSAL_TYPES:
+                    raise await self._abort_series_refusal(
+                        data, symbol=canonical, interval=interval
                     )
 
                 else:
                     logger.debug(f"Skipping message type '{message_type}' in historical data fetch")
                     continue
 
+            except SeriesError:
+                raise  # TradingView refused the request — never skip it.
             except Exception as e:
-                # Re-raise intentional ValueErrors (e.g. from series_error handler).
+                # Re-raise intentional ValueErrors.
                 # pydantic.ValidationError is a subclass of ValueError in pydantic v2,
                 # so exclude it explicitly — invalid message structures are skipped, not
                 # propagated.  Other ValueErrors (raised deliberately by this method)
@@ -928,6 +1028,9 @@ class OHLCV:
 
         Raises:
             RuntimeError: If no bars are received from TradingView.
+            SeriesError:  If TradingView refuses the request (``symbol_error`` /
+                          ``series_error``); ``EntitlementError`` when the session is
+                          not entitled to the symbol or interval.
             ValueError:   If the symbol or interval is invalid.
         """
         canonical: str = normalize_symbol(exchange_symbol)
@@ -1061,29 +1164,19 @@ class OHLCV:
                     logger.info("Study completed — terminating historical fetch")
                     break
 
-                elif message_type == "series_error":
-                    logger.error(
-                        "Series error received from TradingView during historical data fetch"
-                    )
-                    logger.error(f"Error details: {data}")
-                    logger.error(
-                        "Please check the interval - this timeframe may not be supported for the symbol"
-                    )
-                    logger.error("Also verify that bars_count is within valid range")
-                    if self.connection_service:
-                        await self.connection_service.close()
-                    raise ValueError(
-                        "TradingView series error: Invalid interval or bars count. "
-                        "Please check that the timeframe is supported for this symbol "
-                        "and that bars_count is within valid range."
+                elif message_type in _SERIES_REFUSAL_TYPES:
+                    raise await self._abort_series_refusal(
+                        data, symbol=canonical, interval=interval
                     )
 
                 else:
                     logger.debug(f"Skipping message type '{message_type}' in historical data fetch")
                     continue
 
+            except SeriesError:
+                raise  # TradingView refused the request — never skip it.
             except Exception as e:
-                # Re-raise intentional ValueErrors (e.g. from series_error handler).
+                # Re-raise intentional ValueErrors.
                 # pydantic.ValidationError is a subclass of ValueError in pydantic v2,
                 # so exclude it explicitly.
                 if isinstance(e, ValueError) and not isinstance(e, ValidationError):
@@ -1144,6 +1237,9 @@ class OHLCV:
 
         Raises:
             ValueError: If the symbol format is invalid
+            SeriesError: If TradingView refuses the symbol or interval — raised from the
+                stream, after any bars already yielded. ``EntitlementError`` when the
+                session is not entitled to it.
             WebSocketException: If connection or streaming fails
 
         Example:
@@ -1220,25 +1316,17 @@ class OHLCV:
                     logger.debug(f"{message_type} for real-time data stream")
                     continue
 
-                elif message_type == "series_error":
-                    logger.error("Series error received from TradingView")
-                    logger.error(f"Error details: {data}")
-                    logger.error(
-                        "Please check the interval - this timeframe may not be supported for the symbol"
-                    )
-                    logger.error("Also verify that bars_count is within valid range")
-                    if self.connection_service:
-                        await self.connection_service.close()
-                    raise ValueError(
-                        "TradingView series error: Invalid interval or bars count. "
-                        "Please check that the timeframe is supported for this symbol "
-                        "and that bars_count is within valid range."
+                elif message_type in _SERIES_REFUSAL_TYPES:
+                    raise await self._abort_series_refusal(
+                        data, symbol=canonical, interval=interval
                     )
 
                 else:
                     logger.debug(f"Skipping message type '{message_type}': {data}")
                     continue
 
+            except SeriesError:
+                raise  # TradingView refused the request — end the stream with the reason.
             except Exception as e:
                 # Outer guard: skip unparseable messages (e.g. malformed WebSocket frames)
                 logger.debug(f"Skipping unparseable message: {data} - Error: {e}")
@@ -1327,6 +1415,14 @@ class OHLCV:
                 ``adjustment`` is an unrecognised string value.
             RangeTooLargeError: If the date range requires more than MAX_SEGMENTS (2000)
                 fetch operations. Narrow the range or use a wider interval.
+            SeriesError: If TradingView refuses the request, e.g. an unknown symbol
+                (``"invalid symbol"``) or an interval the symbol does not support
+                (``"unsupported resolution: …"``). ``reason`` carries TradingView's
+                reason verbatim. Subclass of ``ValueError``.
+            EntitlementError: If the session is not entitled to the symbol or interval
+                (``"permission denied"``, ``"seconds_not_entitled"``). Subclass of
+                ``SeriesError``; retrying the same request will not help. Raised
+                unwrapped even when the range is fetched in segments.
             RuntimeError: If no bars are received from TradingView (count mode).
             NoHistoricalDataError: If no bars are received from TradingView (range mode).
                 This is a RuntimeError subclass — existing except RuntimeError callers
@@ -1419,6 +1515,8 @@ class OHLCV:
 
         Raises:
             ValueError: If the symbol format is invalid
+            SeriesError: If TradingView refuses the symbol or interval — raised from the
+                stream. ``EntitlementError`` when the session is not entitled to it.
             WebSocketException: If connection or streaming fails
 
         Example:
@@ -1467,25 +1565,17 @@ class OHLCV:
                     logger.debug(f"{message_type} for quote data stream")
                     continue
 
-                elif message_type == "series_error":
-                    logger.error("Series error received from TradingView during quote data stream")
-                    logger.error(f"Error details: {data}")
-                    logger.error(
-                        "Please check the interval - this timeframe may not be supported for the symbol"
-                    )
-                    logger.error("Also verify that bars_count is within valid range")
-                    if self.connection_service:
-                        await self.connection_service.close()
-                    raise ValueError(
-                        "TradingView series error: Invalid interval or bars count. "
-                        "Please check that the timeframe is supported for this symbol "
-                        "and that bars_count is within valid range."
+                elif message_type in _SERIES_REFUSAL_TYPES:
+                    raise await self._abort_series_refusal(
+                        data, symbol=canonical, interval=interval
                     )
 
                 else:
                     logger.debug(f"Skipping message type '{message_type}' in quote stream")
                     continue
 
+            except SeriesError:
+                raise  # TradingView refused the request — end the stream with the reason.
             except Exception as e:
                 # Outer guard: skip unparseable messages (e.g. malformed WebSocket frames)
                 logger.debug(f"Skipping unparseable message in quote stream: {data} - Error: {e}")
