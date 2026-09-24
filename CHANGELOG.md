@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Refused-request reporting, reported by @xgboosted in #59.
+
+### Fixed
+
+- **A symbol or interval that TradingView refuses is reported as what it is, not as "Invalid
+  interval or bars count".** TradingView answers such a request with a `symbol_error` and/or a
+  `series_error` frame that carries a reason. tvkit skipped the `symbol_error` and replaced the
+  `series_error` with a fixed message blaming the interval or `bars_count`, which no retry could
+  fix. The exception now carries TradingView's reason verbatim — `permission denied (group
+  economics_paid)` for `ECONOMICS:` and `FRED:` symbols on anonymous sessions, `invalid symbol`
+  for an unknown symbol, `unsupported resolution: INDEX:NDFI, 5`, `seconds_not_entitled`,
+  `custom_resolution` — and is raised on the first refusal frame.
+
+- **`get_ohlcv()` and `get_quote_data()` raise on a refusal instead of ending silently.** The
+  streams' skip-malformed-frames guard swallowed the error, so a refused symbol produced an empty
+  stream (or, for quotes, a short one) and no exception. The documented `Raises` behaviour now
+  holds.
+
+### Added
+
+- **`SeriesError` and `EntitlementError`**, exported from `tvkit.api.chart`.
+  `SeriesError(ValueError)` is raised for every `symbol_error` / `series_error`;
+  `EntitlementError` subclasses it for refusals that say the session is not entitled
+  (`permission denied`, `*_not_entitled`) — permanent, do not retry. Both carry `symbol`,
+  `interval`, `message_type`, `reason` and `details`. Subclassing `ValueError` keeps existing
+  `except ValueError` handlers working and keeps `tvkit.batch` from retrying them; they are
+  deliberately not `ChartError`s, and not the built-in `PermissionError` (an `OSError`, which
+  retry policies commonly treat as transient).
+
+### Changed
+
+- **Messages and types for refused requests.** Code matching the text `"Invalid interval or bars
+  count"` no longer matches. `series_error` messages keep the `"TradingView series error"` prefix;
+  `symbol_error` messages start with `"TradingView could not resolve symbol"`. In `tvkit.batch`,
+  `ErrorInfo.exception_type` for these failures is `"SeriesError"` or `"EntitlementError"`
+  instead of `"ValueError"`.
+
+- **Segmented fetches raise the refusal itself.** `SegmentedFetchService` no longer wraps a
+  `SeriesError` in `SegmentedFetchError`: TradingView refused the whole request, not one segment,
+  so `except EntitlementError` around `get_historical_ohlcv()` works whether or not the range was
+  segmented. Other segment failures are still wrapped.
+
+- **One `ERROR` log line per refusal** — the message and the raw frame — instead of four lines
+  blaming the interval and `bars_count`.
+
 ---
 
 ## [0.17.0] — 2026-09-07

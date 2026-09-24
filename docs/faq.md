@@ -320,9 +320,51 @@ time storage and keeps your pipeline timezone-agnostic.
 
 The WebSocket connection was dropped by the server. This can happen due to network instability, rate limiting, or the server closing idle connections. Implement retry logic with exponential backoff. See [Real-Time Streaming — Automatic Reconnection](guides/realtime-streaming.md#automatic-reconnection).
 
-### tvkit raises `symbol_error`. What does that mean?
+### tvkit raises `SeriesError` or `EntitlementError`. What does that mean?
 
-The server could not resolve the symbol. Check that the symbol format is correct (`EXCHANGE:SYMBOL`) and that the symbol is active on TradingView.
+TradingView refused the request: it answered with a `symbol_error` or `series_error` frame. The
+exception's `reason` is TradingView's own explanation, verbatim:
+
+| `reason` | Exception | What it means |
+|---|---|---|
+| `invalid symbol` | `SeriesError` | TradingView has no such symbol. Check the `EXCHANGE:SYMBOL` spelling. |
+| `permission denied` | `EntitlementError` | The session is not entitled to this symbol. Anonymous sessions get this for `ECONOMICS:` and `FRED:` symbols, with `details == ("group", "economics_paid")` — observed since 2026-09-22 ([#59](https://github.com/lumduan/tvkit/issues/59)). |
+| `seconds_not_entitled` | `EntitlementError` | The session is not entitled to second-based intervals such as `"1S"`. |
+| `unsupported resolution: …` | `SeriesError` | The symbol does not offer this interval — e.g. `INDEX:NDFI` refuses intraday intervals. |
+| `custom_resolution` | `SeriesError` | TradingView refused a custom interval such as `"2D"` or `"7"`. Use a standard one such as `"1D"`. |
+
+Neither is transient: retrying the same request gets the same answer, and `tvkit.batch` does not
+retry them. Both subclass `ValueError`, so existing `except ValueError` handlers still catch them.
+
+```python
+import asyncio
+from tvkit.api.chart import OHLCV, EntitlementError, SeriesError
+
+async def main() -> None:
+    async with OHLCV() as client:
+        for symbol in ("ECONOMICS:USM2", "NASDAQ:INVALID_FAKE_XYZ", "NASDAQ:AAPL"):
+            try:
+                bars = await client.get_historical_ohlcv(symbol, "1D", bars_count=100)
+            except EntitlementError as exc:
+                print(f"{symbol}: not entitled — {exc.reason} ({' '.join(exc.details)})")
+            except SeriesError as exc:
+                print(f"{symbol}: refused — {exc.reason}")
+            else:
+                print(f"{symbol}: {len(bars)} bars")
+
+asyncio.run(main())
+```
+
+**Output:**
+
+```text
+ECONOMICS:USM2: not entitled — permission denied (group economics_paid)
+NASDAQ:INVALID_FAKE_XYZ: refused — invalid symbol
+NASDAQ:AAPL: 100 bars
+```
+
+Catch `EntitlementError` before `SeriesError` — it is the subclass. The attributes are listed in
+the [OHLCV reference](reference/chart/ohlcv.md#serieserror-and-entitlementerror).
 
 ### Where do I report bugs?
 

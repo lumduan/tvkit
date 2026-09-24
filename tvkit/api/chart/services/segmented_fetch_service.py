@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from tvkit.api.chart.exceptions import NoHistoricalDataError, SegmentedFetchError
+from tvkit.api.chart.exceptions import NoHistoricalDataError, SegmentedFetchError, SeriesError
 from tvkit.api.chart.models.adjustment import Adjustment
 from tvkit.api.chart.models.ohlcv import OHLCVBar
 from tvkit.api.chart.utils import (
@@ -123,10 +123,15 @@ class SegmentedFetchService:
             RangeTooLargeError: If the computed segment count exceeds ``MAX_SEGMENTS``
                                 (2000). Raised by ``segment_time_range()`` before any
                                 fetch begins.
+            SeriesError:        If TradingView refuses the symbol or interval
+                                (``EntitlementError`` when the session is not
+                                entitled). Raised unwrapped: the refusal applies to
+                                the whole request, not to one segment.
             SegmentedFetchError: If any individual segment fetch fails with an
-                                 exception other than ``NoHistoricalDataError``.
-                                 Contains full segment context: index, start, end,
-                                 total segments, and the original cause.
+                                 exception other than ``NoHistoricalDataError`` or
+                                 ``SeriesError``. Contains full segment context:
+                                 index, start, end, total segments, and the original
+                                 cause.
 
         Example:
             >>> from datetime import datetime, UTC
@@ -206,6 +211,11 @@ class SegmentedFetchService:
                     extra={"segment": i, "segment_start": segment.start.isoformat()},
                 )
                 bars = []
+            except SeriesError:
+                # TradingView refused the symbol or interval itself, not this segment:
+                # every segment would get the same answer, and segmentation is invisible
+                # to callers of get_historical_ohlcv(). Propagate the typed error as-is.
+                raise
             except Exception as exc:
                 logger.error(
                     "Segment fetch failed.",

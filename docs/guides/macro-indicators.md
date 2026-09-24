@@ -38,7 +38,7 @@ These indicators complement price-based signals when you need insight into:
 | `INDEX:NDFI` | Net Demand For Income | High values = strong demand for income assets (defensive positioning) |
 | `USI:PCC` | Put/Call Ratio | High values = fear (contrarian bullish); low values = complacency (contrarian bearish) |
 
-Both indicators are available on daily (`"1D"`) intervals. Intraday intervals typically return no data.
+Both indicators are available on daily (`"1D"`) intervals. `INDEX:NDFI` refuses intraday intervals — tvkit raises `SeriesError` (`unsupported resolution`) — while `USI:PCC` also serves intraday bars (verified 2026-09-24).
 
 ---
 

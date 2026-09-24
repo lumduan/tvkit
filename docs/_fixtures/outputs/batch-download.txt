@@ -1,11 +1,8 @@
-ERROR    Series error received from TradingView during historical data fetch
-ERROR    Error details: {'m': 'series_error', 'p': ['cs_xzupwfbfbwsj', 'sds_1', 's1', 'resolve error', 'sin1-charts-free-4-tvbs-pojul-5@sin1-charts-free-4-tvbs-pojul-5'], 't': 1787033581, 't_ms': 1787033581562}
-ERROR    Please check the interval - this timeframe may not be supported for the symbol
-ERROR    Also verify that bars_count is within valid range
-ERROR    Series error received from TradingView during historical data fetch
-ERROR    Error details: {'m': 'series_error', 'p': ['cs_icjyfhwdmidz', 'sds_1', 's1', 'resolve error', 'sin1-charts-free-4-tvbs-pvxf5-7@sin1-charts-free-4-tvbs-pvxf5-7'], 't': 1787033584, 't_ms': 1787033584301}
-ERROR    Please check the interval - this timeframe may not be supported for the symbol
-ERROR    Also verify that bars_count is within valid range
+# The ERROR log lines below and the "Handling partial failures" block were re-captured on
+# 2026-09-24 after the #59 fix (SeriesError instead of "Invalid interval or bars count");
+# every other block is from the original capture.
+ERROR    TradingView could not resolve symbol 'NASDAQ:INVALID_FAKE_XYZ': invalid symbol (frame: {'m': 'symbol_error', 'p': ['cs_ntjnoubnsbnm', 'sds_sym_1', 'invalid symbol'], 't': 1790234040, 't_ms': 1790234040557})
+ERROR    TradingView could not resolve symbol 'NASDAQ:INVALID_FAKE_XYZ': invalid symbol (frame: {'m': 'symbol_error', 'p': ['cs_srcftkpdneuc', 'sds_sym_1', 'invalid symbol'], 't': 1790234042, 't_ms': 1790234042471})
 ### Basic Usage: bars-count mode (batch-download.md:34)
 NASDAQ:AAPL: 252 bars, last close 305.59
 NASDAQ:MSFT: 252 bars, last close 480.35
@@ -23,8 +20,8 @@ one SymbolResult (bars elided): {'symbol': 'NASDAQ:AAPL', 'success': True, 'erro
 Success: 2/3
 Failed symbols: ['NASDAQ:INVALID_FAKE_XYZ']
 Successful symbols: ['NASDAQ:AAPL', 'NASDAQ:MSFT']
-  NASDAQ:INVALID_FAKE_XYZ: attempts=1 type=ValueError
-    message=TradingView series error: Invalid interval or bars count. Please check that the timeframe is supported for this symbol a
+  NASDAQ:INVALID_FAKE_XYZ: attempts=1 type=SeriesError
+    message=TradingView could not resolve symbol 'NASDAQ:INVALID_FAKE_XYZ': invalid symbol
 
 ### Strict mode (batch-download.md:138)
 Batch failed: ['NASDAQ:INVALID_FAKE_XYZ']

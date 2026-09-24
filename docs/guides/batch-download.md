@@ -187,10 +187,12 @@ The failed `SymbolResult` carries an `ErrorInfo`:
 | `success` | `False` |
 | `attempts` | `1` |
 | `bars` | `[]` |
-| `error.exception_type` | `'ValueError'` |
-| `error.message` | `'TradingView series error: Invalid interval or bars count. …'` |
+| `error.exception_type` | `'SeriesError'` |
+| `error.message` | `"TradingView could not resolve symbol 'NASDAQ:INVALID_FAKE_XYZ': invalid symbol"` |
 
-# `ValueError` is non-retryable, so only one attempt is made even with max_attempts=2
+TradingView refused the symbol, so tvkit raised `SeriesError` — a `ValueError` subclass, which is
+non-retryable: only one attempt is made even with `max_attempts=2`. An `EntitlementError` (the
+session is not entitled to the symbol or interval) is non-retryable for the same reason.
 
 ### Strict mode — raise on any failure
 

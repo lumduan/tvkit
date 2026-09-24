@@ -12,6 +12,7 @@ Async WebSocket client for streaming real-time and historical OHLCV data from Tr
 ```python
 from tvkit.api.chart.ohlcv import OHLCV
 from tvkit.api.chart import Adjustment          # price adjustment mode enum
+from tvkit.api.chart import EntitlementError, SeriesError  # TradingView refusals
 ```
 
 ---
@@ -253,10 +254,11 @@ The segment size is snapshotted once at the start of each fetch so that a mid-fl
 | `ValueError` | `adjustment` string is not a recognised value (raised before any network I/O) |
 | `ValueError` | Symbol format is invalid (from `validate_symbols`) |
 | `ValueError` | Interval format is invalid (from `validate_interval`) |
-| `ValueError` | TradingView returns a `series_error` (invalid symbol/interval for the requested timeframe) |
+| `SeriesError` | TradingView refuses the request — e.g. an unknown symbol (reason `invalid symbol`) or an interval the symbol does not support (`unsupported resolution: …`). Subclass of `ValueError`. See [`SeriesError` and `EntitlementError`](#serieserror-and-entitlementerror). |
+| `EntitlementError` | The session is not entitled to the symbol or interval (reason `permission denied`, `seconds_not_entitled`). Subclass of `SeriesError` — permanent, retrying will not help. Raised unwrapped even when the range is fetched in segments. |
 | `RuntimeError` | No bars received from TradingView |
 | `RangeTooLargeError` | Date range would require more than `MAX_SEGMENTS` (2,000) segments — narrow the range or use a wider interval. Subclass of `ValueError`. |
-| `SegmentedFetchError` | A segment fetch failed with an unexpected error. Carries `segment_index`, `segment_start`, `segment_end`, `total_segments`, `cause`. |
+| `SegmentedFetchError` | A segment fetch failed with an unexpected error. Carries `segment_index`, `segment_start`, `segment_end`, `total_segments`, `cause`. A `SeriesError` is never wrapped in it. |
 
 #### Examples
 
@@ -395,7 +397,7 @@ async def get_ohlcv(
 | Exception | When |
 |-----------|------|
 | `ValueError` | Symbol or interval is invalid |
-| `ValueError` | TradingView returns a `series_error` |
+| `SeriesError` | TradingView refuses the symbol or interval — raised from the stream, after any bars already yielded. `EntitlementError` when the session is not entitled. |
 
 #### Example
 
@@ -450,7 +452,7 @@ async def get_quote_data(
 | Exception | When |
 |-----------|------|
 | `ValueError` | Symbol or interval is invalid |
-| `ValueError` | TradingView returns a `series_error` |
+| `SeriesError` | TradingView refuses the symbol or interval — raised from the stream. `EntitlementError` when the session is not entitled. |
 
 #### Example
 
@@ -669,6 +671,47 @@ Returned by `get_quote_data()`. Contains real-time quote fields. The `current_pr
 
 ---
 
+### `SeriesError` and `EntitlementError`
+
+```python
+from tvkit.api.chart import EntitlementError, SeriesError
+```
+
+Raised when TradingView refuses a chart-series request with a `symbol_error` or `series_error`
+frame. The connection is closed first, and the message carries TradingView's reason verbatim.
+
+| Class | Base | Raised when |
+|-------|------|-------------|
+| `SeriesError` | `ValueError` | TradingView refuses the symbol or interval |
+| `EntitlementError` | `SeriesError` | The reason says the session is not entitled (`permission denied`, `*_not_entitled`) — permanent, do not retry |
+
+Both subclass `ValueError`: earlier tvkit versions raised a plain `ValueError` for these refusals,
+so existing `except ValueError` handlers keep working, and `tvkit.batch` treats them as
+non-retryable.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `symbol` | `str` | Canonical symbol of the refused request |
+| `interval` | `str` | Interval of the refused request |
+| `message_type` | `str` | `"symbol_error"` or `"series_error"` |
+| `reason` | `str` | TradingView's reason, verbatim |
+| `details` | `tuple[str, ...]` | Payload fields after the reason, verbatim |
+
+Reasons TradingView returned to an anonymous session on 2026-09-24:
+
+| `reason` | Class | Request |
+|----------|-------|---------|
+| `permission denied` — `details == ("group", "economics_paid")` | `EntitlementError` | `ECONOMICS:USM2`, `FRED:M2SL` |
+| `seconds_not_entitled` | `EntitlementError` | `NASDAQ:AAPL`, interval `"1S"` |
+| `invalid symbol` | `SeriesError` | `NASDAQ:INVALID_FAKE_XYZ` |
+| `unsupported resolution: INDEX:NDFI, 5` | `SeriesError` | `INDEX:NDFI`, interval `"5"` |
+| `custom_resolution` | `SeriesError` | `NASDAQ:AAPL`, interval `"2D"` |
+
+See the [FAQ](../../faq.md#tvkit-raises-serieserror-or-entitlementerror-what-does-that-mean) for a
+runnable example.
+
+---
+
 ## Symbol Format
 
 All methods accept symbols in two formats:
@@ -678,7 +721,7 @@ All methods accept symbols in two formats:
 | `EXCHANGE:SYMBOL` | `NASDAQ:AAPL` | Preferred format |
 | `EXCHANGE-SYMBOL` | `USI-PCC` | Auto-converted to colon format |
 
-Symbols are validated asynchronously via `validate_symbols()` before each request. An invalid symbol raises `ValueError: Invalid exchange or symbol or index`.
+Symbols are validated asynchronously via `validate_symbols()` before each request. An invalid symbol raises `ValueError: Invalid exchange or symbol or index`. A symbol that TradingView itself cannot resolve raises `SeriesError` with `reason == "invalid symbol"` — also a `ValueError`.
 
 ---
 

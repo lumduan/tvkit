@@ -1,0 +1,4 @@
+### faq.md — SeriesError / EntitlementError example (captured 2026-09-24, anonymous session)
+ECONOMICS:USM2: not entitled — permission denied (group economics_paid)
+NASDAQ:INVALID_FAKE_XYZ: refused — invalid symbol
+NASDAQ:AAPL: 100 bars

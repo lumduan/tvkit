@@ -1,0 +1,46 @@
+### websocket-protocol.md — Error Responses: raw frames (captured 2026-09-24, anonymous session, data.tradingview.com)
+# Sent: tvkit's own initialize_sessions() + add_symbol_to_sessions() sequence. Printed: every
+# frame except qsd with status "ok"; bar payloads and symbol_resolved elided. Session ids as received.
+
+=== ECONOMICS:USM2  interval='1D'  bars=300  (count mode)
+{"m": "series_loading", "p": ["cs_hirfrycpjldp", "sds_1", "s1"], "t": 1790231740, "t_ms": 1790231740106}
+{"m": "symbol_error", "p": ["cs_hirfrycpjldp", "sds_sym_1", "permission denied", "group", "economics_paid"], "t": 1790231740, "t_ms": 1790231740106}
+{"m": "series_error", "p": ["cs_hirfrycpjldp", "sds_1", "s1", "resolve error", "hkg1-charts-free-3-stress-tvbs-i5c6l-4@hkg1-charts-free-3-stress-tvbs-i5c6l-4"], "t": 1790231740, "t_ms": 1790231740106}
+qsd NON-OK: {"m": "qsd", "p": ["qs_lguxzihxehja", {"n": "={\"adjustment\":\"splits\",\"backadjustment\":\"default\",\"symbol\":\"ECONOMICS:USM2\"}", "s": "permission_denied", "errmsg": "Permission denied", "v": {"alternative": "economics_paid"}}]}
+{"m": "quote_completed", "p": ["qs_lguxzihxehja", "={\"adjustment\":\"splits\",\"backadjustment\":\"default\",\"symbol\":\"ECONOMICS:USM2\"}"]}
+{"m": "study_error", "p": ["cs_hirfrycpjldp", "st1", "s1_st1", "check study unexpected error", "hkg1-charts-free-3-stress-tvbs-i5c6l-4@hkg1-charts-free-3-stress-tvbs-i5c6l-4"], "t": 1790231740, "t_ms": 1790231740166}
+
+=== ECONOMICS:USM2  interval='1D'  bars=300  range='r,1577836800:1735689599'  (range mode — same frames)
+{"m": "symbol_error", "p": ["cs_ixcrdkrwxine", "sds_sym_1", "permission denied", "group", "economics_paid"], "t": 1790231747, "t_ms": 1790231747526}
+{"m": "series_error", "p": ["cs_ixcrdkrwxine", "sds_1", "s1", "resolve error", "hkg1-charts-free-3-stress-tvbs-i5c6l-6@hkg1-charts-free-3-stress-tvbs-i5c6l-6"], "t": 1790231747, "t_ms": 1790231747526}
+
+=== FRED:M2SL  interval='1M'  bars=300
+{"m": "symbol_error", "p": ["cs_xwjtyfzutwbp", "sds_sym_1", "permission denied", "group", "economics_paid"], "t": 1790231754, "t_ms": 1790231754947}
+{"m": "series_error", "p": ["cs_xwjtyfzutwbp", "sds_1", "s1", "resolve error", "hkg1-charts-free-4-tvbs-dsqpt-2@hkg1-charts-free-4-tvbs-dsqpt-2"], "t": 1790231754, "t_ms": 1790231754947}
+
+=== NASDAQ:ZZZZNOTREAL  interval='1D'  bars=300
+{"m": "symbol_error", "p": ["cs_thggxfbtyhpd", "sds_sym_1", "invalid symbol"], "t": 1790231769, "t_ms": 1790231769735}
+{"m": "series_error", "p": ["cs_thggxfbtyhpd", "sds_1", "s1", "resolve error", "hkg1-charts-free-3-tvbs-ci3l6-3@hkg1-charts-free-3-tvbs-ci3l6-3"], "t": 1790231769, "t_ms": 1790231769735}
+qsd NON-OK: {"m": "qsd", "p": ["qs_djcamsenctfd", {"n": "={\"adjustment\":\"splits\",\"backadjustment\":\"default\",\"symbol\":\"NASDAQ:ZZZZNOTREAL\"}", "s": "error", "errmsg": "no_such_symbol", "v": {}}]}
+
+=== NASDAQ:INVALID_FAKE_XYZ  interval='1D'  (frame as logged by tvkit during the batch-download re-capture)
+{'m': 'symbol_error', 'p': ['cs_ntjnoubnsbnm', 'sds_sym_1', 'invalid symbol'], 't': 1790234040, 't_ms': 1790234040557}
+
+=== NASDAQ:AAPL  interval='1S'  bars=300   (also '45S' -> same reason)
+{"m": "series_error", "p": ["cs_ryhyjabikccn", "sds_1", "s1", "seconds_not_entitled", "undefined"], "t": 1790231777, "t_ms": 1790231777147}
+
+=== NASDAQ:AAPL  interval='1T'  bars=300   (raw probe only: validate_interval rejects '1T' before any request)
+{"m": "series_error", "p": ["cs_oabibsbmhclh", "sds_1", "s1", "ticks_not_entitled", "undefined"], "t": 1790231784, "t_ms": 1790231784540}
+
+=== INDEX:NDFI  interval='5'  bars=300
+{"m": "series_error", "p": ["cs_vazvkjvwhkfx", "sds_1", "s1", "unsupported resolution: INDEX:NDFI, 5", "hkg1-charts-free-3-tvbs-3jr3v-3@hkg1-charts-free-3-tvbs-3jr3v-3"], "t": 1790231962, "t_ms": 1790231962186}
+
+=== NASDAQ:AAPL  interval='2D'  bars=300   (also '7' -> same reason)
+{"m": "series_error", "p": ["cs_bzwihwccynuf", "sds_1", "s1", "custom_resolution", "undefined"], "t": 1790231963, "t_ms": 1790231963776}
+
+=== ICE:MOVE  interval='1D'  bars=300   (success — study_error arrives anyway)
+{"m": "series_loading", "p": ["cs_egvokaanpisj", "sds_1", "s1"], "t": 1790231762, "t_ms": 1790231762364}
+symbol_resolved (payload omitted)
+timescale_update (300 bars)
+{"m": "series_completed", "p": ["cs_egvokaanpisj", "sds_1", "delayed_streaming_900", "s1", {"rt_update_period": 5}], "t": 1790231762, "t_ms": 1790231762363}
+{"m": "study_error", "p": ["cs_egvokaanpisj", "st1", "s1_st1", "check study unexpected error", "hkg1-charts-free-4-tvbs-agj1b-4@hkg1-charts-free-4-tvbs-agj1b-4"], "t": 1790231762, "t_ms": 1790231762422}

@@ -128,6 +128,8 @@ This is a hard requirement. `get_historical_ohlcv()` calls `_needs_segmentation(
 
 `fetch_all()` catches this exception and treats it as an empty result (`bars = []`). It is **never** wrapped in `SegmentedFetchError`. This keeps the return contract simple: empty segments are silently skipped.
 
+A `SeriesError` — TradingView refused the symbol or interval, e.g. `EntitlementError` for `permission denied` — is re-raised **unwrapped**, aborting the fetch. The refusal applies to the whole request, not to one segment: every segment would get the same answer, and `except EntitlementError` around `get_historical_ohlcv()` must work whether or not the range was segmented.
+
 Any other exception from `_fetch_single_range()` is wrapped in `SegmentedFetchError` and re-raised immediately, aborting the fetch. `SegmentedFetchError` carries:
 
 - `segment_index` — 1-based index of the failed segment
@@ -204,6 +206,7 @@ get_historical_ohlcv(symbol, interval, start, end)
         ├─ for each segment [1..N]:
         │     ├─ _fetch_single_range(symbol, interval, seg.start, seg.end)
         │     │     ├─ NoHistoricalDataError → bars = []  (skip, outside max_bars window)
+        │     │     ├─ SeriesError → re-raised unwrapped  (abort, TradingView refusal)
         │     │     └─ Exception → SegmentedFetchError    (abort)
         │     ├─ all_bars.extend(bars)
         │     └─ asyncio.sleep(inter_segment_delay)  ← if > 0 and not last segment

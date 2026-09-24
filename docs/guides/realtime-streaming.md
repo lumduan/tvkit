@@ -258,6 +258,15 @@ captured, or `None`.
 
 If bars were missed during a disconnect, backfill the gap using `get_historical_ohlcv()` before resuming the live stream.
 
+### Refused Symbols and Intervals
+
+Reconnection covers dropped connections only. When TradingView refuses the symbol or interval
+itself — an unknown symbol, a symbol the session is not entitled to, an interval the symbol does
+not offer — `get_ohlcv()` and `get_quote_data()` raise `SeriesError` (`EntitlementError` when the
+session is not entitled) instead of reconnecting, after any bars already yielded. Retrying the same
+stream gets the same answer. See the
+[FAQ](../faq.md#tvkit-raises-serieserror-or-entitlementerror-what-does-that-mean) for the reasons.
+
 ---
 
 ## Combining with Historical Data
