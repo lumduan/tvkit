@@ -17,6 +17,21 @@ COOKIE_CACHE_TTL: int = 120
 _TV_DOMAIN: str = "tradingview.com"
 
 
+def _is_tradingview_cookie_domain(domain: object) -> bool:
+    """
+    Return ``True`` if a cookie's domain is tradingview.com or one of its subdomains.
+
+    ``browser_cookie3`` filters with a substring match (``host_key LIKE '%tradingview.com%'``),
+    so its result can also hold cookies set by look-alike hosts such as
+    ``nottradingview.com`` or ``tradingview.com.example``. One of those could carry its
+    own ``sessionid`` and override the real one in the flattened name→value dict.
+    """
+    if not isinstance(domain, str):
+        return False
+    host = domain.lstrip(".").lower()
+    return host == _TV_DOMAIN or host.endswith("." + _TV_DOMAIN)
+
+
 def _get_browser_cookie3() -> Any:
     """Import browser_cookie3 lazily, raising a clear error if absent."""
     try:
@@ -148,7 +163,8 @@ class CookieProvider:
             profile: Optional profile name.
 
         Returns:
-            Flat name→value dict of all TradingView cookies.
+            Flat name→value dict of the cookies whose domain is tradingview.com or a
+            subdomain of it. Cookies from look-alike hosts are dropped.
 
         Raises:
             BrowserCookieError: On any extraction failure or missing
@@ -178,7 +194,9 @@ class CookieProvider:
                 "Ensure the browser is installed and not currently writing to its database."
             ) from exc
 
-        cookies_dict: dict[str, str] = {c.name: c.value for c in jar}
+        cookies_dict: dict[str, str] = {
+            c.name: c.value for c in jar if _is_tradingview_cookie_domain(c.domain)
+        }
 
         if "sessionid" not in cookies_dict:
             raise BrowserCookieError(

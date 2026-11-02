@@ -20,6 +20,7 @@ Security:
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -93,13 +94,32 @@ def _print_cookie_summary(cookies: dict[str, str], browser: str) -> None:
     console.print(f"\n[bold green]✓[/bold green] Extracted [bold]{len(cookies)}[/bold] cookie(s).")
 
 
+def _write_private(dest: Path, text: str) -> None:
+    """
+    Write ``text`` to ``dest`` readable and writable by the owner only (``0600``).
+
+    ``Path.write_text`` creates files ``0o666`` minus the umask — ``0664`` under the
+    common umask ``002`` — which would leave the session cookies readable by other
+    accounts on the machine. The file is created ``0600``, and an existing file is
+    re-moded before it is rewritten.
+    """
+    fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        if hasattr(os, "fchmod"):  # POSIX only; Windows has no group/other bits to clear
+            os.fchmod(fh.fileno(), 0o600)
+        fh.write(text)
+
+
 def _export_to_file(cookies: dict[str, str]) -> None:
     """Prompt for a file path and write the cookies JSON there."""
     default_path = "tv_cookies.json"
     path_str = Prompt.ask("\nSave to file", default=default_path)
     dest = Path(path_str)
-    dest.write_text(json.dumps(cookies, indent=2))
-    console.print(f"\n[bold green]✓[/bold green] Saved to [cyan]{dest.resolve()}[/cyan]")
+    _write_private(dest, json.dumps(cookies, indent=2))
+    console.print(
+        f"\n[bold green]✓[/bold green] Saved to [cyan]{dest.resolve()}[/cyan] "
+        "[dim](mode 0600 — readable by you only)[/dim]"
+    )
     console.print(
         "\n[yellow]⚠[/yellow]  Add [bold]tv_cookies.json[/bold] to [bold].gitignore[/bold] "
         "— it contains your session credentials."

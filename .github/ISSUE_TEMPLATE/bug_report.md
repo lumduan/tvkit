@@ -99,6 +99,10 @@ For WebSocket or connection issues, re-run your script with DEBUG logging enable
 
 Then paste the relevant log output below.
 If no additional logs appeared, write "No additional debug output."
+
+Before pasting, search the output for `sessionid`, cookie values and `auth_token`, and
+replace any you find with <redacted>. This issue is public. tvkit 0.18.1+ redacts its own
+`set_auth_token` frame, but older versions log it verbatim.
 -->
 
 ```text

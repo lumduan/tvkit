@@ -370,13 +370,14 @@ class TestTradingViewAccount:
 # ---------------------------------------------------------------------------
 
 
-def _make_cookie_jar(cookies: dict[str, str]) -> list[MagicMock]:
-    """Build a list of mock cookie objects from a name→value dict."""
+def _make_cookie_jar(cookies: dict[str, str], domain: str = ".tradingview.com") -> list[MagicMock]:
+    """Build a list of mock cookie objects from a name→value dict, all on ``domain``."""
     jar = []
     for name, value in cookies.items():
         c = MagicMock()
         c.name = name
         c.value = value
+        c.domain = domain
         jar.append(c)
     return jar
 

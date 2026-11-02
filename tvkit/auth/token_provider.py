@@ -24,6 +24,48 @@ FETCH_RETRY_MAX_DELAY: float = 2.5
 # Minimum expected length of a valid auth_token.
 _MIN_TOKEN_LENGTH: int = 10
 
+# The only site the session cookies may be sent to.
+_TV_COOKIE_DOMAIN: str = ".tradingview.com"
+
+
+def _is_tradingview_https(url: httpx.URL) -> bool:
+    """Return ``True`` for an ``https`` URL on tradingview.com or one of its subdomains."""
+    host = url.host
+    return url.scheme == "https" and (
+        host == _TV_COOKIE_DOMAIN[1:] or host.endswith(_TV_COOKIE_DOMAIN)
+    )
+
+
+def _scoped_cookies(cookies: dict[str, str]) -> httpx.Cookies:
+    """
+    Build a cookie jar whose cookies are bound to ``.tradingview.com``.
+
+    A plain ``dict`` passed to ``httpx.AsyncClient(cookies=...)`` becomes a jar of
+    domain-less cookies, which httpx attaches to **every** host, including a redirect
+    target on another site. Binding each cookie to the TradingView domain keeps the
+    ``sessionid`` on TradingView even if a response redirects elsewhere.
+    """
+    jar = httpx.Cookies()
+    for name, value in cookies.items():
+        jar.set(name, value, domain=_TV_COOKIE_DOMAIN)
+    return jar
+
+
+async def _refuse_foreign_hop(request: httpx.Request) -> None:
+    """
+    httpx request hook: refuse any request, including a redirect hop, that leaves
+    ``https://*.tradingview.com``.
+
+    Raises:
+        ProfileFetchError: If the request URL is not https on a TradingView host.
+    """
+    if not _is_tradingview_https(request.url):
+        raise ProfileFetchError(
+            "Refusing to follow a redirect away from https://*.tradingview.com "
+            f"(to {request.url.scheme}://{request.url.host}). The profile request carries "
+            "your session cookies, which are only ever sent to TradingView."
+        )
+
 
 class TokenProvider:
     """
@@ -96,7 +138,8 @@ class TokenProvider:
         if not auth_token or len(str(auth_token)) < _MIN_TOKEN_LENGTH:
             raise ProfileFetchError(
                 "Invalid auth_token extracted from TradingView homepage — "
-                f"token is missing or too short (got: {str(auth_token)[:20]!r}). "
+                "token is missing or too short "
+                f"(got: {type(auth_token).__name__} of length {len(str(auth_token or ''))}). "
                 "TradingView may have changed its bootstrap structure, or the "
                 "session cookies may be expired."
             )
@@ -191,8 +234,13 @@ class TokenProvider:
         Returns:
             Parsed ``user`` profile dict.
 
+        The cookies are bound to ``.tradingview.com`` and every request, including each
+        redirect hop, must stay on ``https://*.tradingview.com`` — so the session cookies
+        cannot be carried to another site by a redirect.
+
         Raises:
-            ProfileFetchError: If the user object cannot be parsed.
+            ProfileFetchError: If the user object cannot be parsed, or if a redirect
+                leaves ``https://*.tradingview.com``.
             httpx.TimeoutException: On connect or read timeout.
             httpx.HTTPStatusError: On HTTP 5xx responses.
         """
@@ -200,8 +248,9 @@ class TokenProvider:
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(_FETCH_TIMEOUT),
-            cookies=cookies,
+            cookies=_scoped_cookies(cookies),
             follow_redirects=True,
+            event_hooks={"request": [_refuse_foreign_hop]},
         ) as client:
             response = await client.get(_HOMEPAGE_URL)
 
