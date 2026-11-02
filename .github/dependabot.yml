@@ -1,0 +1,34 @@
+version: 2
+updates:
+  # Python dependencies (pyproject.toml / uv.lock).
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    ignore:
+      # ruff is pinned in two places that must move together: pyproject.toml (ruff==X in the
+      # dev extra) and .pre-commit-config.yaml (rev: vX). Dependabot can only bump the first, so
+      # its PRs would split local and CI linting. Bump ruff by hand — see the note at the top of
+      # .pre-commit-config.yaml.
+      - dependency-name: "ruff"
+
+  # GitHub Actions used in workflows. The workflows pin actions by commit SHA with a
+  # `# vX.Y.Z` comment; Dependabot updates both. It never updates action INPUTS, so the
+  # setup-uv `version:` pin is bumped by hand.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+      - "github-actions"
