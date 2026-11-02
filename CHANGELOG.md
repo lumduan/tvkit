@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/export_tv_cookies.py` (repository tool, not shipped in the package) writes the
   exported cookie file `0600`. It used `0664` under the common umask `002`.
 
+### Documentation
+
+- **Output notes no longer render as giant headings.** The notes under each output example
+  (`10 rows total, showing 5`, `` `date` is derived — … ``) began with `# `. That is a comment
+  inside a fenced `text` block, but under a Markdown table, or after a closing fence, it is a
+  level-1 heading. On GitHub and on the PyPI project page they rendered in the page's largest
+  type. 42 note runs in 21 files (the README and 20 pages under `docs/`) are now `-` bullet
+  lists. Line numbers are unchanged, so the `docs/_fixtures/outputs/` line references still hold.
+- The docs style guide (`docs/reference/_style.md`, Rule 11) recommended those `# ` note lines
+  without saying they belong only inside a fence. It now says where a note goes for each
+  rendering.
+- `tests/test_docs_markdown.py` fails CI when the README or any page under `docs/` has more than
+  one level-1 heading.
+
 ---
 
 ## [0.18.0] — 2026-09-24

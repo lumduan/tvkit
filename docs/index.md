@@ -24,8 +24,8 @@ async with OHLCV() as client:
 | 1786714200.0 | 2026-08-14 | 306.0 | 307.49 | 304.3 | 305.93 | 28,229,375 |
 | 1786973400.0 | 2026-08-17 | 306.21 | 307.66 | 302.939 | 305.59 | 38,169,263 |
 
-# 5 rows total, showing 5
-# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+- 5 rows total, showing 5
+- `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
 
 The `print()` above emits `1786455000.0  close=304.91  volume=37476746.0` for the first bar.
 

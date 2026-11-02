@@ -27,8 +27,8 @@ asyncio.run(main())
 | 1786714200.0 | 2026-08-14 | 305.93 |
 | 1786973400.0 | 2026-08-17 | 305.59 |
 
-# 5 rows total, showing 5
-# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+- 5 rows total, showing 5
+- `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
 
 *Example output — live market values will differ.*
 
@@ -84,8 +84,8 @@ asyncio.run(main())
 | MSFT | 480.35 | 3,566,860,693,823 |
 | AMZN | 261.31 | 2,818,571,764,248 |
 
-# 5 rows returned of total_count=4943, limited by range_end=5
-# StockData carries 20 declared fields; `create_comprehensive_request` requests 101 columns
+- 5 rows returned of total_count=4943, limited by range_end=5
+- StockData carries 20 declared fields; `create_comprehensive_request` requests 101 columns
 
 ## 4. Export to CSV
 
@@ -119,7 +119,7 @@ timestamp,open,high,low,close,volume
 ...
 ```
 
-# 30 data rows total, showing 3; `timestamp` is written as an ISO-8601 string
+- 30 data rows total, showing 3; `timestamp` is written as an ISO-8601 string
 
 ---
 

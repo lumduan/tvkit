@@ -199,8 +199,8 @@ shape: (10, 2)
 └────────────────────────────────┴─────────┘
 ```
 
-# 10 rows total, polars elides the middle with `…`
-# the column dtype becomes Datetime(time_unit='us', time_zone='America/New_York')
+- 10 rows total, polars elides the middle with `…`
+- the column dtype becomes Datetime(time_unit='us', time_zone='America/New_York')
 
 The function returns a new DataFrame with the converted `timestamp` column. The original DataFrame
 is unchanged (Polars immutability).

@@ -199,8 +199,8 @@ Probe status: pending
 | `max_bars_source` | `Literal['estimate', 'probe']` | `'estimate'` |
 | `probe_status` | `Literal['pending', 'success', 'throttled', 'failed']` | `'pending'` |
 
-# derived from tvkit/auth/models.py and PLAN_TO_BARS / PLAN_TO_TIER, not a live capture
-# in anonymous or direct-token mode `client.account` is None
+- derived from tvkit/auth/models.py and PLAN_TO_BARS / PLAN_TO_TIER, not a live capture
+- in anonymous or direct-token mode `client.account` is None
 
 `client.account` returns `None` for:
 

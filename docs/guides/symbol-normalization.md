@@ -232,7 +232,7 @@ ERROR    Invalid symbol 'INVALID SYMBOL': symbol must not contain internal white
 ERROR    Invalid symbol 'A:B:C': symbol contains multiple ':' separators
 ```
 
-# all four raised before any network call
+- all four raised before any network call
 
 `SymbolNormalizationError` is always raised before any network call. Errors from
 `validate_symbols` (symbol not found in TradingView) remain `ValueError` and are a separate

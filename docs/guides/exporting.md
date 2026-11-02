@@ -92,8 +92,8 @@ Columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'return_pct', '
 'vwap', 'momentum_3']
 ```
 
-# 90 rows total, showing 5 · showing 6 of 17 columns
-# `timestamp` is a `String` — `to_polars()` uses timestamp_format="iso"
+- 90 rows total, showing 5 · showing 6 of 17 columns
+- `timestamp` is a `String` — `to_polars()` uses timestamp_format="iso"
 
 *Example output — live market values will differ.*
 
@@ -166,7 +166,7 @@ The file itself (253 lines for 30 bars):
 }
 ```
 
-# keys are alphabetical, not declaration order — the writer uses `sort_keys=True`
+- keys are alphabetical, not declaration order — the writer uses `sort_keys=True`
 
 With `include_metadata=True`, the JSON file includes a `metadata` section containing symbol,
 interval, bar count, and export timestamp. `symbol` is `"unknown"` and `interval` is `null` when
@@ -245,9 +245,9 @@ asyncio.run(export_scanner_results())
 Exported 50 stocks with 102 columns
 ```
 
-# 101 requested columns + an `export_timestamp` String column the exporter always appends
-# first: name, close, pricescale, minmov, fractional, minmove2, currency, change
-# last:  open, change_abs, export_timestamp
+- 101 requested columns + an `export_timestamp` String column the exporter always appends
+- first: name, close, pricescale, minmov, fractional, minmove2, currency, change
+- last:  open, change_abs, export_timestamp
 
 ---
 
@@ -290,7 +290,7 @@ asyncio.run(custom_analysis())
 Saved 200 rows with 21 columns
 ```
 
-# 17 from add_analysis + bb_upper, bb_lower, volume_ratio, momentum_5d
+- 17 from add_analysis + bb_upper, bb_lower, volume_ratio, momentum_5d
 
 ---
 
@@ -329,7 +329,7 @@ JSON:      export/NASDAQ_AAPL.json
 CSV:       export/NASDAQ_AAPL.csv
 ```
 
-# `to_json` / `to_csv` return a `Path`; `./export/` must already exist
+- `to_json` / `to_csv` return a `Path`; `./export/` must already exist
 
 ---
 

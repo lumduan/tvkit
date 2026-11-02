@@ -74,8 +74,8 @@ WARNING  tvkit.export.data_exporter: Gap detected between rows 12 and 13: expect
 ...
 ```
 
-# 80 GAP_DETECTED warnings across 365 daily bars — every weekend and market holiday
-# the export still proceeds and `to_csv` returns `aapl.csv`
+- 80 GAP_DETECTED warnings across 365 daily bars — every weekend and market holiday
+- the export still proceeds and `to_csv` returns `aapl.csv`
 
 When violations are found, each one is logged at `WARNING` level. A duplicate looks like this:
 
@@ -115,9 +115,9 @@ Export blocked: 2 error(s) found
   [non_monotonic_timestamp] Timestamp at row 1 ('1735689600.0') is not strictly greater than row 0 ('1735689600.0')
 ```
 
-# one duplicate trips two checks — `aapl.csv` is not written
-# `str(exc)` is: OHLCV data integrity check failed: 2 error(s) found. Inspect result.errors for details.
-# `v.check` is a StrEnum, so it prints as `duplicate_timestamp`, not `ViolationType.DUPLICATE_TIMESTAMP`
+- one duplicate trips two checks — `aapl.csv` is not written
+- `str(exc)` is: OHLCV data integrity check failed: 2 error(s) found. Inspect result.errors for details.
+- `v.check` is a StrEnum, so it prints as `duplicate_timestamp`, not `ViolationType.DUPLICATE_TIMESTAMP`
 
 `DataIntegrityError.result` is the full `ValidationResult` — use it for structured logging or retry logic.
 
@@ -239,8 +239,8 @@ if not result.is_valid:
 WARNING  Gap detected between rows 2 and 3: expected 86400s, got 255600s
 ```
 
-# `result.model_dump()` returns only ['is_valid', 'violations', 'bars_checked', 'checks_run'] —
-# `.errors` and `.warnings` are plain properties and are not serialized
+- `result.model_dump()` returns only ['is_valid', 'violations', 'bars_checked', 'checks_run'] —
+  `.errors` and `.warnings` are plain properties and are not serialized
 
 ---
 

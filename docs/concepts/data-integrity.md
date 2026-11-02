@@ -123,8 +123,8 @@ Neither call prints. Both return a `ValidationResult`; for 365 clean AAPL daily 
 | `violations` | `[]` (option 2) · 80 `gap_detected` WARNINGs when `interval` is passed |
 | `checks_run` | the requested subset, always in the fixed order |
 
-# `df["timestamp"]` must be Float64, Int64, Datetime or Date — a String column raises ValueError
-# `.errors` / `.warnings` are properties and are absent from `model_dump()`
+- `df["timestamp"]` must be Float64, Int64, Datetime or Date — a String column raises ValueError
+- `.errors` / `.warnings` are properties and are absent from `model_dump()`
 
 ---
 
@@ -164,7 +164,7 @@ ERROR    Duplicate timestamp '1735689600.0' appears 2 time(s) at rows [0, 1]
 ERROR    Timestamp at row 1 ('1735689600.0') is not strictly greater than row 0 ('1735689600.0')
 ```
 
-# `v.check.value` is the lowercase slug, e.g. 'duplicate_timestamp'
+- `v.check.value` is the lowercase slug, e.g. 'duplicate_timestamp'
 
 `DataIntegrityError.result` carries the full `ValidationResult`, so structured error handling and retry logic have access to every violation detail.
 

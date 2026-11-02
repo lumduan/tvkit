@@ -83,7 +83,7 @@ and one `SymbolResult` (its `bars` list elided):
  'elapsed_seconds': 1.5192913541104645}
 ```
 
-# `failed_symbols` and `successful_symbols` are computed fields — they appear in model_dump()
+- `failed_symbols` and `successful_symbols` are computed fields — they appear in model_dump()
 
 *Example output — live market values will differ.*
 
@@ -397,7 +397,7 @@ Exported NASDAQ:AAPL → export/NASDAQ_AAPL.csv
 Exported NASDAQ:MSFT → export/NASDAQ_MSFT.csv
 ```
 
-# `export/` must already exist — `to_csv` does not create it
+- `export/` must already exist — `to_csv` does not create it
 
 ---
 
