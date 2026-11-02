@@ -582,8 +582,8 @@ Update: {'n': 'USI:PCC', 's': 'ok', 'v': {'pro_name': 'USI:PCC', 'minmov': 1,
          'pricescale': 1000, 'short_name': 'PCC', 'type': 'index', ...}}
 ```
 
-# dict keys elided with `...`
-# a rejected symbol arrives as `{'s': 'error', 'errmsg': 'no_such_symbol', 'v': {}}`
+- dict keys elided with `...`
+- a rejected symbol arrives as `{'s': 'error', 'errmsg': 'no_such_symbol', 'v': {}}`
 
 *Example output — live market values will differ.*
 

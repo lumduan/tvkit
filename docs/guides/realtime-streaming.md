@@ -120,7 +120,7 @@ Update: {'m': 'qsd', 'p': ['qs_afcyponiwryy', {'n': 'OANDA:XAUUSD', 's': 'ok',
 ...
 ```
 
-# dict keys elided with `...`; the real frames carry ~18 keys under `v`
+- dict keys elided with `...`; the real frames carry ~18 keys under `v`
 
 `get_latest_trade_info()` yields **raw protocol dicts**, not `OHLCVBar` objects. The first frame is
 the connection handshake; subsequent frames are `qsd` quote updates, one per symbol. The last price
@@ -324,9 +324,9 @@ timestamp,open,high,low,close,volume
 ...
 ```
 
-# captured with flush_every=5 so the run finished quickly; flush_every=100 behaves identically
-# `to_csv` overwrites the file on each flush — append or rotate filenames to retain history
-# `./export/` must already exist
+- captured with flush_every=5 so the run finished quickly; flush_every=100 behaves identically
+- `to_csv` overwrites the file on each flush — append or rotate filenames to retain history
+- `./export/` must already exist
 
 ---
 

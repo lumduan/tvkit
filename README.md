@@ -66,8 +66,8 @@ asyncio.run(main())
 | 1786109400.0 | 2026-08-07 | 311.45 | 314.81 | 310.74 | 313.33 | 34,437,191 |
 | 1786368600.0 | 2026-08-10 | 306.83 | 308.26 | 304.61 | 308.26 | 44,812,503 |
 
-# 10 rows total, showing 5
-# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+- 10 rows total, showing 5
+- `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
 
 The `print()` above emits the first and sixth columns only: `1785850200.0 309.38`.
 

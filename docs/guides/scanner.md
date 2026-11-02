@@ -81,7 +81,7 @@ asyncio.run(scan_us_market())
 | MSFT | 480.35 | 3,566,860,693,823 |
 | AMZN | 261.31 | 2,818,571,764,248 |
 
-# 10 rows total, showing 5 — `total_count` reports 4943 matching symbols
+- 10 rows total, showing 5 — `total_count` reports 4943 matching symbols
 
 *Example output — live market values will differ.*
 
@@ -169,8 +169,8 @@ asyncio.run(scan_asia_pacific())
 | hongkong | 700 | 3,968,954,687,500 |
 | indonesia | BBCA | 782,796,547,656,250 |
 
-# 17 markets in ASIA_PACIFIC, showing 5
-# caps are in each market's own reporting currency — IDR and KRW are not comparable to USD
+- 17 markets in ASIA_PACIFIC, showing 5
+- caps are in each market's own reporting currency — IDR and KRW are not comparable to USD
 
 Available regions: `GLOBAL`, `NORTH_AMERICA`, `EUROPE`, `MIDDLE_EAST_AFRICA`, `MEXICO_SOUTH_AMERICA`, `ASIA_PACIFIC`.
 

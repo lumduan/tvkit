@@ -128,7 +128,7 @@ With `timestamp_format="unix"` the JSON holds numeric timestamps:
       "low": 251.6,
 ```
 
-# keys are alphabetical — the writer uses `sort_keys=True`
+- keys are alphabetical — the writer uses `sort_keys=True`
 
 ---
 
@@ -265,9 +265,9 @@ df = result.data
 | `value` | `Float64` (nullable) |
 | `currency` | `String` |
 
-# for a full NASDAQ:AAPL snapshot the shape is roughly (1700, 8) — one row per (line, period)
-# `dataset` values: income, balance, cash_flow, statistics, segment_business, segment_region,
-#   dividend, earnings
+- for a full NASDAQ:AAPL snapshot the shape is roughly (1700, 8) — one row per (line, period)
+- `dataset` values: income, balance, cash_flow, statistics, segment_business, segment_region,
+  dividend, earnings
 
 ---
 
@@ -351,8 +351,8 @@ shape: (5, 6)
 └──────┴────────┴──────────┴───────────┴─────────┴────────────────────────────┘
 ```
 
-# the scanner frame reflects ColumnSets.BASIC plus the always-appended `export_timestamp`
-# OHLCV `timestamp` is a `String` here — to_polars() uses timestamp_format="iso"
+- the scanner frame reflects ColumnSets.BASIC plus the always-appended `export_timestamp`
+- OHLCV `timestamp` is a `String` here — to_polars() uses timestamp_format="iso"
 
 *Example output — live market values will differ.*
 

@@ -44,7 +44,7 @@ asyncio.run(fetch_recent_bars())
 | 1783690200.0 | 314.72 | 315.32 | 34132321.0 |
 | 1783949400.0 | 317.015 | 317.31 | 43257804.0 |
 
-# 30 rows total, showing 5 — oldest first
+- 30 rows total, showing 5 — oldest first
 
 *Example output — live market values will differ.*
 
@@ -126,7 +126,7 @@ WARNING:tvkit.api.chart.ohlcv:No historical bars received for symbol BINANCE:BTC
 Fetched 0 1-minute bars
 ```
 
-# 107 segments requested, every one empty; ~105 s wall time on an anonymous session
+- 107 segments requested, every one empty; ~105 s wall time on an anonymous session
 
 Zero bars, no exception. A full year of 1-minute bars sits far outside the anonymous
 `max_bars` window (≈3.5 days at 1-minute), so every segment returns empty and is skipped —
@@ -364,9 +364,9 @@ shape: (5, 6)
 └───────────────────────────┴────────┴─────────────┴────────────┴─────────┴────────────┘
 ```
 
-# 90 rows total, showing 5 · showing 6 of 17 columns
-# full set: timestamp, open, high, low, close, volume, return_pct, typical_price, true_range,
-#   vwap_numerator, sma_5, sma_10, vol_ma_5, cum_vwap_num, cum_volume, vwap, momentum_3
+- 90 rows total, showing 5 · showing 6 of 17 columns
+- full set: timestamp, open, high, low, close, volume, return_pct, typical_price, true_range,
+  vwap_numerator, sma_5, sma_10, vol_ma_5, cum_vwap_num, cum_volume, vwap, momentum_3
 
 `timestamp` is a `String` (ISO-8601) here — `to_polars()` uses `timestamp_format="iso"`. The
 `sma_5` nulls are expected: the window has not filled yet. Large floats print in scientific

@@ -77,8 +77,8 @@ out of `total_count=4943`:
 | AAPL | 305.59 | 4,459,835,263,931 | Electronic Technology |
 | GOOG | 341.45 | 4,191,656,347,478 | Technology Services |
 
-# 20 rows total, showing 3 · showing 4 of the 20 declared StockData fields
-# columns beyond the 20 declared fields land in `extra` (StockData sets extra="allow")
+- 20 rows total, showing 3 · showing 4 of the 20 declared StockData fields
+- columns beyond the 20 declared fields land in `extra` (StockData sets extra="allow")
 
 *Example output — live market values will differ.*
 
