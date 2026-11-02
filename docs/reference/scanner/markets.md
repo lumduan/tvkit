@@ -320,8 +320,8 @@ czech: 25 stocks
 ...
 ```
 
-# 30 markets in EUROPE, showing 5
-# smaller exchanges return fewer than the requested range_end=50
+- 30 markets in EUROPE, showing 5
+- smaller exchanges return fewer than the requested range_end=50
 
 ---
 

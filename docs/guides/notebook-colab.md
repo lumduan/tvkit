@@ -261,8 +261,8 @@ BINANCE:BTCUSDT [1H] — 5,503 bars
 5502  2026-08-18 06:00  64242.76  64279.93  64170.00  64230.00   204.89910
 ```
 
-# plain-text repr shown here; in Colab the same cell renders as a styled HTML table
-# the index is positional — `datetime` stays an ordinary String column
+- plain-text repr shown here; in Colab the same cell renders as a styled HTML table
+- the index is positional — `datetime` stays an ordinary String column
 
 *Example output — live market values will differ.*
 

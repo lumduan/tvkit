@@ -236,8 +236,15 @@ Rules:
   Pydantic model or return type in `tvkit/`. Read the source before writing an output block.
 - Prefer a real captured run over a plausible one. Save captures under
   `docs/_fixtures/outputs/<page>.txt` so a later edit does not require another network call.
-- Max 5–8 rows. Truncate with `...` and a line like `# 250 rows total, showing 5`.
-- Wide DataFrames: show 5–7 relevant columns and add `# showing 6 of 17 columns`.
+- Max 5–8 rows. Truncate with `...` and say how many rows there are in total, e.g.
+  "250 rows total, showing 5".
+- Wide DataFrames: show 5–7 relevant columns and say so, e.g. "showing 6 of 17 columns".
+- **Where the note goes depends on the rendering.** Inside a fenced `text` block, a
+  `# 250 rows total, showing 5` comment line is fine. **Outside a fence** — under a Markdown
+  table, or after the closing fence of an output block — write the notes as a `-` bullet list.
+  Never start a line outside a fence with `# `: Markdown renders it as a top-level heading, in the
+  page's largest type. Every output block in the README and `docs/` once had this defect (42 note
+  runs in 21 files). `tests/test_docs_markdown.py` now fails CI if a page has a second `# ` heading.
 - Format numbers the way the code formats them — respect the f-strings in the example. Use K/M/B
   abbreviation only for financial-statement magnitudes, where TradingView's own UI abbreviates.
 - Tables carry no alignment markers (`|---|---|`). Use U+2212 `−` for negative numbers, `—` for a

@@ -90,10 +90,10 @@ Total revenue: [416161000000.0, 391035000000.0, 383285000000.0, 394328000000.0, 
 |---|---|---|---|---|---|
 | Total revenue | 416.16B (+6.43%) | 391.04B (+2.02%) | 383.29B (−2.80%) | 394.33B (+7.79%) | 365.82B |
 
-# periods are newest-first; `values` is index-aligned to `statement.periods`
-# `income.report_template` is `'industrial'` for AAPL; the first six line labels are
-#   Total revenue, Cost of goods sold, Gross profit, Operating expenses (excl. COGS),
-#   Operating income, Non-operating income (total)
+- periods are newest-first; `values` is index-aligned to `statement.periods`
+- `income.report_template` is `'industrial'` for AAPL; the first six line labels are
+  Total revenue, Cost of goods sold, Gross profit, Operating expenses (excl. COGS),
+  Operating income, Non-operating income (total)
 
 Rows are ordered as the TradingView UI shows them. A line the issuer's template omits (for example, cost of goods for a bank) is simply absent — use `statement.line(field_id)` and check for `None`. Values align to `statement.periods` by index.
 
@@ -119,9 +119,9 @@ USD
 1.0590062675549348
 ```
 
-# `yield_recent` and `eps_surprise_pct` are percentages, not fractions
-# `snapshot.raw` is populated but has `repr=False`, so `print(snapshot)` omits it while
-#   `snapshot.model_dump()` includes it
+- `yield_recent` and `eps_surprise_pct` are percentages, not fractions
+- `snapshot.raw` is populated but has `repr=False`, so `print(snapshot)` omits it while
+  `snapshot.model_dump()` includes it
 
 `get_financials()` fetches income, balance, cash flow, statistics, segments, dividends, and earnings in one WebSocket round-trip.
 
@@ -158,10 +158,10 @@ shape: (1689, 8)
 └─────────┴─────────┴───────────────┴───────────────┴────────┴─────────────────────────┴───────────┴──────────┘
 ```
 
-# 1689 rows total, showing 5 — one row per (line, period)
-# `period_end` is a String, `value` is a nullable Float64
-# `dataset` takes exactly these values, in this order:
-#   income, balance, cash_flow, statistics, segment_business, segment_region, dividend, earnings
+- 1689 rows total, showing 5 — one row per (line, period)
+- `period_end` is a String, `value` is a nullable Float64
+- `dataset` takes exactly these values, in this order:
+  income, balance, cash_flow, statistics, segment_business, segment_region, dividend, earnings
 
 ## Authenticated Sessions
 

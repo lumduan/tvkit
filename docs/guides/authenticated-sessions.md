@@ -126,8 +126,8 @@ async with OHLCV() as client:
 | 1786714200.0 | 2026-08-14 | 306.0 | 307.49 | 304.3 | 305.93 | 28,229,375 |
 | 1786973400.0 | 2026-08-17 | 306.21 | 307.66 | 302.939 | 305.59 | 38,169,263 |
 
-# 100 rows total, showing the last 5
-# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+- 100 rows total, showing the last 5
+- `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
 
 *Example output — live market values will differ.*
 
@@ -213,8 +213,8 @@ Browser error: browser_cookie3 failed to extract cookies from 'chrome': Failed t
 Fix: Log in to TradingView in Chrome, then run again.
 ```
 
-# the failure path is a live capture; the authenticated lines are derived from
-# CapabilityDetector.estimate_from_plan("pro_premium", []) -> (20000, "premium")
+- the failure path is a live capture; the authenticated lines are derived from
+  CapabilityDetector.estimate_from_plan("pro_premium", []) -> (20000, "premium")
 
 ---
 
@@ -261,7 +261,7 @@ Probe confirmed:   False
 In anonymous or direct-token mode `account` is `None` and the first branch prints
 `No account info — 5,000-bar default applies`.
 
-# derived from tvkit/auth/models.py and PLAN_TO_BARS / PLAN_TO_TIER, not a live capture
+- derived from tvkit/auth/models.py and PLAN_TO_BARS / PLAN_TO_TIER, not a live capture
 
 See [TradingView Pricing](https://www.tradingview.com/pricing/) for the full plan comparison and the [Account Capabilities concept page](../concepts/capabilities.md) for how plan slugs map to tvkit tiers.
 

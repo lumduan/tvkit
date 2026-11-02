@@ -59,8 +59,8 @@ Returns 100 `OHLCVBar` records, oldest first:
 | 1786541400.0 | 2026-08-12 | 305.1 | 305.66 | 300.57 | 302.25 | 41,657,768 |
 | 1786973400.0 | 2026-08-17 | 306.21 | 307.66 | 302.939 | 305.59 | 38,169,263 |
 
-# 100 rows total, showing the last 3
-# `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
+- 100 rows total, showing the last 3
+- `date` is derived — OHLCVBar has 6 fields: timestamp, open, high, low, close, volume
 
 *Example output — live market values will differ.*
 
@@ -134,9 +134,9 @@ print(f"{len(large_tech)} of {len(response.data)} rows matched")
 6 of 20 rows matched
 ```
 
-# matched: NVDA, AAPL, AVGO, MU, AMD, INTC
-# `sector` is TradingView's own taxonomy — the top 20 US rows span 8 sectors, and semiconductors
-# sit under `Electronic Technology`, not a "Technology" label
+- matched: NVDA, AAPL, AVGO, MU, AMD, INTC
+- `sector` is TradingView's own taxonomy — the top 20 US rows span 8 sectors, and semiconductors
+  sit under `Electronic Technology`, not a "Technology" label
 
 See the [Scanner Guide](guides/scanner.md).
 
