@@ -31,6 +31,13 @@ from typing import Any
 from websockets import ClientConnection
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+logger: logging.Logger = logging.getLogger(__name__)
+
+# Protocol functions whose parameters are credentials. Their frames are never written to
+# the log verbatim: the bug-report template asks users to paste DEBUG output into a public
+# issue, and a ``set_auth_token`` frame carries the session's real auth token.
+_CREDENTIAL_FUNCS: frozenset[str] = frozenset({"set_auth_token"})
+
 
 class MessageService:
     """
@@ -125,15 +132,18 @@ class MessageService:
             raise RuntimeError("WebSocket connection not established. Call _connect() first.")
 
         message: str = self.create_message(func, args)
-        logging.debug("Sending message: %s", message)
+        if func in _CREDENTIAL_FUNCS:
+            logger.debug("Sending message: %s (parameters redacted, %d chars)", func, len(message))
+        else:
+            logger.debug("Sending message: %s", message)
 
         try:
             await self.ws.send(message)
         except ConnectionClosed as e:
-            logging.error("WebSocket connection closed while sending message: %s", e)
+            logger.error("WebSocket connection closed while sending message: %s", e)
             raise
         except WebSocketException as e:
-            logging.error("Failed to send message: %s", e)
+            logger.error("Failed to send message: %s", e)
             raise
 
     def get_send_message_callable(self) -> Callable[[str, list[Any]], Awaitable[None]]:

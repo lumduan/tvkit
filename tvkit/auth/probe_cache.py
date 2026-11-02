@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import stat
 import tempfile
 import time
 from pathlib import Path
@@ -31,7 +32,10 @@ class ProbeCache:
     (``os.replace``) — safe under concurrent processes without extra
     dependencies.
 
-    The cache file never stores cookies, tokens, or credentials.
+    The cache file never stores cookies, tokens, or credentials. It does hold the
+    TradingView user ID and plan, so the cache directory is created ``0700`` and the
+    file ``0600`` (``tempfile.mkstemp``); the default directory is tightened to ``0700``
+    if an older tvkit created it with a looser mode.
 
     Args:
         path: Override the cache file path. Defaults to
@@ -73,8 +77,15 @@ class ProbeCache:
             logger.debug("ProbeCache: no cache entry for user_id=%d", user_id)
             return None
 
-        ts = entry.get("timestamp", 0)
-        age = time.time() - float(ts)
+        try:
+            age = time.time() - float(entry.get("timestamp", 0))
+            max_bars: int = int(float(entry["max_bars"]))
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            logger.warning(
+                "ProbeCache: ignoring malformed cache entry for user_id=%d: %r", user_id, exc
+            )
+            return None
+
         if age >= self._ttl:
             logger.debug(
                 "ProbeCache: stale entry for user_id=%d (age=%.0fs, ttl=%ds)",
@@ -84,7 +95,6 @@ class ProbeCache:
             )
             return None
 
-        max_bars: int = int(float(entry["max_bars"]))
         logger.info(
             "ProbeCache: cache hit for user_id=%d (max_bars=%d, age=%.0fs)",
             user_id,
@@ -149,7 +159,7 @@ class ProbeCache:
         ``os.replace`` to achieve an atomic rename, preventing partial writes.
         """
         try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_private_dir()
             fd, tmp_path = tempfile.mkstemp(
                 dir=self._path.parent,
                 prefix=".tvkit-capabilities-",
@@ -168,3 +178,21 @@ class ProbeCache:
                 raise
         except OSError as exc:
             logger.warning("ProbeCache: failed to write cache file: %s", exc)
+
+    def _ensure_private_dir(self) -> None:
+        """
+        Create the cache directory ``0700``; tighten tvkit's own default directory if loose.
+
+        ``mkdir``'s default mode is ``0o777`` minus the umask, so a umask of ``002`` gives a
+        group-writable directory. A directory the caller chose via ``path=`` is left alone
+        once it exists — a shared location can be deliberate. Never raises beyond
+        ``OSError``, which the caller turns into a warning.
+        """
+        directory = self._path.parent
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name == "nt" or directory != _CACHE_PATH.parent:
+            return
+        mode = stat.S_IMODE(directory.stat().st_mode)
+        if mode & 0o077:
+            directory.chmod(0o700)
+            logger.info("ProbeCache: tightened %s from %s to 0o700", directory, oct(mode))
