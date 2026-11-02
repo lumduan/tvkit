@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The auth token is no longer written to DEBUG logs.** `MessageService.send_message` logged
+  every outgoing WebSocket frame verbatim at DEBUG, including `set_auth_token` and the session's
+  real auth token. The bug-report template asks users to enable DEBUG logging and paste the
+  output into a public issue. The frame is now logged as `set_auth_token (parameters redacted,
+  N chars)`. All other frames are logged as before, now under the module logger
+  `tvkit.api.chart.services.message_service` instead of the root logger.
+- **TradingView session cookies cannot follow a redirect to another site.** `TokenProvider`
+  passed the cookie dict to httpx as-is, with `follow_redirects=True`. httpx sends domain-less
+  cookies to every host, so a redirect away from TradingView would have carried `sessionid`
+  with it. The cookies are now bound to `.tradingview.com`, and any request hop that leaves
+  `https://*.tradingview.com` (another host, a look-alike host, or an `http://` downgrade) raises
+  `ProfileFetchError` before it is sent.
+- **Browser cookies from look-alike domains are discarded.** `browser_cookie3` matches the
+  domain as a substring (`%tradingview.com%`), so a cookie set by `nottradingview.com` could
+  reach the cookie dict and override the real `sessionid`. Only cookies whose domain is
+  tradingview.com or a subdomain of it are kept.
+- `ProfileFetchError` for a missing or short `auth_token` reports the value's type and length
+  instead of its first 20 characters.
+- `ProbeCache` creates its directory `0700` (the file was already `0600`). It tightens its own
+  default `~/.cache/tvkit` if that directory is looser, and treats a malformed entry as a cache
+  miss instead of raising. `ProbeCache` is not yet wired into the authentication flow.
+- `scripts/export_tv_cookies.py` (repository tool, not shipped in the package) writes the
+  exported cookie file `0600`. It used `0664` under the common umask `002`.
+
 ---
 
 ## [0.18.0] — 2026-09-24
