@@ -4,12 +4,16 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
       - "**/*.py"
       - "pyproject.toml"
       - "tests/**"
+      - "uv.lock"
       - ".github/workflows/ruff-lint.yml"
       - ".pre-commit-config.yaml"
   push:
@@ -34,11 +38,14 @@ jobs:
       # this job would report success without ever exercising 3.11.
       UV_PYTHON: "3.11"
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          version: "latest"
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          # Pinned, not "latest". Dependabot bumps the action, never its inputs — bump by hand.
+          version: "0.13.6"
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
@@ -56,11 +63,14 @@ jobs:
       # See the note in the `ruff` job — without this, mypy and pytest run on 3.12.
       UV_PYTHON: "3.11"
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          version: "latest"
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          # Pinned, not "latest". Dependabot bumps the action, never its inputs — bump by hand.
+          version: "0.13.6"
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
@@ -71,7 +81,7 @@ jobs:
       - run: uv run pytest --cov=tvkit --cov-branch --cov-report=xml --cov-report=term-missing -v
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.xml
           flags: unittests

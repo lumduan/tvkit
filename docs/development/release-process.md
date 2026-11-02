@@ -77,9 +77,18 @@ This replaces token-based uploads in CI. No secret is stored in GitHub.
 2. Name it exactly `pypi`
 3. (Optional but recommended) Add a required reviewer so no release can go out without approval
 
-### 3. `softprops/action-gh-release` permissions
+### 3. Workflow permissions
 
-The workflow already sets `permissions: contents: write`. No extra token is needed.
+No extra token is needed. `release.yml` is least-privilege: the workflow default is
+`contents: read`; only the `publish-pypi` job gets `id-token: write` (the OIDC token PyPI's
+Trusted Publisher checks), and only the `github-release` job gets `contents: write` (to create
+the GitHub Release). The `ci` job, which installs the dev dependencies and runs the tests, can
+neither publish nor write to the repository.
+
+Actions are pinned by commit SHA with a `# vX.Y.Z` comment, and Dependabot
+(`.github/dependabot.yml`) keeps the pins current. Dependabot never updates action *inputs*, so
+the `setup-uv` `version:` pin in `release.yml`, `ruff-lint.yml` and `security.yml` is bumped by
+hand.
 
 ---
 
