@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.18.1] — 2026-11-02
+
+Security hardening of authenticated sessions, plus a docs rendering fix. No signatures change;
+the behaviour changes are listed below.
+
 ### Security
 
 - **The auth token is no longer written to DEBUG logs.** `MessageService.send_message` logged
@@ -32,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   miss instead of raising. `ProbeCache` is not yet wired into the authentication flow.
 - `scripts/export_tv_cookies.py` (repository tool, not shipped in the package) writes the
   exported cookie file `0600`. It used `0664` under the common umask `002`.
+
+### Dependencies
+
+- Lock-only bumps clearing every advisory `pip-audit` reported against the full lock (all extras and
+  groups: 31 advisories in 4 packages): `virtualenv` 21.7.5 → 21.15.2 (and `python-discovery`
+  1.5.3 → 1.9.0), `filelock` 3.32.4 → 4.2.6, `urllib3` 2.7.0 → 2.8.0 (all dev-only), and `certifi`
+  2026.7.22 → 2026.10.23 (PYSEC-2026-4320). `certifi` is in the runtime closure through `httpx`, but
+  tvkit does not pin it, so `pip install tvkit` already resolved a fixed release.
 
 ### Documentation
 
@@ -1209,7 +1224,8 @@ This universal indicator access enables professional research applications criti
 <!-- Tagging began at v0.11.1, so 0.11.0 and earlier have no tag to compare against and
      point at their PyPI release page instead. Those are not broken compare links. -->
 
-[Unreleased]: https://github.com/lumduan/tvkit/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/lumduan/tvkit/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/lumduan/tvkit/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/lumduan/tvkit/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/lumduan/tvkit/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/lumduan/tvkit/compare/v0.15.0...v0.16.0

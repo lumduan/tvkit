@@ -8,6 +8,7 @@ tvkit is evolving toward a **high-performance data infrastructure library for Tr
 
 ## Recently Shipped
 
+- **v0.18.1** — Session credentials stay put: the auth token is redacted from DEBUG logs, TradingView session cookies are bound to `.tradingview.com` and never follow a redirect off-site, look-alike-domain browser cookies are discarded, and the probe cache directory is `0700`; output notes in the README and docs no longer render as giant headings
 - **v0.18.0** — TradingView refusals are reported with TradingView's own reason instead of "Invalid interval or bars count": new `SeriesError` / `EntitlementError` (both `ValueError` subclasses) for `symbol_error` / `series_error` frames, with `EntitlementError` marking a permanent refusal such as `ECONOMICS:` / `FRED:` symbols on an anonymous session ([#59](https://github.com/lumduan/tvkit/issues/59)); `get_ohlcv()` / `get_quote_data()` now raise on a refusal instead of ending silently
 - **v0.17.0** — Segmented fetches no longer drop bars stamped off the interval grid at a segment seam: segment windows are contiguous at one-second resolution (`segment_time_range()` returns later `end` values)
 - **v0.16.0** — Range-mode fixes by @YuYuKunKun ([#55](https://github.com/lumduan/tvkit/pull/55)): a date-only `end` covers the whole day, a midnight `datetime` `end` is exact, a range overlapping the most-recent-5000-bar window is no longer truncated, and each fetch keeps one bar per timestamp
