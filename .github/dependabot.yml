@@ -6,6 +6,10 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+      # Fixed time, so the maintainer's weekly job (Mon 07:17 Asia/Bangkok) always runs after
+      # Dependabot has opened its PRs and their CI has finished.
+      time: "05:00"
+      timezone: "Asia/Bangkok"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
@@ -26,6 +30,10 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+      # Fixed time, so the maintainer's weekly job (Mon 07:17 Asia/Bangkok) always runs after
+      # Dependabot has opened its PRs and their CI has finished.
+      time: "05:00"
+      timezone: "Asia/Bangkok"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(ci)"
