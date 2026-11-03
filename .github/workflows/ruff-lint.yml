@@ -24,6 +24,9 @@ on:
       - "**/*.py"
       - "pyproject.toml"
       - "tests/**"
+      # Lock-only merges (Dependabot) must re-run the tests on main too: several lock PRs can
+      # merge as text without conflicting, so the combined lock on main is a state no PR tested.
+      - "uv.lock"
       - ".github/workflows/ruff-lint.yml"
       - ".pre-commit-config.yaml"
 
