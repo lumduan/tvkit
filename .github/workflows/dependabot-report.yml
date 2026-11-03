@@ -1,0 +1,49 @@
+name: Dependabot weekly report
+
+# Posts the weekly Dependabot summary as a comment on the pinned tracking issue.
+#
+# Why a workflow instead of commenting directly: the weekly job runs on the maintainer's host
+# as the maintainer's own GitHub account, and GitHub never notifies an account of its own
+# activity. A comment from github-actions[bot] reaches the maintainer (the issue's author) as a
+# normal notification, including the mobile push.
+#
+# Dispatched by the maintainer's weekly job only: workflow_dispatch needs write access.
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to comment on"
+        required: true
+        type: string
+      body:
+        description: "Markdown body of the comment"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: dependabot-report
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    name: Comment on the tracking issue
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Post the report
+        env:
+          # Inputs reach the shell via env, never pasted into the script.
+          ISSUE: ${{ inputs.issue }}
+          BODY: ${{ inputs.body }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          case "$ISSUE" in
+            ''|*[!0-9]*) echo "issue must be a number, got: $ISSUE"; exit 1 ;;
+          esac
+          printf '%s\n' "$BODY" > body.md
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file body.md
